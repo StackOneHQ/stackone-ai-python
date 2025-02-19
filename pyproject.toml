@@ -1,0 +1,65 @@
+[project]
+name = "stackone_ai-python"
+version = "0.1.0"
+description = "agents performing actions on your SaaS"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+examples = [
+    "openai>=1.63.2",
+    "python-dotenv>=1.0.1",
+]
+
+[tool.uv.workspace]
+members = ["packages/stackone-ai"]
+
+[tool.uv.sources]
+stackone-ai = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pre-commit>=4.1.0",
+    "pytest>=8.3.4",
+    "ruff>=0.9.6",
+    "stackone-ai"
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "packages/stackone-ai",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"bin/**.py" = ["T201", "T203"]
+"scripts/**.py" = ["T201", "T203"]
+"tests/**.py" = ["T201", "T203"]
+"examples/**.py" = ["T201", "T203"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true

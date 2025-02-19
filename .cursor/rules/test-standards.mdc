@@ -1,0 +1,81 @@
+---
+description: Standards for running tests with UV in StackOne packages
+globs: packages/stackone-*/tests/**
+---
+# Test Standards
+
+<rule>
+name: test_standards
+description: Standards for running and writing tests in StackOne packages
+
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: path
+    pattern: "^packages/stackone-.*/tests/.*"
+
+actions:
+  - type: suggest
+    message: |
+      When working with tests:
+
+      1. Running Tests:
+         ```bash
+         # Run all tests
+         uv run pytest
+
+         # Run specific test file
+         uv run pytest packages/stackone-core/tests/test_tools.py
+
+         # Run with coverage
+         uv run pytest --cov=stackone_ai
+         ```
+
+      2. Test File Structure:
+         - Place in package's tests directory
+         - Name pattern: `test_*.py`
+         - Group related tests in same file
+         - Use descriptive test names
+
+      3. Test Dependencies:
+         ```toml
+         # In pyproject.toml
+         [project.optional-dependencies]
+         test = [
+             "pytest>=7.0.0",
+             "pytest-cov>=4.0.0",
+             "pytest-asyncio>=0.23.0",
+         ]
+         ```
+
+      4. Test Guidelines:
+         - Use pytest fixtures for reusable setup
+         - Mock external dependencies
+         - Test both success and error cases
+         - Add type hints to fixtures and tests
+
+examples:
+  - input: |
+      # Good test structure
+      from typing import Dict
+      import pytest
+      
+      @pytest.fixture
+      def mock_data() -> Dict:
+          return {"test": "data"}
+      
+      def test_feature(mock_data: Dict):
+          assert mock_data["test"] == "data"
+
+      # Running tests
+      # uv run pytest
+    output: "Correctly structured and executed tests"
+
+metadata:
+  priority: high
+  version: 1.0
+  tags:
+    - testing
+    - pytest
+    - uv
+</rule> 

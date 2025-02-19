@@ -1,0 +1,54 @@
+# No Relative Imports
+
+Standards for using absolute imports instead of relative imports in Python files.
+
+<rule>
+name: no_relative_imports
+description: Enforce the use of absolute imports instead of relative imports in Python files
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "^from \\."
+
+actions:
+  - type: reject
+    conditions:
+      - pattern: "^from \\."
+        message: "Use absolute imports (from stackone_ai...) instead of relative imports"
+
+  - type: suggest
+    message: |
+      When importing modules:
+
+      1. Always use absolute imports:
+         ```python
+         # Good
+         from stackone_ai.tools import ToolDefinition
+         from stackone_ai.constants import OAS_DIR
+         
+         # Bad
+         from .tools import ToolDefinition
+         from ..constants import OAS_DIR
+         ```
+
+      2. Guidelines:
+         - Start imports with the full package name (stackone_ai)
+         - Never use relative imports (. or ..)
+         - Keep imports organized and grouped
+
+examples:
+  - input: |
+      # Bad: Using relative imports
+      from .tools import ToolDefinition
+      from ..constants import OAS_DIR
+
+      # Good: Using absolute imports
+      from stackone_ai.tools import ToolDefinition
+      from stackone_ai.constants import OAS_DIR
+    output: "Correctly formatted absolute imports"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

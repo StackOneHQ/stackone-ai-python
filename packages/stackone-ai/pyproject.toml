@@ -1,0 +1,18 @@
+[project]
+name = "stackone-ai"
+version = "0.0.1"
+description = "tools for stackone"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.10.6",
+    "requests>=2.32.3",
+]
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
