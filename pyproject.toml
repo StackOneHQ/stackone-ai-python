@@ -10,6 +10,12 @@ examples = [
     "openai>=1.63.2",
     "python-dotenv>=1.0.1",
 ]
+docs = [
+    "mkdocs-material>=9.6.4",
+]
+pymdown-extensions = [
+    "mkdocs-material>=9.6.4",
+]
 
 [tool.uv.workspace]
 members = ["packages/stackone-ai"]
