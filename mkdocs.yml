@@ -10,15 +10,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: black
+      accent: teal
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: teal
+      accent: black
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -43,7 +43,7 @@ markdown_extensions:
   - md_in_html
 
 nav:
-  - Home: getting-started.md
+  - Home: index.md
   - Examples:
       - Basic Tool Usage: basic-tool-usage.md
       - Error Handling: error-handling.md

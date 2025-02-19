@@ -1,5 +1,5 @@
 """
-# Getting Started with StackOne AI
+# Getting Started
 
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 

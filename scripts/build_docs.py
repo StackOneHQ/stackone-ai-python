@@ -10,7 +10,10 @@ def convert_file_to_markdown(py_file: Path) -> str:
     content = py_file.read_text()
 
     # Add title from filename
-    title = py_file.stem.replace("_", " ").title()
+    if py_file.stem == "index":
+        title = "StackOne AI SDK"
+    else:
+        title = py_file.stem.replace("_", " ").title()
     output = [f"# {title}\n"]
 
     # Find all docstrings and their positions
