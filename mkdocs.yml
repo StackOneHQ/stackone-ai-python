@@ -1,0 +1,51 @@
+site_name: StackOne AI SDK
+site_url: https://stackonehq.github.io/stackone-ai-python
+repo_url: https://github.com/StackOneHQ/stackone-ai-python
+repo_name: StackOneHQ/stackone-ai-python
+
+docs_dir: .docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - toc.follow
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: getting-started.md
+  - Examples:
+      - Basic Tool Usage: basic-tool-usage.md
+      - Error Handling: error-handling.md
+      - OpenAI Integration: openai-integration.md
+  - API Reference: api-reference.md

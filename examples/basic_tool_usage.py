@@ -1,3 +1,11 @@
+"""
+This example shows how to use StackOne tools.
+
+## Requirements
+- STACKONE_API_KEY
+- STACKONE_ACCOUNT_ID
+"""
+
 import os
 
 from dotenv import load_dotenv
@@ -17,8 +25,18 @@ def main():
     # Initialize the toolset with your API key
     toolset = StackOneToolSet(api_key=api_key)
 
-    # Get tools for a specific vertical (e.g. "hris")
+    """
+    ## Using Tools
+
+    Once initialized, you can get tools for specific verticals:
+    """
+
+    # Get HRIS tools
     tools = toolset.get_tools(vertical="hris", account_id=account_id)
+
+    """
+    Then use specific tools by name:
+    """
 
     # Example: Get an employee by ID
     try:
