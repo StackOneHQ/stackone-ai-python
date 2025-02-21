@@ -134,7 +134,7 @@ class StackOneTool(StackOneBaseTool):
         tool_self = self  # Capture self reference for inner class
 
         # Create properly annotated schema for the tool
-        schema_props: dict[str, Field] = {}
+        schema_props: dict[str, Any] = {}
         annotations: dict[str, Any] = {}
 
         for name, details in self.parameters.properties.items():
