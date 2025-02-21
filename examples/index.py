@@ -5,8 +5,6 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Installation
 
-Install StackOne AI using pip:
-
 ```bash
 pip install stackone-ai
 ```
@@ -14,7 +12,7 @@ pip install stackone-ai
 
 ## Quick Start
 
-Here's a simple example to get you started:
+Here's a simple example. All examples are complete and runnable.
 """
 
 import os
@@ -22,18 +20,35 @@ import os
 from dotenv import load_dotenv
 from stackone_ai import StackOneToolSet
 
+"""
+## Authenticate with StackOne
+
+```bash
+export STACKONE_API_KEY=<your-api-key>
+```
+"""
+
+load_dotenv()
+
+if not os.getenv("STACKONE_API_KEY"):
+    raise ValueError("Please set STACKONE_API_KEY in your environment or a .env file")
+
+
+"""
+## Account IDs
+
+StackOne uses account IDs to identify different integrations.
+See the example [stackone_account_ids.py](stackone_account_ids.py) for more details.
+This example will hardcode the account ID.
+"""
+
+account_id = "45072196112816593343"
+
 
 def quickstart():
-    # Load environment variables
-    load_dotenv()
+    toolset = StackOneToolSet()
 
-    api_key = os.getenv("STACKONE_API_KEY")
-    account_id = os.getenv("STACKONE_ACCOUNT_ID")
-
-    # Initialize the toolset
-    toolset = StackOneToolSet(api_key=api_key)
-
-    # Get HRIS tools
+    # Filter by vertical and add the account ID
     tools = toolset.get_tools(vertical="hris", account_id=account_id)
 
     # Use a specific tool
@@ -43,19 +58,12 @@ def quickstart():
         print(employee)
 
 
+if __name__ == "__main__":
+    quickstart()
+
 """
-## Authentication
-
-StackOne AI requires two key pieces of information:
-- `STACKONE_API_KEY`: Your API key from StackOne
-- `STACKONE_ACCOUNT_ID`: Your account ID
-
-You can set these as environment variables or pass them directly to the StackOneToolSet constructor.
-
 ## Next Steps
 
 Check out some examples:
-- [Basic Tool Usage](basic-tool-usage.md)
-- [Error Handling](error-handling.md)
 - [OpenAI Integration](openai-integration.md)
 """
