@@ -7,16 +7,12 @@ uv run examples/openai_integration.py
 """
 
 import asyncio
-import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
 from stackone_ai import StackOneToolSet
 
 load_dotenv()
-
-if not os.getenv("STACKONE_API_KEY"):
-    raise ValueError("Please set STACKONE_API_KEY in your environment or a .env file")
 
 account_id = "45072196112816593343"
 employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"

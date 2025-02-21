@@ -111,6 +111,18 @@ class BaseTool(BaseModel):
         """Get the tool's name"""
         return self._execute_config.name
 
+    def set_account_id(self, account_id: str | None) -> None:
+        """Set the account ID for this tool.
+
+        Args:
+            account_id: The account ID to use, or None to clear it
+        """
+        self._account_id = account_id
+
+    def get_account_id(self) -> str | None:
+        """Get the current account ID for this tool."""
+        return self._account_id
+
 
 class Tools:
     """Container for Tool instances"""
@@ -133,3 +145,12 @@ class Tools:
     def to_openai(self) -> list[dict]:
         """Convert all tools to OpenAI function format"""
         return [tool.to_openai_function() for tool in self.tools]
+
+    def set_account_id(self, account_id: str | None) -> None:
+        """Set the account ID for all tools in this collection.
+
+        Args:
+            account_id: The account ID to use, or None to clear it
+        """
+        for tool in self.tools:
+            tool.set_account_id(account_id)

@@ -6,15 +6,10 @@ uv run examples/stackone_account_ids.py
 ```
 """
 
-import os
-
 from dotenv import load_dotenv
 from stackone_ai import StackOneToolSet
 
 load_dotenv()
-
-if not os.getenv("STACKONE_API_KEY"):
-    raise ValueError("Please set STACKONE_API_KEY in your environment or a .env file")
 
 
 def main():

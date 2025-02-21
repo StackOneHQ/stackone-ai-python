@@ -15,8 +15,6 @@ pip install stackone-ai
 Here's a simple example. All examples are complete and runnable.
 """
 
-import os
-
 from dotenv import load_dotenv
 from stackone_ai import StackOneToolSet
 
@@ -26,13 +24,11 @@ from stackone_ai import StackOneToolSet
 ```bash
 export STACKONE_API_KEY=<your-api-key>
 ```
+
+or load from a .env file:
 """
 
 load_dotenv()
-
-if not os.getenv("STACKONE_API_KEY"):
-    raise ValueError("Please set STACKONE_API_KEY in your environment or a .env file")
-
 
 """
 ## Account IDs
@@ -43,6 +39,7 @@ This example will hardcode the account ID.
 """
 
 account_id = "45072196112816593343"
+employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 
 def quickstart():
@@ -54,7 +51,7 @@ def quickstart():
     # Use a specific tool
     employee_tool = tools.get_tool("get_employee")
     if employee_tool:
-        employee = employee_tool.execute({"id": "employee_id"})
+        employee = employee_tool.execute({"id": employee_id})
         print(employee)
 
 
