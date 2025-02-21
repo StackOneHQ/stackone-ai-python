@@ -40,20 +40,19 @@ class Tool(BaseModel):
 
     def to_openai_function(self) -> dict:
         """Convert this tool to OpenAI's function format"""
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": {
-                    "type": self.parameters.type,
-                    "properties": self.parameters.properties,
-                    "required": list(self.parameters.properties.keys()),
-                    "additionalProperties": False,
-                },
-                "strict": True,
-            },
-        }
+        raise NotImplementedError
+
+    def set_account_id(self, account_id: str | None) -> None:
+        """Set the account ID for this tool."""
+        raise NotImplementedError
+
+    def get_account_id(self) -> str | None:
+        """Get the current account ID for this tool."""
+        raise NotImplementedError
+
+    def to_langchain(self) -> Any:
+        """Convert this tool to LangChain format"""
+        raise NotImplementedError
 
 
 class Tools:

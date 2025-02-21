@@ -25,4 +25,4 @@ jobs:
         run: uv run pytest
 
       - name: Run type checks
-        run: uv run mypy packages/stackone-core/
+        run: uv run mypy packages/stackone-ai/stackone_ai/

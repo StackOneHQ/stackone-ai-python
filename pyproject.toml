@@ -35,6 +35,7 @@ dev = [
     "pytest-snapshot>=0.9.0",
     "ruff>=0.9.6",
     "stackone-ai",
+    "types-requests>=2.31.0.20240311",
 ]
 
 [tool.pytest.ini_options]

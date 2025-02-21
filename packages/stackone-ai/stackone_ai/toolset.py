@@ -4,11 +4,13 @@ from typing import Any
 
 from stackone_ai.constants import OAS_DIR
 from stackone_ai.models import (
-    Tool as StackOneBaseTool,
+    ExecuteConfig,
+    ToolDefinition,
+    ToolParameters,
+    Tools,
 )
 from stackone_ai.models import (
-    ToolDefinition,
-    Tools,
+    Tool as StackOneBaseTool,
 )
 from stackone_ai.tools import StackOneTool
 
@@ -77,13 +79,13 @@ class StackOneToolSet:
 
                 tool_def = ToolDefinition(
                     description=description,
-                    parameters={"type": "object", "properties": properties},
-                    execute={
-                        "headers": {},
-                        "method": method.upper(),
-                        "url": f"https://api.stackone.com{path}",
-                        "name": name,
-                    },
+                    parameters=ToolParameters(type="object", properties=properties),
+                    execute=ExecuteConfig(
+                        headers={},
+                        method=method.upper(),
+                        url=f"https://api.stackone.com{path}",
+                        name=name,
+                    ),
                 )
 
                 tool = StackOneTool(
