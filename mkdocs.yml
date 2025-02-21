@@ -45,7 +45,8 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Examples:
-      - Basic Tool Usage: basic-tool-usage.md
-      - Error Handling: error-handling.md
       - OpenAI Integration: openai-integration.md
-  - API Reference: api-reference.md
+      - CrewAI Integration: crewai-integration.md
+      - LangChain Integration: langchain-integration.md
+      - StackOne Account IDs: stackone_account_ids.md
+      - Error Handling: error-handling.md
