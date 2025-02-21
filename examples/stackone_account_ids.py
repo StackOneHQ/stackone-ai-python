@@ -12,7 +12,7 @@ from stackone_ai import StackOneToolSet
 load_dotenv()
 
 
-def main():
+def stackone_account_ids():
     toolset = StackOneToolSet()
 
     # Filter by vertical and set the account ID
@@ -30,4 +30,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    stackone_account_ids()

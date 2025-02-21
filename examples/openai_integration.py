@@ -6,8 +6,6 @@ uv run examples/openai_integration.py
 ```
 """
 
-import asyncio
-
 from dotenv import load_dotenv
 from openai import OpenAI
 from stackone_ai import StackOneToolSet
@@ -18,7 +16,7 @@ account_id = "45072196112816593343"
 employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 
-async def handle_tool_calls(tools, tool_calls) -> list[dict]:
+def handle_tool_calls(tools, tool_calls) -> list[dict]:
     results = []
     for tool_call in tool_calls:
         tool = tools.get_tool(tool_call.function.name)
@@ -27,7 +25,7 @@ async def handle_tool_calls(tools, tool_calls) -> list[dict]:
     return results
 
 
-async def main() -> None:
+def openai_integration() -> None:
     client = OpenAI()
     toolset = StackOneToolSet()
     tools = toolset.get_tools(vertical="hris", account_id=account_id)
@@ -53,7 +51,7 @@ async def main() -> None:
             print("Response:", response.choices[0].message.content)
             break
 
-        results = await handle_tool_calls(tools, response.choices[0].message.tool_calls)
+        results = handle_tool_calls(tools, response.choices[0].message.tool_calls)
         if not results:
             print("Error: Failed to execute tools")
             break
@@ -71,4 +69,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    openai_integration()

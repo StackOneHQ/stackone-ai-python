@@ -67,6 +67,8 @@ def main() -> None:
 
     # Process all Python files in examples directory
     for py_file in EXAMPLES_DIR.glob("*.py"):
+        if py_file.stem.startswith("test_"):
+            continue
         create_markdown_file(py_file)
 
 

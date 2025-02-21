@@ -4,7 +4,7 @@ from stackone_ai import StackOneToolSet
 load_dotenv()
 
 
-def demonstrate_error_handling():
+def error_handling() -> None:
     toolset = StackOneToolSet()
 
     # Example 1: Handle unknown vertical
@@ -36,4 +36,4 @@ def demonstrate_error_handling():
 
 
 if __name__ == "__main__":
-    demonstrate_error_handling()
+    error_handling()

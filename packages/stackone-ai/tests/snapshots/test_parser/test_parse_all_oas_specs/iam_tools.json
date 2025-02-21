@@ -1,0 +1,558 @@
+{
+  "iam_get_group": {
+    "description": "Get Group",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_get_group",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/groups/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_get_policy": {
+    "description": "Get Policy",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_get_policy",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/policies/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_get_role": {
+    "description": "Get Role",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_get_role",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/roles/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_get_user": {
+    "description": "Get User",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_get_user",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/users/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_list_groups": {
+    "description": "List Groups",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_list_groups",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/groups"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_list_policies": {
+    "description": "List Policies",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_list_policies",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/policies"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_list_roles": {
+    "description": "List Roles",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_list_roles",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/roles"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "iam_list_users": {
+    "description": "List Users",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "iam_list_users",
+      "parameter_locations": {
+        "expand": "query",
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/iam/users"
+    },
+    "parameters": {
+      "properties": {
+        "expand": {
+          "description": "The comma separated list of fields that will be expanded in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,452 @@
+{
+  "stackone_authenticate_connect_session": {
+    "description": "Authenticate Connect Session",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "stackone_authenticate_connect_session",
+      "parameter_locations": {
+        "token": "body"
+      },
+      "url": "https://api.stackone.com/connect_sessions/authenticate"
+    },
+    "parameters": {
+      "properties": {
+        "token": {
+          "description": "The token to authenticate with",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_create_connect_session": {
+    "description": "Create Connect Session",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "stackone_create_connect_session",
+      "parameter_locations": {
+        "account_id": "body",
+        "categories": "body",
+        "expires_in": "body",
+        "label": "body",
+        "metadata": "body",
+        "multiple": "body",
+        "origin_owner_id": "body",
+        "origin_owner_name": "body",
+        "origin_username": "body",
+        "provider": "body"
+      },
+      "url": "https://api.stackone.com/connect_sessions"
+    },
+    "parameters": {
+      "properties": {
+        "account_id": {
+          "description": "The unique identifier for the account associated with this connect session. When this field is present, the hub will launch in edit mode using the retrieved token.",
+          "nullable": true,
+          "type": "string"
+        },
+        "categories": {
+          "description": "The categories of the provider to connect to",
+          "example": [
+            "ats",
+            "hris",
+            "hrisLegacy",
+            "crm",
+            "iam",
+            "marketing",
+            "lms",
+            "stackOne",
+            "documents"
+          ],
+          "items": {
+            "enum": [
+              "ats",
+              "hris",
+              "hris-legacy",
+              "crm",
+              "iam",
+              "marketing",
+              "lms",
+              "stackone",
+              "documents",
+              null
+            ],
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array",
+          "x-speakeasy-unknown-values": "allow"
+        },
+        "expires_in": {
+          "default": 1800,
+          "description": "How long the session should be valid for in seconds",
+          "nullable": true,
+          "type": "number"
+        },
+        "label": {
+          "description": "The label to be applied to the account associated with this connect session.",
+          "nullable": true,
+          "type": "string"
+        },
+        "metadata": {
+          "description": "The metadata for the connection",
+          "nullable": true,
+          "type": "object"
+        },
+        "multiple": {
+          "default": false,
+          "description": "If set, this connect session will allow creation of multiple accounts with the same origin owner id and provider. Has no effect if account_id is set.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "origin_owner_id": {
+          "description": "The origin owner identifier",
+          "type": "string"
+        },
+        "origin_owner_name": {
+          "description": "The origin owner name",
+          "type": "string"
+        },
+        "origin_username": {
+          "description": "The origin username",
+          "nullable": true,
+          "type": "string"
+        },
+        "provider": {
+          "description": "The provider to connect to",
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_delete_account": {
+    "description": "Delete Account",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "DELETE",
+      "name": "stackone_delete_account",
+      "parameter_locations": {
+        "id": "path"
+      },
+      "url": "https://api.stackone.com/accounts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_get_account": {
+    "description": "Get Account",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "stackone_get_account",
+      "parameter_locations": {
+        "id": "path"
+      },
+      "url": "https://api.stackone.com/accounts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_get_account_meta_info": {
+    "description": "Get meta information of the account",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "stackone_get_account_meta_info",
+      "parameter_locations": {
+        "id": "path"
+      },
+      "url": "https://api.stackone.com/accounts/{id}/meta"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_get_connector_meta": {
+    "description": "Get Connector Meta information for the given provider key",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "stackone_get_connector_meta",
+      "parameter_locations": {
+        "include": "query",
+        "provider": "path"
+      },
+      "url": "https://api.stackone.com/connectors/meta/{provider}"
+    },
+    "parameters": {
+      "properties": {
+        "include": {
+          "description": "The comma separated list of data that will be included in the response",
+          "example": "field_path,unmapped_fields,resources,inactive,webhooks,static_fields",
+          "nullable": true,
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_list_connectors_meta": {
+    "description": "List Connectors Meta Information for all providers",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "stackone_list_connectors_meta",
+      "parameter_locations": {
+        "include": "query"
+      },
+      "url": "https://api.stackone.com/connectors/meta"
+    },
+    "parameters": {
+      "properties": {
+        "include": {
+          "description": "The comma separated list of data that will be included in the response",
+          "example": "field_path,unmapped_fields,resources,inactive,webhooks,static_fields",
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_list_linked_accounts": {
+    "description": "List Accounts",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "stackone_list_linked_accounts",
+      "parameter_locations": {
+        "account_ids": "query",
+        "origin_owner_id": "query",
+        "page": "query",
+        "page_size": "query",
+        "provider": "query",
+        "providers": "query",
+        "status": "query"
+      },
+      "url": "https://api.stackone.com/accounts"
+    },
+    "parameters": {
+      "properties": {
+        "account_ids": {
+          "description": "The providers list of the results to fetch",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "origin_owner_id": {
+          "description": "The origin owner identifier of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "number"
+        },
+        "page_size": {
+          "default": 25,
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "number"
+        },
+        "provider": {
+          "description": "The provider of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "providers": {
+          "description": "The providers list of the results to fetch",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "The status of the results to fetch",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_proxy_request": {
+    "description": "Proxy Request",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "stackone_proxy_request",
+      "parameter_locations": {
+        "body": "body",
+        "headers": "body",
+        "method": "body",
+        "path": "body",
+        "url": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/proxy"
+    },
+    "parameters": {
+      "properties": {
+        "body": {
+          "additionalProperties": true,
+          "description": "The body of the request",
+          "nullable": true,
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": true,
+          "description": "The headers to send in the request",
+          "example": {
+            "Content-Type": "application/json"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "method": {
+          "default": "get",
+          "description": "The method of the request",
+          "enum": [
+            "get",
+            "post",
+            "put",
+            "delete",
+            "patch",
+            null
+          ],
+          "nullable": true,
+          "type": "string",
+          "x-speakeasy-unknown-values": "allow"
+        },
+        "path": {
+          "description": "The path of the request including any query paramters",
+          "example": "/employees/directory",
+          "nullable": true,
+          "type": "string"
+        },
+        "url": {
+          "description": "The base url of the request",
+          "example": "https://api.sample-integration.com/v1",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "stackone_update_account": {
+    "description": "Update Account",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "stackone_update_account",
+      "parameter_locations": {
+        "authentication_config_key": "body",
+        "credentials": "body",
+        "environment": "body",
+        "id": "path",
+        "label": "body",
+        "origin_owner_id": "body",
+        "origin_owner_name": "body",
+        "origin_username": "body",
+        "provider": "body",
+        "secrets": "body",
+        "setup_information": "body"
+      },
+      "url": "https://api.stackone.com/accounts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "authentication_config_key": {
+          "nullable": true,
+          "type": "string"
+        },
+        "credentials": {
+          "additionalProperties": false,
+          "nullable": true,
+          "type": "object"
+        },
+        "environment": {
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "nullable": true,
+          "type": "object"
+        },
+        "origin_owner_id": {
+          "nullable": true,
+          "type": "string"
+        },
+        "origin_owner_name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "origin_username": {
+          "nullable": true,
+          "type": "string"
+        },
+        "provider": {
+          "nullable": true,
+          "type": "string"
+        },
+        "secrets": {
+          "additionalProperties": false,
+          "nullable": true,
+          "type": "object"
+        },
+        "setup_information": {
+          "additionalProperties": false,
+          "nullable": true,
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  }
+}
