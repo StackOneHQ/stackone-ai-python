@@ -1,0 +1,899 @@
+{
+  "crm_create_contact": {
+    "description": "Creates a new Contact",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "crm_create_contact",
+      "parameter_locations": {
+        "account_ids": "body",
+        "company_name": "body",
+        "custom_fields": "body",
+        "deal_ids": "body",
+        "emails": "body",
+        "first_name": "body",
+        "last_name": "body",
+        "passthrough": "body",
+        "phone_numbers": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/contacts"
+    },
+    "parameters": {
+      "properties": {
+        "account_ids": {
+          "description": "List of associated account IDs",
+          "example": [
+            "account-123",
+            "account-456"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "company_name": {
+          "description": "The contact company name",
+          "example": "Apple Inc.",
+          "nullable": true,
+          "type": "string"
+        },
+        "custom_fields": {
+          "description": "Contact custom fields",
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name of the custom field.",
+                "example": "Training Completion Status",
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_value_id": {
+                "description": "Provider's unique identifier for the value of the custom field.",
+                "example": "e3cb75bf-aa84-466e-a6c1-b8322b257a48",
+                "nullable": true,
+                "type": "string"
+              },
+              "value": {
+                "description": "The value associated with the custom field.",
+                "example": "Completed",
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "items": {},
+                    "type": "array"
+                  }
+                ]
+              },
+              "value_id": {
+                "description": "The unique identifier for the value of the custom field.",
+                "example": "value_456",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "deal_ids": {
+          "description": "List of associated deal IDs",
+          "example": [
+            "deal-001",
+            "deal-002"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "emails": {
+          "description": "List of contact email addresses",
+          "example": [
+            "steve@apple.com"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "first_name": {
+          "description": "The contact first name",
+          "example": "Steve",
+          "nullable": true,
+          "type": "string"
+        },
+        "last_name": {
+          "description": "The contact last name",
+          "example": "Wozniak",
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "phone_numbers": {
+          "description": "List of contact phone numbers",
+          "example": [
+            "123-456-7890"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_get_account": {
+    "description": "Get Account",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_get_account",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/accounts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_get_contact": {
+    "description": "Get Contact",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_get_contact",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "include": "query",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/contacts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "include": {
+          "description": "The comma separated list of fields that will be included in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_get_contact_custom_field_definition": {
+    "description": "Get Contact Custom Field Definition",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_get_contact_custom_field_definition",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "id": "path",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/custom_field_definitions/contacts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_get_list": {
+    "description": "Get List",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_get_list",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/lists/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_list_accounts": {
+    "description": "List Accounts",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_list_accounts",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/accounts"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_list_contact_custom_field_definitions": {
+    "description": "List Contact Custom Field Definitions",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_list_contact_custom_field_definitions",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/custom_field_definitions/contacts"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_list_contacts": {
+    "description": "List Contacts",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_list_contacts",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "include": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/contacts"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "include": {
+          "description": "The comma separated list of fields that will be included in the response",
+          "nullable": true,
+          "type": "string"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_list_lists": {
+    "description": "Get all Lists",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "crm_list_lists",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/lists"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "crm_update_contact": {
+    "description": "Update Contact (early access)",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "crm_update_contact",
+      "parameter_locations": {
+        "account_ids": "body",
+        "company_name": "body",
+        "custom_fields": "body",
+        "deal_ids": "body",
+        "emails": "body",
+        "first_name": "body",
+        "id": "path",
+        "last_name": "body",
+        "passthrough": "body",
+        "phone_numbers": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/crm/contacts/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "account_ids": {
+          "description": "List of associated account IDs",
+          "example": [
+            "account-123",
+            "account-456"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "company_name": {
+          "description": "The contact company name",
+          "example": "Apple Inc.",
+          "nullable": true,
+          "type": "string"
+        },
+        "custom_fields": {
+          "description": "Contact custom fields",
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name of the custom field.",
+                "example": "Training Completion Status",
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_value_id": {
+                "description": "Provider's unique identifier for the value of the custom field.",
+                "example": "e3cb75bf-aa84-466e-a6c1-b8322b257a48",
+                "nullable": true,
+                "type": "string"
+              },
+              "value": {
+                "description": "The value associated with the custom field.",
+                "example": "Completed",
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "items": {},
+                    "type": "array"
+                  }
+                ]
+              },
+              "value_id": {
+                "description": "The unique identifier for the value of the custom field.",
+                "example": "value_456",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "deal_ids": {
+          "description": "List of associated deal IDs",
+          "example": [
+            "deal-001",
+            "deal-002"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "emails": {
+          "description": "List of contact email addresses",
+          "example": [
+            "steve@apple.com"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "first_name": {
+          "description": "The contact first name",
+          "example": "Steve",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last_name": {
+          "description": "The contact last name",
+          "example": "Wozniak",
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "phone_numbers": {
+          "description": "List of contact phone numbers",
+          "example": [
+            "123-456-7890"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

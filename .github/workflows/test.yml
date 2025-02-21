@@ -8,7 +8,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    env:
+      STACKONE_API_KEY: ${{ secrets.STACKONE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,10 +21,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Run tests
         run: uv run pytest
-
-      - name: Run type checks
-        run: uv run mypy packages/stackone-core/

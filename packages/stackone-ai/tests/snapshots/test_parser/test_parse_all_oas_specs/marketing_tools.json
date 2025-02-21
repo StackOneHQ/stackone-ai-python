@@ -1,0 +1,2571 @@
+{
+  "marketing_create_content_block": {
+    "description": "Create Content Block",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "marketing_create_content_block",
+      "parameter_locations": {
+        "content": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "type": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/content_blocks"
+    },
+    "parameters": {
+      "properties": {
+        "content": {
+          "nullable": true,
+          "type": "string"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "type": {
+          "description": "Stackone enum identifying the type of content block.",
+          "nullable": true,
+          "properties": {
+            "source_value": {
+              "description": "The source value of the type.",
+              "example": "text",
+              "nullable": true,
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object"
+                },
+                {
+                  "items": {},
+                  "type": "array"
+                }
+              ]
+            },
+            "value": {
+              "description": "The type of the content blocks.",
+              "enum": [
+                "text",
+                "html",
+                "image",
+                "code-snippet",
+                null
+              ],
+              "example": "html",
+              "nullable": true,
+              "type": "string",
+              "x-speakeasy-unknown-values": "allow"
+            }
+          },
+          "type": "object"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_create_email_template": {
+    "description": "Create Email Templates",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "marketing_create_email_template",
+      "parameter_locations": {
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/email"
+    },
+    "parameters": {
+      "properties": {
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "from": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "preheader": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "reply-to": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_create_in_app_template": {
+    "description": "Create In-App Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "marketing_create_in_app_template",
+      "parameter_locations": {
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/in_app"
+    },
+    "parameters": {
+      "properties": {
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_create_omni_channel_template": {
+    "description": "Create Omni-Channel Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "marketing_create_omni_channel_template",
+      "parameter_locations": {
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/omni_channel"
+    },
+    "parameters": {
+      "properties": {
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "properties": {
+                      "body": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "from": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "body": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "from": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "preheader": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "reply-to": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "body": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "subtitle": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "title": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "message_type": {
+                "description": "Stackone enum identifying the type of message associated with the content.",
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_create_push_template": {
+    "description": "Create Push Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "marketing_create_push_template",
+      "parameter_locations": {
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/push"
+    },
+    "parameters": {
+      "properties": {
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "subtitle": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "title": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_create_sms_template": {
+    "description": "Create SMS Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "POST",
+      "name": "marketing_create_sms_template",
+      "parameter_locations": {
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/sms"
+    },
+    "parameters": {
+      "properties": {
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "from": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_campaign": {
+    "description": "Get campaign",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_campaign",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/campaigns/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_content_block": {
+    "description": "Get Content Blocks",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_content_block",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/content_blocks/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_email_template": {
+    "description": "Get Email Templates",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_email_template",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/email/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_in_app_template": {
+    "description": "Get In-App Template",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_in_app_template",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/in_app/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_omni_channel_template": {
+    "description": "Get Omni-Channel Template",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_omni_channel_template",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/omni_channel/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_push_template": {
+    "description": "Get Push Template",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_push_template",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/push/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_get_sms_template": {
+    "description": "Get SMS Template",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_get_sms_template",
+      "parameter_locations": {
+        "fields": "query",
+        "id": "path",
+        "proxy": "query",
+        "raw": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/sms/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_campaigns": {
+    "description": "List campaigns",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_campaigns",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/campaigns"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_content_blocks": {
+    "description": "List Content Blocks",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_content_blocks",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/content_blocks"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_email_templates": {
+    "description": "List Email Templates",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_email_templates",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/email"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_in_app_templates": {
+    "description": "List In-App Templates",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_in_app_templates",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/in_app"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_omni_channel_templates": {
+    "description": "List Omni-Channel Templates",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_omni_channel_templates",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/omni_channel"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_push_templates": {
+    "description": "List Push Templates",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_push_templates",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/push"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_list_sms_templates": {
+    "description": "List SMS Templates",
+    "execute": {
+      "body_type": null,
+      "headers": {},
+      "method": "GET",
+      "name": "marketing_list_sms_templates",
+      "parameter_locations": {
+        "fields": "query",
+        "filter": "query",
+        "next": "query",
+        "page": "query",
+        "page_size": "query",
+        "proxy": "query",
+        "raw": "query",
+        "updated_after": "query",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/sms"
+    },
+    "parameters": {
+      "properties": {
+        "fields": {
+          "description": "The comma separated list of fields that will be returned in the response (if empty, all fields are returned)",
+          "nullable": true,
+          "type": "string"
+        },
+        "filter": {
+          "description": "Filter parameters that allow greater customisation of the list response",
+          "nullable": true,
+          "properties": {
+            "updated_after": {
+              "description": "Use a string with a date to only select results updated after that given date",
+              "example": "2020-01-01T00:00:00.000Z",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "next": {
+          "description": "The unified cursor",
+          "nullable": true,
+          "type": "string"
+        },
+        "page": {
+          "description": "The page number of the results to fetch",
+          "nullable": true,
+          "type": "string"
+        },
+        "page_size": {
+          "default": "25",
+          "description": "The number of results per page",
+          "nullable": true,
+          "type": "string"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "Query parameters that can be used to pass through parameters to the underlying provider request by surrounding them with 'proxy' key",
+          "nullable": true,
+          "type": "object"
+        },
+        "raw": {
+          "default": false,
+          "description": "Indicates that the raw request result is returned",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "updated_after": {
+          "description": "Use a string with a date to only select results updated after that given date",
+          "nullable": true,
+          "type": "string"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_update_content_block": {
+    "description": "Update Content Block",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "marketing_update_content_block",
+      "parameter_locations": {
+        "content": "body",
+        "id": "path",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "type": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/content_blocks/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "content": {
+          "nullable": true,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "type": {
+          "description": "Stackone enum identifying the type of content block.",
+          "nullable": true,
+          "properties": {
+            "source_value": {
+              "description": "The source value of the type.",
+              "example": "text",
+              "nullable": true,
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object"
+                },
+                {
+                  "items": {},
+                  "type": "array"
+                }
+              ]
+            },
+            "value": {
+              "description": "The type of the content blocks.",
+              "enum": [
+                "text",
+                "html",
+                "image",
+                "code-snippet",
+                null
+              ],
+              "example": "html",
+              "nullable": true,
+              "type": "string",
+              "x-speakeasy-unknown-values": "allow"
+            }
+          },
+          "type": "object"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_update_email_template": {
+    "description": "Update Email Templates",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "marketing_update_email_template",
+      "parameter_locations": {
+        "id": "path",
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/email/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "from": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "preheader": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "reply-to": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_update_in_app_template": {
+    "description": "Update In-App Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "marketing_update_in_app_template",
+      "parameter_locations": {
+        "id": "path",
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/in_app/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_update_omni_channel_template": {
+    "description": "Update Omni-Channel Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "marketing_update_omni_channel_template",
+      "parameter_locations": {
+        "id": "path",
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/omni_channel/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "properties": {
+                      "body": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "from": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "body": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "from": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "preheader": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "reply-to": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "body": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "subtitle": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "title": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "message_type": {
+                "description": "Stackone enum identifying the type of message associated with the content.",
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_update_push_template": {
+    "description": "Update Push Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "marketing_update_push_template",
+      "parameter_locations": {
+        "id": "path",
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/push/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "subtitle": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "title": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "marketing_update_sms_template": {
+    "description": "Update SMS Template",
+    "execute": {
+      "body_type": "json",
+      "headers": {},
+      "method": "PATCH",
+      "name": "marketing_update_sms_template",
+      "parameter_locations": {
+        "id": "path",
+        "messages": "body",
+        "name": "body",
+        "passthrough": "body",
+        "tags": "body",
+        "x-account-id": "header"
+      },
+      "url": "https://api.stackone.com/unified/marketing/templates/sms/{id}"
+    },
+    "parameters": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "properties": {
+              "id": {
+                "description": "Unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              },
+              "message_content": {
+                "nullable": true,
+                "properties": {
+                  "body": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "from": {
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "message_type": {
+                "nullable": true,
+                "properties": {
+                  "source_value": {
+                    "description": "The original value from the provider used to derive the unified message type.",
+                    "example": "Email",
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "items": {},
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "description": "The unified message type.",
+                    "enum": [
+                      "email",
+                      "sms",
+                      "push",
+                      "web_push",
+                      "ios_push",
+                      "android_push",
+                      "app_push",
+                      "omni_channel",
+                      "content_block",
+                      "in_app",
+                      "unknown",
+                      "unmapped_value",
+                      null
+                    ],
+                    "example": "email",
+                    "nullable": true,
+                    "type": "string",
+                    "x-speakeasy-unknown-values": "allow"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "nullable": true,
+                "type": "string"
+              },
+              "remote_id": {
+                "description": "Provider's unique identifier",
+                "example": "8187e5da-dc77-475e-9949-af0f1fa4e4e3",
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "name": {
+          "nullable": true,
+          "type": "string"
+        },
+        "passthrough": {
+          "additionalProperties": true,
+          "description": "Value to pass through to the provider",
+          "example": {
+            "other_known_names": "John Doe"
+          },
+          "nullable": true,
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "x-account-id": {
+          "description": "The account identifier",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

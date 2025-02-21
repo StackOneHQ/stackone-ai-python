@@ -1,5 +1,5 @@
 """StackOne AI SDK"""
 
-from .tools import StackOneToolSet
+from .toolset import StackOneToolSet
 
 __all__ = ["StackOneToolSet"]
