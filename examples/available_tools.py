@@ -7,6 +7,7 @@ uv run examples/available_tools.py
 """
 
 
+# TODO: Add examples
 def get_available_tools():
     print("Getting available tools")
 

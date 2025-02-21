@@ -62,5 +62,11 @@ if __name__ == "__main__":
 ## Next Steps
 
 Check out some examples:
+- [Error Handling](error-handling.md)
+- [StackOne Account IDs](stackone_account_ids.md)
+- [Available Tools](available_tools.md)
 - [OpenAI Integration](openai-integration.md)
+- [LangChain Integration](langchain-integration.md)
+- [CrewAI Integration](crewai-integration.md)
+- [LangGraph Tool Node](langgraph-tool-node.md)
 """
