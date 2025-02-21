@@ -49,7 +49,7 @@ class BaseTool(BaseModel):
         self._api_key = api_key
         self._account_id = data.get("_account_id")
 
-    def execute(self, arguments: str | dict) -> dict[str, Any]:
+    def execute(self, arguments: str | dict | None = None) -> dict[str, Any]:
         """
         Execute the tool with the given parameters
 
@@ -65,8 +65,9 @@ class BaseTool(BaseModel):
         url = self._execute_config.url
 
         # Replace URL parameters
-        for key, value in kwargs.items():
-            url = url.replace(f"{{{key}}}", str(value))
+        if kwargs:
+            for key, value in kwargs.items():
+                url = url.replace(f"{{{key}}}", str(value))
 
         # Create basic auth header with API key as username
         auth_string = base64.b64encode(f"{self._api_key}:".encode()).decode()
@@ -81,11 +82,11 @@ class BaseTool(BaseModel):
 
         headers.update(self._execute_config.headers)
 
+        # TODO: add body
         response = requests.request(method=self._execute_config.method, url=url, headers=headers)
 
         response.raise_for_status()
 
-        # Explicitly type the return value
         result: dict[str, Any] = response.json()
         return result
 
