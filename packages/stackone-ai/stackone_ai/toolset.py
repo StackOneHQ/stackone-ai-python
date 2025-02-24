@@ -1,4 +1,6 @@
+import fnmatch
 import os
+import warnings
 from typing import Any
 
 from stackone_ai.constants import OAS_DIR
@@ -73,42 +75,82 @@ class StackOneToolSet:
                 }
         return properties
 
-    def get_tools(self, vertical: str, account_id: str | None = None) -> Tools:
-        """Get tools for a specific vertical
+    def _matches_filter(self, tool_name: str, filter_pattern: str | list[str]) -> bool:
+        """Check if a tool name matches the filter pattern
 
         Args:
-            vertical: The vertical to get tools for (e.g. "hris", "crm")
+            tool_name: Name of the tool to check
+            filter_pattern: String or list of glob patterns to match against.
+                          Patterns starting with ! are treated as negative matches.
+
+        Returns:
+            True if the tool name matches any positive pattern and no negative patterns,
+            False otherwise
+        """
+        patterns = [filter_pattern] if isinstance(filter_pattern, str) else filter_pattern
+
+        # Split into positive and negative patterns
+        positive_patterns = [p for p in patterns if not p.startswith("!")]
+        negative_patterns = [p[1:] for p in patterns if p.startswith("!")]
+
+        # If no positive patterns, treat as match all
+        matches_positive = (
+            any(fnmatch.fnmatch(tool_name, p) for p in positive_patterns) if positive_patterns else True
+        )
+
+        # If any negative pattern matches, exclude the tool
+        matches_negative = any(fnmatch.fnmatch(tool_name, p) for p in negative_patterns)
+
+        return matches_positive and not matches_negative
+
+    def get_tools(
+        self, filter_pattern: str | list[str] | None = None, *, account_id: str | None = None
+    ) -> Tools:
+        """Get tools matching the specified filter pattern
+
+        Args:
+            filter_pattern: Optional glob pattern or list of patterns to filter tools
+                (e.g. "hris_*", ["crm_*", "ats_*"])
             account_id: Optional account ID override. If not provided, uses the one from initialization
 
         Returns:
-            Collection of tools for the vertical
+            Collection of tools matching the filter pattern
 
         Raises:
             ToolsetLoadError: If there is an error loading the tools
         """
-        try:
-            spec_path = OAS_DIR / f"{vertical}.json"
-            if not spec_path.exists():
-                raise ToolsetLoadError(f"No spec file found for vertical: {vertical}")
+        if filter_pattern is None:
+            warnings.warn(
+                "No filter pattern provided. Loading all tools may exceed context windows in "
+                "AI applications.",
+                UserWarning,
+                stacklevel=2,
+            )
 
-            parser = OpenAPIParser(spec_path)
-            tool_definitions = parser.parse_tools()
+        try:
+            all_tools: list[StackOneTool] = []
             effective_account_id = account_id or self.account_id
 
-            tools: list[StackOneTool] = []
-            for _, tool_def in tool_definitions.items():
-                tool = StackOneTool(
-                    description=tool_def.description,
-                    parameters=tool_def.parameters,
-                    _execute_config=tool_def.execute,
-                    _api_key=self.api_key,
-                    _account_id=effective_account_id,
-                )
-                tools.append(tool)
+            # Load all available specs
+            for spec_file in OAS_DIR.glob("*.json"):
+                parser = OpenAPIParser(spec_file)
+                tool_definitions = parser.parse_tools()
 
-            return Tools(tools)
+                # Create tools and filter if pattern is provided
+                for _, tool_def in tool_definitions.items():
+                    if filter_pattern is None or self._matches_filter(tool_def.execute.name, filter_pattern):
+                        tool = StackOneTool(
+                            description=tool_def.description,
+                            parameters=tool_def.parameters,
+                            _execute_config=tool_def.execute,
+                            _api_key=self.api_key,
+                            _account_id=effective_account_id,
+                        )
+                        all_tools.append(tool)
+
+            return Tools(all_tools)
 
         except Exception as e:
             if isinstance(e, ToolsetError):
                 raise
-            raise ToolsetLoadError(f"Error loading tools for vertical {vertical}: {e}") from e
+            raise ToolsetLoadError(f"Error loading tools: {e}") from e

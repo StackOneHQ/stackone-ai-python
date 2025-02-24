@@ -17,13 +17,16 @@ employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 def crewai_integration():
     toolset = StackOneToolSet()
-    tools = toolset.get_tools(
-        vertical="hris",
-        account_id=account_id,
-    )
+    tools = toolset.get_tools("hris_*", account_id=account_id)
 
     # CrewAI uses LangChain tools natively
     langchain_tools = tools.to_langchain()
+    assert len(langchain_tools) > 0, "Expected at least one LangChain tool"
+
+    for tool in langchain_tools:
+        assert hasattr(tool, "name"), "Expected tool to have name"
+        assert hasattr(tool, "description"), "Expected tool to have description"
+        assert hasattr(tool, "_run"), "Expected tool to have _run method"
 
     agent = Agent(
         role="HR Manager",
@@ -42,7 +45,9 @@ def crewai_integration():
     )
 
     crew = Crew(agents=[agent], tasks=[task])
-    print(crew.kickoff())
+
+    result = crew.kickoff()
+    assert result is not None, "Expected result to be returned"
 
 
 if __name__ == "__main__":

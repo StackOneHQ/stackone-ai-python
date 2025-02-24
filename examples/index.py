@@ -51,8 +51,8 @@ employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 def quickstart():
     toolset = StackOneToolSet()
 
-    # Supply a StackOne Account ID
-    tools = toolset.get_tools(account_id=account_id)
+    # Get all HRIS-related tools
+    tools = toolset.get_tools("hris_*", account_id=account_id)
 
     # Use a specific tool
     employee_tool = tools.get_tool("hris_get_employee")
