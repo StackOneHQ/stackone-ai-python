@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from stackone_ai.specs.parser import OpenAPIParser
 
 
@@ -361,7 +362,7 @@ def test_circular_reference_detection(nested_parser: OpenAPIParser) -> None:
 @pytest.fixture
 def oas_specs() -> list[tuple[str, dict[str, Any]]]:
     """Load all OpenAPI specs from the oas directory"""
-    oas_dir = Path("packages/stackone-ai/stackone_ai/oas")
+    oas_dir = Path("stackone_ai/oas")
     specs = []
 
     for spec_file in oas_dir.glob("*.json"):

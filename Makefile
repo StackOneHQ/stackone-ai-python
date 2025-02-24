@@ -9,10 +9,10 @@ test:
 	uv run pytest
 
 test-tools:
-	uv run pytest packages/stackone-ai
+	uv run pytest stackone_ai
 
 test-examples:
 	uv run pytest examples
 
 mypy:
-	uv run mypy packages/stackone-ai/stackone_ai
+	uv run mypy stackone_ai

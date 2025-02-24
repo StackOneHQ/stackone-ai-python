@@ -11,3 +11,7 @@ __pycache__
 # Documentation build
 .docs/
 site/
+
+*.egg-info
+dist/
+build/

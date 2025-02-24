@@ -14,7 +14,7 @@ filters:
   - type: path
     pattern: "^scripts/.*"
   - type: exclude_path
-    pattern: "^(packages|examples)/.*"  # Exclude packages and examples
+    pattern: "^(stackone_ai|examples)/.*"  # Exclude package and examples
 
 actions:
   - type: suggest

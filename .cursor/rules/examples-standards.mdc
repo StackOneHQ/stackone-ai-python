@@ -1,3 +1,7 @@
+---
+description: Standards for creating and maintaining examples for all functionality
+globs: examples/*
+---
 # Examples Standards
 
 Standards for creating and maintaining examples in the StackOne repository.
@@ -9,8 +13,6 @@ description: Standards for creating and maintaining examples for all functionali
 filters:
   - type: path
     pattern: "^examples/.*"
-  - type: path
-    pattern: "^packages/.*/.*"
 
 actions:
   - type: suggest
@@ -36,8 +38,6 @@ actions:
          - Load credentials from .env
          - Include type hints
          - Follow the same code style as the main codebase
-         - Always use "gpt-4o-mini" as the model name in LLM examples
-         - Keep examples minimal and focused on demonstrating specific functionality
 
       3. Documentation:
          - Each example file should start with a docstring explaining its purpose
@@ -55,21 +55,14 @@ examples:
       import os
       from dotenv import load_dotenv
       from stackone_ai import StackOneToolSet
-      from openai import OpenAI
 
       def main():
-          """Example showing basic usage of StackOneToolSet with OpenAI."""
+          """Example showing basic usage of StackOneToolSet."""
           load_dotenv()
           
           api_key = os.getenv("STACKONE_API_KEY")
           if not api_key:
               raise ValueError("STACKONE_API_KEY not found")
-          
-          client = OpenAI()
-          response = client.chat.completions.create(
-              model="gpt-4o-mini",  # Always use gpt-4o-mini in examples
-              messages=[{"role": "user", "content": "Hello"}]
-          )
               
           # Example code...
 
@@ -78,16 +71,12 @@ examples:
     output: "Correctly structured example"
 
   - input: |
-      # Bad example - missing error handling, docs, types, wrong model name
+      # Bad example - missing error handling, docs, types
       from stackone_ai import StackOneToolSet
-      from openai import OpenAI
 
       toolset = StackOneToolSet("hardcoded_key")
-      client = OpenAI()
-      response = client.chat.completions.create(
-          model="gpt-4",  # Wrong - should use gpt-4o-mini
-          messages=[{"role": "user", "content": "Hello"}]
-      )
+      tools = toolset.get_tools("crm")
+      result = tools["some_tool"].execute()
     output: "Incorrectly structured example"
 
 metadata:

@@ -29,9 +29,6 @@ actions:
 
       2. Package Level Dependencies:
          ```bash
-         # Navigate to package directory
-         cd packages/stackone-core
-
          # Install package dependencies
          uv add pydantic
          uv add requests
@@ -52,7 +49,10 @@ actions:
          uv run pytest
 
          # Run specific package tests
-         uv run pytest packages/stackone-core/tests/
+         uv run pytest stackone_ai
+
+         #Run tests on examples 
+         uv run pytest examples
          ```
 
       5. Package Dependencies:
@@ -72,7 +72,6 @@ examples:
       uv add --dev black
 
       # Good: Installing package dependencies
-      cd packages/stackone-core
       uv add pydantic
 
       # Bad: Using pip install

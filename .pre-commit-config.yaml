@@ -10,7 +10,7 @@ repos:
     rev: v1.8.0
     hooks:
       - id: mypy
-        files: ^packages/stackone-ai/stackone_ai/
+        files: ^stackone_ai/
         additional_dependencies:
           - types-requests
           - types-PyYAML
