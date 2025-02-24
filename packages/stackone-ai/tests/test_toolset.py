@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 
-from stackone_ai.toolset import StackOneToolSet
+import pytest
+from stackone_ai.models import ExecuteConfig, ToolDefinition, ToolParameters
+from stackone_ai.toolset import StackOneToolSet, ToolsetLoadError
 
 
 def test_toolset_initialization():
@@ -9,8 +11,8 @@ def test_toolset_initialization():
         "paths": {
             "/employee/{id}": {
                 "get": {
-                    "x-speakeasy-name-override": "get_employee",
-                    "description": "Get employee details",
+                    "operationId": "get_employee",
+                    "summary": "Get employee details",
                     "parameters": [
                         {
                             "in": "path",
@@ -24,16 +26,42 @@ def test_toolset_initialization():
         }
     }
 
-    # Mock the file operations instead of load_specs
+    # Create mock tool definition
+    mock_tool_def = ToolDefinition(
+        description="Get employee details",
+        parameters=ToolParameters(
+            type="object",
+            properties={
+                "id": {
+                    "type": "string",
+                    "description": "Employee ID",
+                }
+            },
+        ),
+        execute=ExecuteConfig(
+            method="GET",
+            url="https://api.stackone.com/employee/{id}",
+            name="get_employee",
+            headers={},
+            parameter_locations={"id": "path"},
+        ),
+    )
+
+    # Mock the OpenAPIParser and file operations
     with (
         patch("stackone_ai.toolset.OAS_DIR") as mock_dir,
-        patch("json.load") as mock_json,
+        patch("stackone_ai.toolset.OpenAPIParser") as mock_parser_class,
     ):
         # Setup mocks
         mock_path = MagicMock()
         mock_path.exists.return_value = True
         mock_dir.__truediv__.return_value = mock_path
-        mock_json.return_value = mock_spec_content
+
+        # Setup parser mock
+        mock_parser = MagicMock()
+        mock_parser.spec = mock_spec_content
+        mock_parser.parse_tools.return_value = {"get_employee": mock_tool_def}
+        mock_parser_class.return_value = mock_parser
 
         # Create and test toolset
         toolset = StackOneToolSet(api_key="test_key")
@@ -55,5 +83,5 @@ def test_toolset_initialization():
 def test_unknown_vertical():
     """Test getting tools for unknown vertical"""
     toolset = StackOneToolSet(api_key="test_key")
-    tools = toolset.get_tools(vertical="unknown")
-    assert len(tools) == 0
+    with pytest.raises(ToolsetLoadError, match="No spec file found for vertical: unknown"):
+        toolset.get_tools(vertical="unknown")

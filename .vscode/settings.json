@@ -1,3 +1,4 @@
 {
-  "python.analysis.ignore": ["scripts/**"]
+  "python.analysis.ignore": ["scripts/**"],
+  "makefile.configureOnOpen": false
 }

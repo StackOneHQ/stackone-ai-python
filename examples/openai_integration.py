@@ -1,9 +1,12 @@
 """
 This example demonstrates how to use StackOne tools with OpenAI's function calling.
 
+This example is runnable with the following command:
 ```bash
 uv run examples/openai_integration.py
 ```
+
+You can find out more about the OpenAI Function Calling API format [here](https://platform.openai.com/docs/guides/function-calling).
 """
 
 from dotenv import load_dotenv
@@ -28,7 +31,20 @@ def handle_tool_calls(tools, tool_calls) -> list[dict]:
 def openai_integration() -> None:
     client = OpenAI()
     toolset = StackOneToolSet()
-    tools = toolset.get_tools(vertical="hris", account_id=account_id)
+
+    # Get all tools but only convert the ones we need for this example
+    all_tools = toolset.get_tools(vertical="hris", account_id=account_id)
+
+    # Only use the employee-related tools we need
+    needed_tool_names = [
+        "hris_get_employee",
+        "hris_list_employee_employments",
+        "hris_get_employee_employment",
+    ]
+
+    # Filter tools to only the ones we need
+    filtered_tools = [tool for tool in all_tools.tools if tool.name in needed_tool_names]
+    tools = type(all_tools)(filtered_tools)  # Create new Tools instance with filtered list
     openai_tools = tools.to_openai()
 
     messages = [
