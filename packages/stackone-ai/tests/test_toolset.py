@@ -1,8 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
 from stackone_ai.models import ExecuteConfig, ToolDefinition, ToolParameters
-from stackone_ai.toolset import StackOneToolSet, ToolsetLoadError
+from stackone_ai.toolset import StackOneToolSet
 
 
 def test_toolset_initialization():
@@ -11,7 +10,7 @@ def test_toolset_initialization():
         "paths": {
             "/employee/{id}": {
                 "get": {
-                    "operationId": "get_employee",
+                    "operationId": "hris_get_employee",
                     "summary": "Get employee details",
                     "parameters": [
                         {
@@ -41,7 +40,7 @@ def test_toolset_initialization():
         execute=ExecuteConfig(
             method="GET",
             url="https://api.stackone.com/employee/{id}",
-            name="get_employee",
+            name="hris_get_employee",
             headers={},
             parameter_locations={"id": "path"},
         ),
@@ -56,20 +55,21 @@ def test_toolset_initialization():
         mock_path = MagicMock()
         mock_path.exists.return_value = True
         mock_dir.__truediv__.return_value = mock_path
+        mock_dir.glob.return_value = [mock_path]
 
         # Setup parser mock
         mock_parser = MagicMock()
         mock_parser.spec = mock_spec_content
-        mock_parser.parse_tools.return_value = {"get_employee": mock_tool_def}
+        mock_parser.parse_tools.return_value = {"hris_get_employee": mock_tool_def}
         mock_parser_class.return_value = mock_parser
 
         # Create and test toolset
         toolset = StackOneToolSet(api_key="test_key")
-        tools = toolset.get_tools(vertical="hris", account_id="test_account")
+        tools = toolset.get_tools(filter_pattern="hris_*", account_id="test_account")
 
         # Verify results
         assert len(tools) == 1
-        tool = tools.get_tool("get_employee")
+        tool = tools.get_tool("hris_get_employee")
         assert tool is not None
         assert tool.description == "Get employee details"
         assert tool._api_key == "test_key"
@@ -80,8 +80,8 @@ def test_toolset_initialization():
         assert tool.parameters.properties["id"]["description"] == "Employee ID"
 
 
-def test_unknown_vertical():
-    """Test getting tools for unknown vertical"""
+def test_empty_filter_result():
+    """Test getting tools with a filter pattern that matches nothing"""
     toolset = StackOneToolSet(api_key="test_key")
-    with pytest.raises(ToolsetLoadError, match="No spec file found for vertical: unknown"):
-        toolset.get_tools(vertical="unknown")
+    tools = toolset.get_tools(filter_pattern="unknown_*")
+    assert len(tools) == 0
