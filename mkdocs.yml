@@ -48,5 +48,6 @@ nav:
       - OpenAI Integration: openai-integration.md
       - CrewAI Integration: crewai-integration.md
       - LangChain Integration: langchain-integration.md
-      - StackOne Account IDs: stackone_account_ids.md
-      - Error Handling: error-handling.md
+      - StackOne Account IDs: stackone-account-ids.md
+  - Error Handling: error-handling.md
+  - File Uploads: file-uploads.md

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from stackone_ai.specs.parser import OpenAPIParser
 
 
@@ -361,7 +362,7 @@ def test_circular_reference_detection(nested_parser: OpenAPIParser) -> None:
 @pytest.fixture
 def oas_specs() -> list[tuple[str, dict[str, Any]]]:
     """Load all OpenAPI specs from the oas directory"""
-    oas_dir = Path("packages/stackone-ai/stackone_ai/oas")
+    oas_dir = Path("stackone_ai/oas")
     specs = []
 
     for spec_file in oas_dir.glob("*.json"):
@@ -487,3 +488,214 @@ def test_resolve_schema_with_allof(tmp_path: Path) -> None:
     assert "phone" in candidate_schema["properties"]  # From CreateCandidate extension
     assert candidate_schema["description"] == "Candidate Properties"
     assert candidate_schema["nullable"] is True
+
+
+@pytest.fixture
+def temp_spec_file(tmp_path: Path) -> Path:
+    """Create a temporary OpenAPI spec file for testing."""
+
+    def write_spec(spec: dict[str, Any]) -> Path:
+        spec_file = tmp_path / "test_spec.json"
+        with open(spec_file, "w") as f:
+            json.dump(spec, f)
+        return spec_file
+
+    return write_spec
+
+
+def test_parse_file_upload(temp_spec_file: Path) -> None:
+    """Test parsing an OpenAPI spec with file upload endpoints."""
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            "/upload": {
+                "post": {
+                    "operationId": "uploadFile",
+                    "summary": "Upload a file",
+                    "requestBody": {
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "file": {
+                                            "type": "string",
+                                            "format": "binary",
+                                            "description": "The file to upload",
+                                        },
+                                        "description": {"type": "string", "description": "File description"},
+                                    },
+                                    "required": ["file"],
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    parser = OpenAPIParser(temp_spec_file(spec))
+    tools = parser.parse_tools()
+
+    assert "uploadFile" in tools
+    tool = tools["uploadFile"]
+
+    # Check file parameter is correctly marked
+    assert "file" in tool.parameters.properties
+    assert tool.parameters.properties["file"]["type"] == "file"
+    assert tool.execute.parameter_locations["file"] == "file"
+
+    # Check non-file parameter
+    assert "description" in tool.parameters.properties
+    assert tool.parameters.properties["description"]["type"] == "string"
+    assert tool.execute.parameter_locations["description"] == "body"
+
+    # Check body type
+    assert tool.execute.body_type == "multipart"
+
+
+def test_parse_multiple_files(temp_spec_file: Path) -> None:
+    """Test parsing an endpoint that accepts multiple files."""
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            "/upload-multiple": {
+                "post": {
+                    "operationId": "uploadMultipleFiles",
+                    "summary": "Upload multiple files",
+                    "requestBody": {
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "files": {
+                                            "type": "array",
+                                            "items": {"type": "string", "format": "binary"},
+                                            "description": "Multiple files to upload",
+                                        },
+                                        "metadata": {
+                                            "type": "object",
+                                            "properties": {"category": {"type": "string"}},
+                                        },
+                                    },
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    parser = OpenAPIParser(temp_spec_file(spec))
+    tools = parser.parse_tools()
+
+    assert "uploadMultipleFiles" in tools
+    tool = tools["uploadMultipleFiles"]
+
+    # Check array of files
+    assert "files" in tool.parameters.properties
+    assert tool.parameters.properties["files"]["type"] == "array"
+    assert tool.parameters.properties["files"]["items"]["type"] == "file"
+    assert tool.execute.parameter_locations["files"] == "file"
+
+    # Check nested object parameter
+    assert "metadata" in tool.parameters.properties
+    assert tool.parameters.properties["metadata"]["type"] == "object"
+    assert tool.execute.parameter_locations["metadata"] == "body"
+
+
+def test_mixed_parameter_types(temp_spec_file: Path) -> None:
+    """Test parsing an endpoint with mixed parameter types (path, query, file)."""
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            "/users/{userId}/files": {
+                "post": {
+                    "operationId": "uploadUserFile",
+                    "summary": "Upload a user file",
+                    "parameters": [
+                        {"name": "userId", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "overwrite", "in": "query", "schema": {"type": "boolean"}},
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"file": {"type": "string", "format": "binary"}},
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    parser = OpenAPIParser(temp_spec_file(spec))
+    tools = parser.parse_tools()
+
+    assert "uploadUserFile" in tools
+    tool = tools["uploadUserFile"]
+
+    # Check path parameter
+    assert tool.execute.parameter_locations["userId"] == "path"
+    assert tool.parameters.properties["userId"]["type"] == "string"
+
+    # Check query parameter
+    assert tool.execute.parameter_locations["overwrite"] == "query"
+    assert tool.parameters.properties["overwrite"]["type"] == "boolean"
+
+    # Check file parameter
+    assert tool.execute.parameter_locations["file"] == "file"
+    assert tool.parameters.properties["file"]["type"] == "file"
+
+    # Check body type
+    assert tool.execute.body_type == "multipart"
+
+
+def test_form_data_without_files(temp_spec_file: Path) -> None:
+    """Test parsing form data without file uploads."""
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            "/submit-form": {
+                "post": {
+                    "operationId": "submitForm",
+                    "summary": "Submit a form",
+                    "requestBody": {
+                        "content": {
+                            "application/x-www-form-urlencoded": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    parser = OpenAPIParser(temp_spec_file(spec))
+    tools = parser.parse_tools()
+
+    assert "submitForm" in tools
+    tool = tools["submitForm"]
+
+    # Check form parameters
+    assert tool.execute.parameter_locations["name"] == "body"
+    assert tool.execute.parameter_locations["age"] == "body"
+    assert tool.parameters.properties["name"]["type"] == "string"
+    assert tool.parameters.properties["age"]["type"] == "integer"
+
+    # Check body type
+    assert tool.execute.body_type == "form"

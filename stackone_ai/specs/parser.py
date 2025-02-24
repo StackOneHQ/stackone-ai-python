@@ -14,6 +14,28 @@ class OpenAPIParser:
         servers = self.spec.get("servers", [{"url": "https://api.stackone.com"}])
         self.base_url = servers[0]["url"] if isinstance(servers, list) else "https://api.stackone.com"
 
+    def _is_file_type(self, schema: dict[str, Any]) -> bool:
+        """Check if a schema represents a file upload."""
+        return schema.get("type") == "string" and schema.get("format") == "binary"
+
+    def _convert_to_file_type(self, schema: dict[str, Any]) -> None:
+        """Convert a binary string schema to a file type."""
+        if self._is_file_type(schema):
+            schema["type"] = "file"
+
+    def _handle_file_properties(self, schema: dict[str, Any]) -> None:
+        """Process schema properties to handle file uploads."""
+        if "properties" not in schema:
+            return
+
+        for prop_schema in schema["properties"].values():
+            # Handle direct file uploads
+            self._convert_to_file_type(prop_schema)
+
+            # Handle array of files
+            if prop_schema.get("type") == "array" and "items" in prop_schema:
+                self._convert_to_file_type(prop_schema["items"])
+
     def _resolve_schema_ref(
         self, ref: str, visited: set[str] | None = None
     ) -> dict[str, Any] | list[Any] | str:
@@ -99,6 +121,25 @@ class OpenAPIParser:
 
         return resolved
 
+    def _parse_content_schema(
+        self, content_type: str, content: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Parse schema from content object for a specific content type."""
+        if content_type not in content:
+            return None, None
+
+        type_content = content[content_type]
+        if not isinstance(type_content, dict):
+            return None, None
+
+        schema = type_content.get("schema", {})
+        resolved = self._resolve_schema(schema)
+
+        if not isinstance(resolved, dict):
+            return None, None
+
+        return resolved, content_type.split("/")[-1]
+
     def _parse_request_body(self, operation: dict) -> tuple[dict[str, Any] | None, str | None]:
         """Parse request body schema and content type from operation"""
         request_body = operation.get("requestBody", {})
@@ -107,29 +148,31 @@ class OpenAPIParser:
 
         content = request_body.get("content", {})
 
-        # Handle application/json
-        if "application/json" in content:
-            json_content = content["application/json"]
-            if isinstance(json_content, dict):
-                schema = json_content.get("schema", {})
-                resolved = self._resolve_schema(schema)
-                # Ensure we only return dict for request body
-                if isinstance(resolved, dict):
-                    return resolved, "json"
-                return None, None
+        # Try JSON first
+        schema, body_type = self._parse_content_schema("application/json", content)
+        if schema:
+            return schema, body_type
 
-        # Handle form data
-        if "application/x-www-form-urlencoded" in content:
-            form_content = content["application/x-www-form-urlencoded"]
-            if isinstance(form_content, dict):
-                schema = form_content.get("schema", {})
-                resolved = self._resolve_schema(schema)
-                # Ensure we only return dict for request body
-                if isinstance(resolved, dict):
-                    return resolved, "form"
-                return None, None
+        # Try multipart form-data (file uploads)
+        schema, _ = self._parse_content_schema("multipart/form-data", content)
+        if schema:
+            self._handle_file_properties(schema)
+            return schema, "multipart"
+
+        # Try form-urlencoded
+        schema, body_type = self._parse_content_schema("application/x-www-form-urlencoded", content)
+        if schema:
+            return schema, "form"
 
         return None, None
+
+    def _get_parameter_location(self, prop_schema: dict[str, Any]) -> str:
+        """Determine the parameter location based on schema type."""
+        if prop_schema.get("type") == "file":
+            return "file"
+        if prop_schema.get("type") == "array" and prop_schema.get("items", {}).get("type") == "file":
+            return "file"
+        return "body"
 
     def parse_tools(self) -> dict[str, ToolDefinition]:
         """Parse OpenAPI spec into tool definitions"""
@@ -138,7 +181,6 @@ class OpenAPIParser:
         for path, path_item in self.spec.get("paths", {}).items():
             for method, operation in path_item.items():
                 name = operation.get("operationId")
-
                 if not name:
                     raise ValueError(f"Operation ID is required for tool parsing: {operation}")
 
@@ -164,10 +206,9 @@ class OpenAPIParser:
                 # Add request body properties if present
                 if request_body_schema and isinstance(request_body_schema, dict):
                     body_props = request_body_schema.get("properties", {})
-                    properties.update(body_props)
-                    # Mark all body parameters
-                    for prop_name in body_props:
-                        parameter_locations[prop_name] = "body"
+                    for prop_name, prop_schema in body_props.items():
+                        properties[prop_name] = prop_schema
+                        parameter_locations[prop_name] = self._get_parameter_location(prop_schema)
 
                 # Create tool definition
                 tools[name] = ToolDefinition(

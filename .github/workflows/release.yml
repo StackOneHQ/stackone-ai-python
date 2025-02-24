@@ -35,6 +35,5 @@ jobs:
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          cd packages/stackone-ai
           uv build --no-sources
           uv publish

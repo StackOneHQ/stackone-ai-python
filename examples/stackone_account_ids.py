@@ -7,6 +7,7 @@ uv run examples/stackone_account_ids.py
 """
 
 from dotenv import load_dotenv
+
 from stackone_ai import StackOneToolSet
 
 load_dotenv()
@@ -15,18 +16,18 @@ load_dotenv()
 def stackone_account_ids():
     toolset = StackOneToolSet()
 
-    # Filter by vertical and set the account ID
-    tools = toolset.get_tools(vertical="hris", account_id="test_id")
+    # Filter by pattern and set the account ID
+    tools = toolset.get_tools("hris_*", account_id="test_id")
 
     # You can over write the account ID here..
     tools.set_account_id("a_different_id")
 
-    employee_tool = tools.get_tool("get_employee")
-    if employee_tool:
-        # You can even set the account ID on a per-tool basis
-        employee_tool.set_account_id("again_another_id")
+    employee_tool = tools.get_tool("hris_get_employee")
+    assert employee_tool is not None
 
-        print(employee_tool.get_account_id())
+    # You can even set the account ID on a per-tool basis
+    employee_tool.set_account_id("again_another_id")
+    assert employee_tool.get_account_id() == "again_another_id"
 
 
 if __name__ == "__main__":

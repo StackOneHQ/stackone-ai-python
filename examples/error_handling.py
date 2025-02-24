@@ -1,38 +1,65 @@
+"""
+This example demonstrates error handling when using the StackOne SDK.
+
+Run the following command to see the output:
+
+```bash
+uv run examples/error_handling.py
+```
+"""
+
+import os
+
 from dotenv import load_dotenv
+
 from stackone_ai import StackOneToolSet
+from stackone_ai.models import StackOneAPIError
+from stackone_ai.toolset import ToolsetConfigError, ToolsetLoadError
 
 load_dotenv()
 
 
 def error_handling() -> None:
+    # Example 1: Configuration error - missing API key
+    original_api_key = os.environ.pop("STACKONE_API_KEY", None)
+    try:
+        try:
+            StackOneToolSet(api_key=None)
+            raise AssertionError("Expected ToolsetConfigError")
+        except ToolsetConfigError as e:
+            assert (
+                str(e)
+                == "API key must be provided either through api_key parameter or STACKONE_API_KEY environment variable"
+            )
+    finally:
+        if original_api_key:
+            os.environ["STACKONE_API_KEY"] = original_api_key
+
+    # Example 2: Invalid vertical error
     toolset = StackOneToolSet()
-
-    # Example 1: Handle unknown vertical
-    tools = toolset.get_tools(vertical="unknown_vertical")
-    print("Tools for unknown vertical:", tools._tool_map)
-    # {}
-
-    # Example 2: Handle API errors with account_id
-    tools = toolset.get_tools(vertical="crm", account_id="test_id")
     try:
-        # Try with invalid ID
-        contacts_tool = tools.get_tool("get_contact")
-        if contacts_tool:
-            result = contacts_tool.execute({"id": "invalid_id"})
-    except Exception as e:
-        print(f"API Error: {e}")
-        # 400 Client Error: Bad Request for url: https://api.stackone.com/unified/crm/contacts/invalid_id
+        # Use a non-existent vertical to trigger error
+        tools = toolset.get_tools("nonexistent_vertical_*")
+        # If we get here, no tools were found but no error was raised
+        assert len(tools) == 0, "Expected no tools for nonexistent vertical"
+    except ToolsetLoadError as e:
+        assert "Error loading tools" in str(e)
 
-    # Example 3: Handle missing account ID
-    tools_no_account = toolset.get_tools(vertical="crm", account_id=None)
+    # Example 3: API error - invalid request
+    toolset = StackOneToolSet()
+    tools = toolset.get_tools("crm_*")
+
+    # Try to make an API call without required parameters
+    list_contacts = tools.get_tool("crm_list_contacts")
+    assert list_contacts is not None, "Expected crm_list_contacts tool to exist"
+
     try:
-        list_contacts_tool = tools_no_account.get_tool("list_contacts")
-        if list_contacts_tool:
-            result = list_contacts_tool.execute()
-            print("Result without account ID:", result)
-    except Exception as e:
-        print(f"Error when account ID is missing: {e}")
-        # 501 Server Error: Not Implemented for url: https://api.stackone.com/unified/crm/contacts
+        # Execute without required parameters should raise error
+        list_contacts.execute({})
+        raise AssertionError("Expected StackOneAPIError")
+    except StackOneAPIError as e:
+        assert e.status_code >= 400, "Expected error status code"
+        assert e.response_body is not None, "Expected error response body"
 
 
 if __name__ == "__main__":

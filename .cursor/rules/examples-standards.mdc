@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: Standards for creating and maintaining examples for all functionality
+globs: examples/*
 ---
 # Examples Standards
 
@@ -13,8 +13,6 @@ description: Standards for creating and maintaining examples for all functionali
 filters:
   - type: path
     pattern: "^examples/.*"
-  - type: path
-    pattern: "^packages/.*/.*"
 
 actions:
   - type: suggest

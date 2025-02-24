@@ -1,13 +1,17 @@
 """
 This example demonstrates how to use StackOne tools with OpenAI's function calling.
 
+This example is runnable with the following command:
 ```bash
 uv run examples/openai_integration.py
 ```
+
+You can find out more about the OpenAI Function Calling API format [here](https://platform.openai.com/docs/guides/function-calling).
 """
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
 from stackone_ai import StackOneToolSet
 
 load_dotenv()
@@ -28,7 +32,16 @@ def handle_tool_calls(tools, tool_calls) -> list[dict]:
 def openai_integration() -> None:
     client = OpenAI()
     toolset = StackOneToolSet()
-    tools = toolset.get_tools(vertical="hris", account_id=account_id)
+
+    # Filter tools to only the ones we need to avoid context window limits
+    tools = toolset.get_tools(
+        [
+            "hris_get_employee",
+            "hris_list_employee_employments",
+            "hris_get_employee_employment",
+        ],
+        account_id=account_id,
+    )
     openai_tools = tools.to_openai()
 
     messages = [
@@ -39,33 +52,41 @@ def openai_integration() -> None:
         },
     ]
 
-    while True:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            tools=openai_tools,
-            tool_choice="auto",
-        )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        tools=openai_tools,
+        tool_choice="auto",
+    )
 
-        if not response.choices[0].message.tool_calls:
-            print("Response:", response.choices[0].message.content)
-            break
+    # Verify we got a response with tool calls
+    assert response.choices[0].message.tool_calls is not None, "Expected tool calls in response"
 
-        results = handle_tool_calls(tools, response.choices[0].message.tool_calls)
-        if not results:
-            print("Error: Failed to execute tools")
-            break
+    # Handle the tool calls and verify results
+    results = handle_tool_calls(tools, response.choices[0].message.tool_calls)
+    assert results is not None and len(results) > 0, "Expected tool call results"
+    assert "data" in results[0], "Expected data in tool call result"
 
-        messages.extend(
-            [
-                {"role": "assistant", "content": None, "tool_calls": response.choices[0].message.tool_calls},
-                {
-                    "role": "tool",
-                    "tool_call_id": response.choices[0].message.tool_calls[0].id,
-                    "content": str(results[0]),
-                },
-            ]
-        )
+    # Verify we can continue the conversation with the results
+    messages.extend(
+        [
+            {"role": "assistant", "content": None, "tool_calls": response.choices[0].message.tool_calls},
+            {
+                "role": "tool",
+                "tool_call_id": response.choices[0].message.tool_calls[0].id,
+                "content": str(results[0]),
+            },
+        ]
+    )
+
+    # Verify the final response
+    final_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        tools=openai_tools,
+        tool_choice="auto",
+    )
+    assert final_response.choices[0].message.content is not None, "Expected final response content"
 
 
 if __name__ == "__main__":

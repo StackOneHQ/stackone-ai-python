@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 
 STACKONE_DOCS_BASE = "https://docs.stackone.com"
 STACKONE_DOCS_URL = f"{STACKONE_DOCS_BASE}/openapi"
-OAS_DIR = Path("packages/stackone-core/src/stackone_ai/oas")
+OAS_DIR = Path("stackone_ai/oas")
 
 
 def get_api_specs() -> dict[str, str]:

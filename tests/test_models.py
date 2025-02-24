@@ -3,13 +3,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.tools import BaseTool as LangChainBaseTool
+
 from stackone_ai.models import (
     ExecuteConfig,
+    StackOneTool,
     ToolDefinition,
     ToolParameters,
     Tools,
 )
-from stackone_ai.tools import StackOneTool
 
 
 @pytest.fixture
