@@ -11,6 +11,7 @@ You can find out more about the OpenAI Function Calling API format [here](https:
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
 from stackone_ai import StackOneToolSet
 
 load_dotenv()

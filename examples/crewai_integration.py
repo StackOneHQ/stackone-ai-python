@@ -9,6 +9,7 @@ uv run examples/crewai_integration.py
 """
 
 from crewai import Agent, Crew, Task
+
 from stackone_ai import StackOneToolSet
 
 account_id = "45072196112816593343"

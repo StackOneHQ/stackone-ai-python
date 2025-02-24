@@ -8,6 +8,7 @@ uv run examples/langchain_integration.py
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+
 from stackone_ai import StackOneToolSet
 
 load_dotenv()
