@@ -13,6 +13,12 @@ pip install stackone-ai
 ## Quick Start
 
 Here's a simple example. All examples are complete and runnable.
+
+You can even run the example directly from the command line:
+
+```bash
+uv run examples/index.py
+```
 """
 
 from dotenv import load_dotenv
@@ -45,14 +51,15 @@ employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 def quickstart():
     toolset = StackOneToolSet()
 
-    # Filter by vertical and add the account ID
-    tools = toolset.get_tools(vertical="hris", account_id=account_id)
+    # Supply a StackOne Account ID
+    tools = toolset.get_tools(account_id=account_id)
 
     # Use a specific tool
-    employee_tool = tools.get_tool("get_employee")
-    if employee_tool:
-        employee = employee_tool.execute({"id": employee_id})
-        print(employee)
+    employee_tool = tools.get_tool("hris_get_employee")
+    assert employee_tool is not None
+
+    employee = employee_tool.execute({"id": employee_id})
+    assert employee is not None
 
 
 if __name__ == "__main__":
@@ -61,10 +68,15 @@ if __name__ == "__main__":
 """
 ## Next Steps
 
-Check out some examples:
+Check out some more documentation:
+
 - [Error Handling](error-handling.md)
-- [StackOne Account IDs](stackone_account_ids.md)
-- [Available Tools](available_tools.md)
+- [StackOne Account IDs](stackone-account-ids.md)
+- [Available Tools](available-tools.md)
+- [File Uploads](file-uploads.md)
+
+Or get started with an integration:
+
 - [OpenAI Integration](openai-integration.md)
 - [LangChain Integration](langchain-integration.md)
 - [CrewAI Integration](crewai-integration.md)

@@ -32,10 +32,8 @@ def openai_integration() -> None:
     client = OpenAI()
     toolset = StackOneToolSet()
 
-    # Get all tools but only convert the ones we need for this example
     all_tools = toolset.get_tools(vertical="hris", account_id=account_id)
 
-    # Only use the employee-related tools we need
     needed_tool_names = [
         "hris_get_employee",
         "hris_list_employee_employments",
@@ -43,8 +41,10 @@ def openai_integration() -> None:
     ]
 
     # Filter tools to only the ones we need
+    # We need this because otherwise we can go over a context window limit
+    # TODO: better filtering options.
     filtered_tools = [tool for tool in all_tools.tools if tool.name in needed_tool_names]
-    tools = type(all_tools)(filtered_tools)  # Create new Tools instance with filtered list
+    tools = type(all_tools)(filtered_tools)
     openai_tools = tools.to_openai()
 
     messages = [
@@ -68,9 +68,7 @@ def openai_integration() -> None:
             break
 
         results = handle_tool_calls(tools, response.choices[0].message.tool_calls)
-        if not results:
-            print("Error: Failed to execute tools")
-            break
+        assert results is not None
 
         messages.extend(
             [

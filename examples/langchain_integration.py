@@ -31,7 +31,9 @@ def langchain_integration() -> None:
         for tool_call in result.tool_calls:
             tool = tools.get_tool(tool_call["name"])
             if tool:
-                print(tool.execute(tool_call["args"]))
+                result = tool.execute(tool_call["args"])
+                assert result is not None
+                assert result.get("data") is not None
 
 
 if __name__ == "__main__":

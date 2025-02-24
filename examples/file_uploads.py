@@ -43,15 +43,11 @@ def upload_employee_document() -> None:
         resume_file = Path(temp_dir) / "resume.pdf"
         resume_file.write_text(resume_content)
 
-        # Initialize StackOne
         toolset = StackOneToolSet()
         tools = toolset.get_tools(vertical="hris", account_id=account_id)
 
-        # Get the upload document tool
         upload_tool = tools.get_tool("hris_upload_employee_document")
-        if not upload_tool:
-            print("Upload tool not available")
-            return
+        assert upload_tool is not None
 
         with open(resume_file, "rb") as f:
             file_content = base64.b64encode(f.read()).decode()
@@ -65,10 +61,9 @@ def upload_employee_document() -> None:
             "file_format": {"value": "txt"},
         }
 
-        try:
-            upload_tool.execute(upload_params)
-        except Exception as e:
-            print(f"Error uploading document: {e}")
+        result = upload_tool.execute(upload_params)
+        assert result is not None
+        assert result.get("message") == "File uploaded successfully"
 
 
 if __name__ == "__main__":
