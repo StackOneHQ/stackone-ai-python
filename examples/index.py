@@ -1,32 +1,37 @@
 """
-# Getting Started
-
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
 ## Installation
 
 ```bash
+# Using pip
 pip install stackone-ai
+
+# Using uv
+uv add stackone-ai
 ```
 
+## How to use these docs
 
-## Quick Start
+All examples are complete and runnable.
+We use [uv](https://docs.astral.sh/uv/getting-started/installation/) for python dependency management.
 
-Here's a simple example. All examples are complete and runnable.
-
-You can even run the example directly from the command line:
+To run this example, install the dependencies (one-time setup) and run the script:
 
 ```bash
+uv sync --all-extras
 uv run examples/index.py
 ```
-"""
 
-from dotenv import load_dotenv
+## Package Usage
+"""
 
 from stackone_ai import StackOneToolSet
 
 """
-## Authenticate with StackOne
+## Authentication
+
+Set the `STACKONE_API_KEY` environment variable:
 
 ```bash
 export STACKONE_API_KEY=<your-api-key>
@@ -34,6 +39,7 @@ export STACKONE_API_KEY=<your-api-key>
 
 or load from a .env file:
 """
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -41,12 +47,12 @@ load_dotenv()
 ## Account IDs
 
 StackOne uses account IDs to identify different integrations.
-See the example [stackone_account_ids.py](stackone_account_ids.py) for more details.
-This example will hardcode the account ID.
+See the example [stackone-account-ids.md](stackone-account-ids.md) for more details.
+
+This example will hardcode the account ID:
 """
 
 account_id = "45072196112816593343"
-employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 
 def quickstart():
@@ -56,11 +62,11 @@ def quickstart():
     tools = toolset.get_tools("hris_*", account_id=account_id)
 
     # Use a specific tool
-    employee_tool = tools.get_tool("hris_get_employee")
+    employee_tool = tools.get_tool("hris_list_employees")
     assert employee_tool is not None
 
-    employee = employee_tool.execute({"id": employee_id})
-    assert employee is not None
+    employees = employee_tool.execute()
+    assert employees is not None
 
 
 if __name__ == "__main__":
@@ -71,8 +77,8 @@ if __name__ == "__main__":
 
 Check out some more documentation:
 
-- [Error Handling](error-handling.md)
 - [StackOne Account IDs](stackone-account-ids.md)
+- [Error Handling](error-handling.md)
 - [Available Tools](available-tools.md)
 - [File Uploads](file-uploads.md)
 

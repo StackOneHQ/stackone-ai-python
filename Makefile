@@ -19,3 +19,11 @@ test-examples:
 
 mypy:
 	uv run mypy stackone_ai
+
+docs-serve:
+	uv run scripts/build_docs.py
+	uv run mkdocs serve
+
+docs-build:
+	uv run scripts/build_docs.py
+	uv run mkdocs build
