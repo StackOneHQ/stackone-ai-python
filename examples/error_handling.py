@@ -20,7 +20,9 @@ load_dotenv()
 
 
 def error_handling() -> None:
-    # Example 1: Configuration error - missing API key
+    """
+    Example 1: Configuration error - missing API key
+    """
     original_api_key = os.environ.pop("STACKONE_API_KEY", None)
     try:
         try:
@@ -35,7 +37,9 @@ def error_handling() -> None:
         if original_api_key:
             os.environ["STACKONE_API_KEY"] = original_api_key
 
-    # Example 2: Invalid vertical error
+    """
+    Example 2: Invalid vertical error
+    """
     toolset = StackOneToolSet()
     try:
         # Use a non-existent vertical to trigger error
@@ -45,7 +49,9 @@ def error_handling() -> None:
     except ToolsetLoadError as e:
         assert "Error loading tools" in str(e)
 
-    # Example 3: API error - invalid request
+    """
+    Example 3: API error - invalid request
+    """
     toolset = StackOneToolSet()
     tools = toolset.get_tools("crm_*")
 

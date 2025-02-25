@@ -2,6 +2,7 @@
 Get available tools from your StackOne organisation based on the account id.
 
 This example demonstrates different ways to filter and organize tools:
+
 1. Getting all available tools
 2. Filtering by vertical
 3. Using multiple patterns for cross-vertical functionality
@@ -25,15 +26,21 @@ load_dotenv()
 def get_available_tools() -> None:
     toolset = StackOneToolSet()
 
-    # First, get all tools
+    """
+    We can get all tools using the `get_tools` method.
+    """
     all_tools = toolset.get_tools()
     assert len(all_tools) > 100, "Expected at least 100 tools in total"
 
-    # Then, let's get just HRIS tools using a vertical filter
+    """
+    Then, let's get just HRIS tools using a filter. This filter accepts glob patterns.
+    """
     hris_tools = toolset.get_tools("hris_*")
     assert len(hris_tools) > 10, "Expected at least 10 HRIS tools"
 
-    # Now, let's get people-related tools across verticals
+    """
+    Filter with multiple patterns. This will return all tools that match either pattern (OR operator).
+    """
     people_tools = toolset.get_tools(
         [
             "hris_*employee*",
@@ -46,19 +53,25 @@ def get_available_tools() -> None:
             f"Tool {tool.name} doesn't contain 'employee' or 'contact'"
         )
 
-    # We can also filter by specific operations across all verticals
+    """
+    Filter by specific operations across all verticals using a glob pattern.
+    """
     upload_tools = toolset.get_tools("*upload*")
     assert len(upload_tools) > 0, "Expected at least one upload tool"
     for tool in upload_tools:
         assert "upload" in tool.name.lower(), f"Tool {tool.name} doesn't contain 'upload'"
 
-    # Get all tools except HRIS
+    """
+    The exclude pattern is also supported.
+    """
     non_hris_tools = toolset.get_tools("!hris_*")
     assert len(non_hris_tools) > 0, "Expected at least one non-HRIS tool"
     for tool in non_hris_tools:
         assert not tool.name.startswith("hris_"), f"Tool {tool.name} should not be an HRIS tool"
 
-    # Complex filtering with positive and negative patterns
+    """
+    More hectic example:
+    """
     list_tools = toolset.get_tools(
         [
             "*list*",  # Include list operations
