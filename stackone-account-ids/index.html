@@ -374,18 +374,18 @@ load_dotenv<span style="color: #888">()</span>
 
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">stackone_account_ids</span><span style="color: #888">():</span>
     toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
-
-    <span style="color: #888; font-style: italic"># Filter by pattern and set the account ID</span>
-    tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">,</span> account_id<span style="color: #666">=</span><span style="color: #B83838">&quot;test_id&quot;</span><span style="color: #888">)</span>
-
-    <span style="color: #888; font-style: italic"># You can over write the account ID here..</span>
-    tools<span style="color: #666">.</span>set_account_id<span style="color: #888">(</span><span style="color: #B83838">&quot;a_different_id&quot;</span><span style="color: #888">)</span>
+</code></pre></div>
+<p>Set the account ID whilst getting tools.</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">,</span> account_id<span style="color: #666">=</span><span style="color: #B83838">&quot;test_id&quot;</span><span style="color: #888">)</span>
+</code></pre></div>
+<p>You can over write the account ID on fetched tools.</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>tools<span style="color: #666">.</span>set_account_id<span style="color: #888">(</span><span style="color: #B83838">&quot;a_different_id&quot;</span><span style="color: #888">)</span>
 
     employee_tool <span style="color: #666">=</span> tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_get_employee&quot;</span><span style="color: #888">)</span>
     <span style="color: #2838B0">assert</span> employee_tool <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
-
-    <span style="color: #888; font-style: italic"># You can even set the account ID on a per-tool basis</span>
-    employee_tool<span style="color: #666">.</span>set_account_id<span style="color: #888">(</span><span style="color: #B83838">&quot;again_another_id&quot;</span><span style="color: #888">)</span>
+</code></pre></div>
+<p>You can even set the account ID on a per-tool basis.</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>employee_tool<span style="color: #666">.</span>set_account_id<span style="color: #888">(</span><span style="color: #B83838">&quot;again_another_id&quot;</span><span style="color: #888">)</span>
     <span style="color: #2838B0">assert</span> employee_tool<span style="color: #666">.</span>get_account_id<span style="color: #888">()</span> <span style="color: #666">==</span> <span style="color: #B83838">&quot;again_another_id&quot;</span>
 
 

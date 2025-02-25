@@ -367,24 +367,21 @@
 <section id="mkdocs-terminal-content">
     <h1 id="stackone-ai-sdk">StackOne AI SDK<a class="headerlink" href="#stackone-ai-sdk" title="Anchor link to this section for reference">#</a></h1>
 <p>StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.</p>
-<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Anchor link to this section for reference">#</a></h2>
+<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Anchor link to this section for reference">#</a></h1>
 <div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #888; font-style: italic"># Using pip</span>
 pip<span style="color: #A89028"> </span>install<span style="color: #A89028"> </span>stackone-ai
 
 <span style="color: #888; font-style: italic"># Using uv</span>
 uv<span style="color: #A89028"> </span>add<span style="color: #A89028"> </span>stackone-ai
 </code></pre></div>
-<h2 id="how-to-use-these-docs">How to use these docs<a class="headerlink" href="#how-to-use-these-docs" title="Anchor link to this section for reference">#</a></h2>
+<h1 id="how-to-use-these-docs">How to use these docs<a class="headerlink" href="#how-to-use-these-docs" title="Anchor link to this section for reference">#</a></h1>
 <p>All examples are complete and runnable.
 We use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a> for python dependency management.</p>
 <p>To run this example, install the dependencies (one-time setup) and run the script:</p>
 <div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>uv<span style="color: #A89028"> </span>sync<span style="color: #A89028"> </span>--all-extras
 uv<span style="color: #A89028"> </span>run<span style="color: #A89028"> </span>examples/index.py
 </code></pre></div>
-<h2 id="package-usage">Package Usage<a class="headerlink" href="#package-usage" title="Anchor link to this section for reference">#</a></h2>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">stackone_ai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> StackOneToolSet
-</code></pre></div>
-<h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Anchor link to this section for reference">#</a></h2>
+<h1 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Anchor link to this section for reference">#</a></h1>
 <p>Set the <code>STACKONE_API_KEY</code> environment variable:</p>
 <div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">export</span><span style="color: #A89028"> </span><span style="color: #B04040">STACKONE_API_KEY</span><span style="color: #666">=</span>&lt;your-api-key&gt;
 </code></pre></div>
@@ -393,11 +390,14 @@ uv<span style="color: #A89028"> </span>run<span style="color: #A89028"> </span>e
 
 load_dotenv<span style="color: #888">()</span>
 </code></pre></div>
-<h2 id="account-ids">Account IDs<a class="headerlink" href="#account-ids" title="Anchor link to this section for reference">#</a></h2>
+<h1 id="account-ids">Account IDs<a class="headerlink" href="#account-ids" title="Anchor link to this section for reference">#</a></h1>
 <p>StackOne uses account IDs to identify different integrations.
 See the example <a href="stackone-account-ids/">stackone-account-ids.md</a> for more details.</p>
 <p>This example will hardcode the account ID:</p>
 <div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>account_id <span style="color: #666">=</span> <span style="color: #B83838">&quot;45072196112816593343&quot;</span>
+</code></pre></div>
+<h1 id="quickstart">Quickstart<a class="headerlink" href="#quickstart" title="Anchor link to this section for reference">#</a></h1>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">stackone_ai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> StackOneToolSet
 
 
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">quickstart</span><span style="color: #888">():</span>
@@ -417,7 +417,7 @@ See the example <a href="stackone-account-ids/">stackone-account-ids.md</a> for 
 <span style="color: #2838B0">if</span> <span style="color: #B85820">__name__</span> <span style="color: #666">==</span> <span style="color: #B83838">&quot;__main__&quot;</span><span style="color: #888">:</span>
     quickstart<span style="color: #888">()</span>
 </code></pre></div>
-<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Anchor link to this section for reference">#</a></h2>
+<h1 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Anchor link to this section for reference">#</a></h1>
 <p>Check out some more documentation:</p>
 <ul>
 <li><a href="stackone-account-ids/">StackOne Account IDs</a></li>
@@ -427,10 +427,10 @@ See the example <a href="stackone-account-ids/">stackone-account-ids.md</a> for 
 </ul>
 <p>Or get started with an integration:</p>
 <ul>
-<li><a href="openai-integration/">OpenAI Integration</a></li>
-<li><a href="langchain-integration/">LangChain Integration</a></li>
-<li><a href="crewai-integration/">CrewAI Integration</a></li>
-<li><a href="langgraph-tool-node/">LangGraph Tool Node</a></li>
+<li><a href="openai-integration/">OpenAI</a></li>
+<li><a href="langchain-integration/">LangChain</a></li>
+<li><a href="crewai-integration/">CrewAI</a></li>
+<li><a href="langgraph-tool-node/">LangGraph</a></li>
 </ul>
 </section>
 
