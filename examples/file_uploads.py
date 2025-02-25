@@ -1,6 +1,6 @@
 """
-Example demonstrating file upload functionality with StackOne.
-Shows how to upload an employee document using the HRIS integration.
+Example demonstrating file upload functionality using StackOne.
+Shows how to upload an employee document using an HRIS integration.
 
 This example is runnable with the following command:
 ```bash
@@ -21,11 +21,13 @@ load_dotenv()
 account_id = "45072196112816593343"
 employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
+"""
+## Resume content
 
-def upload_employee_document() -> None:
-    """Demonstrate uploading an employee document using StackOne."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        resume_content = """
+This is a sample resume content that will be uploaded to StackOne.
+"""
+
+resume_content = """
         JOHN DOE
         Software Engineer
 
@@ -38,9 +40,18 @@ def upload_employee_document() -> None:
         EDUCATION
         BS Computer Science
         University of Technology
-        2016-2020
-        """
+        2016-2020 """
 
+
+"""
+## Upload employee document
+
+This function uploads a resume using the `hris_upload_employee_document` tool.
+"""
+
+
+def upload_employee_document() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
         resume_file = Path(temp_dir) / "resume.pdf"
         resume_file.write_text(resume_content)
 

@@ -36,11 +36,10 @@ examples = [
     "python-dotenv>=1.0.1",
 ]
 docs = [
-    "mkdocs-material>=9.6.4",
-]
-pymdown-extensions = [
-    "mkdocs-material>=9.6.4",
-]
+    "mkdocs-terminal>=4.7.0",
+    "pygments>=2.12",
+    "pymdown-extensions"
+] 
 
 [dependency-groups]
 dev = [
@@ -66,7 +65,7 @@ markers = [
 "bin/**.py" = ["T201", "T203"]
 "scripts/**.py" = ["T201", "T203"]
 "tests/**.py" = ["T201", "T203"]
-"examples/**.py" = ["T201", "T203", "E501", "F841"]
+"examples/**.py" = ["T201", "T203", "E501", "F841", "E402"]
 
 [tool.ruff]
 line-length = 110
