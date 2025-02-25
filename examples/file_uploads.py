@@ -22,9 +22,10 @@ account_id = "45072196112816593343"
 employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 """
-## Resume content
+# Resume content
 
 This is a sample resume content that will be uploaded to StackOne.
+
 """
 
 resume_content = """
@@ -44,9 +45,10 @@ resume_content = """
 
 
 """
-## Upload employee document
+# Upload employee document
 
 This function uploads a resume using the `hris_upload_employee_document` tool.
+
 """
 
 
