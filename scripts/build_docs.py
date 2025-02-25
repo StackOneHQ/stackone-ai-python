@@ -17,11 +17,13 @@ def convert_file_to_markdown(py_file: Path) -> str:
     output = [f"# {title}\n"]
 
     # Find all docstrings and their positions
-    docstring_pattern = r'"""(.*?)"""'
+    # Match docstrings that start and end on their own lines
+    docstring_pattern = r'(\n|\A)\s*"""(.*?)"""(\s*\n|\Z)'
     current_pos = 0
 
     for match in re.finditer(docstring_pattern, content, re.DOTALL):
         start, end = match.span()
+        docstring_content = match.group(2).strip()  # The actual docstring content is in group 2
 
         # If there's code before this docstring, wrap it
         if current_pos < start:
@@ -32,7 +34,7 @@ def convert_file_to_markdown(py_file: Path) -> str:
                 output.append("```\n")
 
         # Add the docstring content as markdown
-        output.append(match.group(1).strip())
+        output.append(docstring_content)
         current_pos = end
 
     # Add any remaining code
