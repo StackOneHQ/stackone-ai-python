@@ -699,3 +699,33 @@ def test_form_data_without_files(temp_spec_file: Path) -> None:
 
     # Check body type
     assert tool.execute.body_type == "form"
+
+
+def test_parser_with_base_url_override(tmp_path: Path, sample_openapi_spec: dict[str, Any]) -> None:
+    """Test that the parser uses the provided base_url instead of the one from the spec."""
+    # Write the spec to a temporary file
+    spec_file = tmp_path / "test_spec.json"
+    with open(spec_file, "w") as f:
+        json.dump(sample_openapi_spec, f)
+
+    # Create parser with default base_url
+    default_parser = OpenAPIParser(spec_file)
+    assert default_parser.base_url == "https://api.test.com"
+
+    # Create parser with development base_url
+    dev_parser = OpenAPIParser(spec_file, base_url="https://api.example-dev.com")
+    assert dev_parser.base_url == "https://api.example-dev.com"
+
+    # Create parser with experimental base_url
+    exp_parser = OpenAPIParser(spec_file, base_url="https://api.example-exp.com")
+    assert exp_parser.base_url == "https://api.example-exp.com"
+
+    # Verify the base_url is used in the tool definitions for development environment
+    dev_tools = dev_parser.parse_tools()
+    assert dev_tools["get_employee"].execute.url.startswith("https://api.example-dev.com")
+    assert not dev_tools["get_employee"].execute.url.startswith("https://api.test.com")
+
+    # Verify the base_url is used in the tool definitions for experimental environment
+    exp_tools = exp_parser.parse_tools()
+    assert exp_tools["get_employee"].execute.url.startswith("https://api.example-exp.com")
+    assert not exp_tools["get_employee"].execute.url.startswith("https://api.test.com")

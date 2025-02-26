@@ -36,12 +36,14 @@ class StackOneToolSet:
         self,
         api_key: str | None = None,
         account_id: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
         Args:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID. If not provided, will try to get from STACKONE_ACCOUNT_ID env var
+            base_url: Optional base URL override for API requests. If not provided, uses the URL from the OAS
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -54,6 +56,7 @@ class StackOneToolSet:
             )
         self.api_key: str = api_key_value
         self.account_id = account_id or os.getenv("STACKONE_ACCOUNT_ID")
+        self.base_url = base_url
 
     def _parse_parameters(self, parameters: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
         """Parse OpenAPI parameters into tool properties
@@ -133,7 +136,7 @@ class StackOneToolSet:
 
             # Load all available specs
             for spec_file in OAS_DIR.glob("*.json"):
-                parser = OpenAPIParser(spec_file)
+                parser = OpenAPIParser(spec_file, base_url=self.base_url)
                 tool_definitions = parser.parse_tools()
 
                 # Create tools and filter if pattern is provided
