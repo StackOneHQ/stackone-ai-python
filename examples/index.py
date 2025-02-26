@@ -1,25 +1,38 @@
 """
-StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
+StackOne AI SDK provides an AI-friendly interface for accessing various SaaS tools through the StackOne Unified API.
+
+This SDK is available on [PyPI](https://pypi.org/project/stackone-ai/) for python projects. There is a node version in the works.
 
 # Installation
 
 ```bash
-# Using pip
-pip install stackone-ai
-
 # Using uv
 uv add stackone-ai
+
+# Using pip
+pip install stackone-ai
 ```
 
 # How to use these docs
 
 All examples are complete and runnable.
-We use [uv](https://docs.astral.sh/uv/getting-started/installation/) for python dependency management.
+We use [uv](https://docs.astral.sh/uv/getting-started/installation/) for easy python dependency management.
 
-To run this example, install the dependencies (one-time setup) and run the script:
+Install uv:
 
 ```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+To run this example, clone the repo, install the dependencies (one-time setup) and run the script:
+
+```bash
+git clone https://github.com/stackoneHQ/stackone-ai-python.git
+cd stackone-ai-python
+
+# Install dependencies
 uv sync --all-extras
+
+# Run the example
 uv run examples/index.py
 ```
 

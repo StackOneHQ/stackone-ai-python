@@ -24,8 +24,7 @@ employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 """
 # Resume content
 
-This is a sample resume content that will be uploaded to StackOne.
-
+This is a sample resume content that will be uploaded using the `hris_upload_employee_document` tool.
 """
 
 resume_content = """
