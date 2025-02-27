@@ -366,19 +366,29 @@
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
     <h1 id="stackone-ai-sdk">StackOne AI SDK<a class="headerlink" href="#stackone-ai-sdk" title="Anchor link to this section for reference">#</a></h1>
-<p>StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.</p>
+<p>StackOne AI SDK provides an AI-friendly interface for accessing various SaaS tools through the StackOne Unified API.</p>
+<p>This SDK is available on <a href="https://pypi.org/project/stackone-ai/">PyPI</a> for python projects. There is a node version in the works.</p>
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Anchor link to this section for reference">#</a></h1>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #888; font-style: italic"># Using pip</span>
-pip<span style="color: #A89028"> </span>install<span style="color: #A89028"> </span>stackone-ai
-
-<span style="color: #888; font-style: italic"># Using uv</span>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #888; font-style: italic"># Using uv</span>
 uv<span style="color: #A89028"> </span>add<span style="color: #A89028"> </span>stackone-ai
+
+<span style="color: #888; font-style: italic"># Using pip</span>
+pip<span style="color: #A89028"> </span>install<span style="color: #A89028"> </span>stackone-ai
 </code></pre></div>
 <h1 id="how-to-use-these-docs">How to use these docs<a class="headerlink" href="#how-to-use-these-docs" title="Anchor link to this section for reference">#</a></h1>
 <p>All examples are complete and runnable.
-We use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a> for python dependency management.</p>
-<p>To run this example, install the dependencies (one-time setup) and run the script:</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>uv<span style="color: #A89028"> </span>sync<span style="color: #A89028"> </span>--all-extras
+We use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a> for easy python dependency management.</p>
+<p>Install uv:</p>
+<p><div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>curl<span style="color: #A89028"> </span>-LsSf<span style="color: #A89028"> </span>https://astral.sh/uv/install.sh<span style="color: #A89028"> </span><span style="color: #888">|</span><span style="color: #A89028"> </span>sh
+</code></pre></div>
+To run this example, clone the repo, install the dependencies (one-time setup) and run the script:</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>git<span style="color: #A89028"> </span>clone<span style="color: #A89028"> </span>https://github.com/stackoneHQ/stackone-ai-python.git
+<span style="color: #388038">cd</span><span style="color: #A89028"> </span>stackone-ai-python
+
+<span style="color: #888; font-style: italic"># Install dependencies</span>
+uv<span style="color: #A89028"> </span>sync<span style="color: #A89028"> </span>--all-extras
+
+<span style="color: #888; font-style: italic"># Run the example</span>
 uv<span style="color: #A89028"> </span>run<span style="color: #A89028"> </span>examples/index.py
 </code></pre></div>
 <h1 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Anchor link to this section for reference">#</a></h1>

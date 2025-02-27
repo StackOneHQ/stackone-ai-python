@@ -397,13 +397,13 @@ employee_id <span style="color: #666">=</span> <span style="color: #B83838">&quo
 
     result <span style="color: #666">=</span> model_with_tools<span style="color: #666">.</span>invoke<span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Can you get me information about employee with ID: </span><span style="color: #B83838; text-decoration: underline">{</span>employee_id<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">?&quot;</span><span style="color: #888">)</span>
 
-    <span style="color: #2838B0">if</span> result<span style="color: #666">.</span>tool_calls<span style="color: #888">:</span>
-        <span style="color: #2838B0">for</span> tool_call <span style="color: #A848A8">in</span> result<span style="color: #666">.</span>tool_calls<span style="color: #888">:</span>
-            tool <span style="color: #666">=</span> tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span>tool_call<span style="color: #888">[</span><span style="color: #B83838">&quot;name&quot;</span><span style="color: #888">])</span>
-            <span style="color: #2838B0">if</span> tool<span style="color: #888">:</span>
-                result <span style="color: #666">=</span> tool<span style="color: #666">.</span>execute<span style="color: #888">(</span>tool_call<span style="color: #888">[</span><span style="color: #B83838">&quot;args&quot;</span><span style="color: #888">])</span>
-                <span style="color: #2838B0">assert</span> result <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
-                <span style="color: #2838B0">assert</span> result<span style="color: #666">.</span>get<span style="color: #888">(</span><span style="color: #B83838">&quot;data&quot;</span><span style="color: #888">)</span> <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
+    <span style="color: #2838B0">assert</span> result<span style="color: #666">.</span>tool_calls <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
+    <span style="color: #2838B0">for</span> tool_call <span style="color: #A848A8">in</span> result<span style="color: #666">.</span>tool_calls<span style="color: #888">:</span>
+        tool <span style="color: #666">=</span> tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span>tool_call<span style="color: #888">[</span><span style="color: #B83838">&quot;name&quot;</span><span style="color: #888">])</span>
+        <span style="color: #2838B0">if</span> tool<span style="color: #888">:</span>
+            result <span style="color: #666">=</span> tool<span style="color: #666">.</span>execute<span style="color: #888">(</span>tool_call<span style="color: #888">[</span><span style="color: #B83838">&quot;args&quot;</span><span style="color: #888">])</span>
+            <span style="color: #2838B0">assert</span> result <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
+            <span style="color: #2838B0">assert</span> result<span style="color: #666">.</span>get<span style="color: #888">(</span><span style="color: #B83838">&quot;data&quot;</span><span style="color: #888">)</span> <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
 
 
 <span style="color: #2838B0">if</span> <span style="color: #B85820">__name__</span> <span style="color: #666">==</span> <span style="color: #B83838">&quot;__main__&quot;</span><span style="color: #888">:</span>

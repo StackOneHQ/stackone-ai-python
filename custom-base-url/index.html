@@ -9,7 +9,7 @@
      
      
     
-    <link rel="canonical" href="https://stackonehq.github.io/stackone-ai-python/file-uploads/"><link rel="icon" type="image/png" sizes="192x192" href="../img/android-chrome-192x192.png" />
+    <link rel="canonical" href="https://stackonehq.github.io/stackone-ai-python/custom-base-url/"><link rel="icon" type="image/png" sizes="192x192" href="../img/android-chrome-192x192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="../img/android-chrome-512x512.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="../img/apple-touch-icon.png" />
 <link rel="shortcut icon" type="image/png" sizes="48x48" href="../img/favicon.ico" />
@@ -19,7 +19,7 @@
 
     
  
-<title>File Uploads - StackOne AI SDK</title>
+<title>Custom Base Url - StackOne AI SDK</title>
 
 
 <link href="../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
@@ -165,13 +165,17 @@
             
     
         
-        <span class="
+        
+            
+            
+            <span class="
         
             
         
     
 
-    terminal-mkdocs-side-nav-item--active terminal-mkdocs-side-nav-section-no-index">Usage</span>
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Usage</span>
+        
     
     
         
@@ -246,9 +250,11 @@
                 <li class="terminal-mkdocs-side-nav-li-ul-li">
     
         
-        <span class="
+        
+            <a class="
 
-    terminal-mkdocs-side-nav-item--active">File Uploads</span>
+    terminal-mkdocs-side-nav-item" href="../file-uploads/">File Uploads</a>
+        
     
     </li>
             
@@ -361,74 +367,37 @@
 </aside>
             <main id="terminal-mkdocs-main-content">
 <section id="mkdocs-terminal-content">
-    <h1 id="file-uploads">File Uploads<a class="headerlink" href="#file-uploads" title="Anchor link to this section for reference">#</a></h1>
-<p>Example demonstrating file upload functionality using StackOne.
-Shows how to upload an employee document using an HRIS integration.</p>
-<p>This example is runnable with the following command:
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>uv<span style="color: #A89028"> </span>run<span style="color: #A89028"> </span>examples/file_upload_example.py
-</code></pre></div></p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">import</span><span style="color: #A89028"> </span><span style="color: #289870">base64</span>
-<span style="color: #2838B0">import</span><span style="color: #A89028"> </span><span style="color: #289870">tempfile</span>
-<span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">pathlib</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> Path
-
-<span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">dotenv</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> load_dotenv
-
-<span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">stackone_ai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> StackOneToolSet
-
-load_dotenv<span style="color: #888">()</span>
-
-account_id <span style="color: #666">=</span> <span style="color: #B83838">&quot;45072196112816593343&quot;</span>
-employee_id <span style="color: #666">=</span> <span style="color: #B83838">&quot;c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA&quot;</span>
+    <h1 id="custom-base-url">Custom Base Url<a class="headerlink" href="#custom-base-url" title="Anchor link to this section for reference">#</a></h1>
+<p>Example demonstrating how to use a custom base URL with StackOne tools.</p>
+<p>This is useful for:
+1. Testing against development APIs
+2. Working with self-hosted StackOne instances</p>
+<p>Usage:</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>uv<span style="color: #A89028"> </span>run<span style="color: #A89028"> </span>examples/custom_base_url.py
 </code></pre></div>
-<h1 id="resume-content">Resume content<a class="headerlink" href="#resume-content" title="Anchor link to this section for reference">#</a></h1>
-<p>This is a sample resume content that will be uploaded using the <code>hris_upload_employee_document</code> tool.</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>resume_content <span style="color: #666">=</span> <span style="color: #B83838">&quot;&quot;&quot;</span>
-<span style="color: #B83838">        JOHN DOE</span>
-<span style="color: #B83838">        Software Engineer</span>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">stackone_ai.toolset</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> StackOneToolSet
 
-<span style="color: #B83838">        EXPERIENCE</span>
-<span style="color: #B83838">        Senior Developer - Tech Corp</span>
-<span style="color: #B83838">        2020-Present</span>
-<span style="color: #B83838">        - Led development of core features</span>
-<span style="color: #B83838">        - Managed team of 5 engineers</span>
 
-<span style="color: #B83838">        EDUCATION</span>
-<span style="color: #B83838">        BS Computer Science</span>
-<span style="color: #B83838">        University of Technology</span>
-<span style="color: #B83838">        2016-2020 &quot;&quot;&quot;</span>
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">custom_base_url</span><span style="color: #888">():</span>
 </code></pre></div>
-<h1 id="upload-employee-document">Upload employee document<a class="headerlink" href="#upload-employee-document" title="Anchor link to this section for reference">#</a></h1>
-<p>This function uploads a resume using the <code>hris_upload_employee_document</code> tool.</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">upload_employee_document</span><span style="color: #888">()</span> <span style="color: #666">-&gt;</span> <span style="color: #444; font-style: italic">None</span><span style="color: #888">:</span>
-    <span style="color: #2838B0">with</span> tempfile<span style="color: #666">.</span>TemporaryDirectory<span style="color: #888">()</span> <span style="color: #2838B0">as</span> temp_dir<span style="color: #888">:</span>
-        resume_file <span style="color: #666">=</span> Path<span style="color: #888">(</span>temp_dir<span style="color: #888">)</span> <span style="color: #666">/</span> <span style="color: #B83838">&quot;resume.pdf&quot;</span>
-        resume_file<span style="color: #666">.</span>write_text<span style="color: #888">(</span>resume_content<span style="color: #888">)</span>
+<p>Default base URL</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>default_toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
+    hris_tools <span style="color: #666">=</span> default_toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span>filter_pattern<span style="color: #666">=</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">)</span>
 
-        toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
-        tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">,</span> account_id<span style="color: #666">=</span>account_id<span style="color: #888">)</span>
-
-        upload_tool <span style="color: #666">=</span> tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_upload_employee_document&quot;</span><span style="color: #888">)</span>
-        <span style="color: #2838B0">assert</span> upload_tool <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
-
-        <span style="color: #2838B0">with</span> <span style="color: #388038">open</span><span style="color: #888">(</span>resume_file<span style="color: #888">,</span> <span style="color: #B83838">&quot;rb&quot;</span><span style="color: #888">)</span> <span style="color: #2838B0">as</span> f<span style="color: #888">:</span>
-            file_content <span style="color: #666">=</span> base64<span style="color: #666">.</span>b64encode<span style="color: #888">(</span>f<span style="color: #666">.</span>read<span style="color: #888">())</span><span style="color: #666">.</span>decode<span style="color: #888">()</span>
-
-        upload_params <span style="color: #666">=</span> <span style="color: #888">{</span>
-            <span style="color: #B83838">&quot;x-account-id&quot;</span><span style="color: #888">:</span> account_id<span style="color: #888">,</span>
-            <span style="color: #B83838">&quot;id&quot;</span><span style="color: #888">:</span> employee_id<span style="color: #888">,</span>
-            <span style="color: #B83838">&quot;name&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;resume&quot;</span><span style="color: #888">,</span>
-            <span style="color: #B83838">&quot;content&quot;</span><span style="color: #888">:</span> file_content<span style="color: #888">,</span>
-            <span style="color: #B83838">&quot;category&quot;</span><span style="color: #888">:</span> <span style="color: #888">{</span><span style="color: #B83838">&quot;value&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;shared&quot;</span><span style="color: #888">},</span>
-            <span style="color: #B83838">&quot;file_format&quot;</span><span style="color: #888">:</span> <span style="color: #888">{</span><span style="color: #B83838">&quot;value&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;txt&quot;</span><span style="color: #888">},</span>
-        <span style="color: #888">}</span>
-
-        result <span style="color: #666">=</span> upload_tool<span style="color: #666">.</span>execute<span style="color: #888">(</span>upload_params<span style="color: #888">)</span>
-        <span style="color: #2838B0">assert</span> result <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
-        <span style="color: #2838B0">assert</span> result<span style="color: #666">.</span>get<span style="color: #888">(</span><span style="color: #B83838">&quot;message&quot;</span><span style="color: #888">)</span> <span style="color: #666">==</span> <span style="color: #B83838">&quot;File uploaded successfully&quot;</span>
+    <span style="color: #2838B0">assert</span> <span style="color: #388038">len</span><span style="color: #888">(</span>hris_tools<span style="color: #888">)</span> <span style="color: #666">&gt;</span> <span style="color: #444">0</span>
+    <span style="color: #2838B0">assert</span> hris_tools<span style="color: #888">[</span><span style="color: #444">0</span><span style="color: #888">]</span><span style="color: #666">.</span>_execute_config<span style="color: #666">.</span>url<span style="color: #666">.</span>startswith<span style="color: #888">(</span><span style="color: #B83838">&quot;https://api.stackone.com&quot;</span><span style="color: #888">)</span>
+</code></pre></div>
+<p>Custom base URL</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code>dev_toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">(</span>base_url<span style="color: #666">=</span><span style="color: #B83838">&quot;https://api.example-dev.com&quot;</span><span style="color: #888">)</span>
+    dev_hris_tools <span style="color: #666">=</span> dev_toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span>filter_pattern<span style="color: #666">=</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">)</span>
+</code></pre></div>
+<p>Note this uses the same tools but substitutes the base URL</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">assert</span> <span style="color: #388038">len</span><span style="color: #888">(</span>dev_hris_tools<span style="color: #888">)</span> <span style="color: #666">&gt;</span> <span style="color: #444">0</span>
+    <span style="color: #2838B0">assert</span> dev_hris_tools<span style="color: #888">[</span><span style="color: #444">0</span><span style="color: #888">]</span><span style="color: #666">.</span>_execute_config<span style="color: #666">.</span>url<span style="color: #666">.</span>startswith<span style="color: #888">(</span><span style="color: #B83838">&quot;https://api.example-dev.com&quot;</span><span style="color: #888">)</span>
 
 
 <span style="color: #2838B0">if</span> <span style="color: #B85820">__name__</span> <span style="color: #666">==</span> <span style="color: #B83838">&quot;__main__&quot;</span><span style="color: #888">:</span>
-    upload_employee_document<span style="color: #888">()</span>
+    custom_base_url<span style="color: #888">()</span>
 </code></pre></div>
 </section>
 
@@ -438,13 +407,6 @@ employee_id <span style="color: #666">=</span> <span style="color: #B83838">&quo
     <div class="terminal-mkdocs-footer-grid">
         <div id="terminal-mkdocs-footer-copyright-info">
              Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
-        </div>
-        <div id="terminal-mkdocs-footer-prev-next">
-            <nav class="btn-group">
-                <a href="../available-tools/" title="Available Tools">Previous</a>
-                |
-                <a href="../openai-integration/" title="OpenAI">Next</a>
-            </nav>
         </div>
     </div>
 </footer>
