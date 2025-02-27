@@ -38,13 +38,13 @@ def langchain_integration() -> None:
 
     result = model_with_tools.invoke(f"Can you get me information about employee with ID: {employee_id}?")
 
-    if result.tool_calls:
-        for tool_call in result.tool_calls:
-            tool = tools.get_tool(tool_call["name"])
-            if tool:
-                result = tool.execute(tool_call["args"])
-                assert result is not None
-                assert result.get("data") is not None
+    assert result.tool_calls is not None
+    for tool_call in result.tool_calls:
+        tool = tools.get_tool(tool_call["name"])
+        if tool:
+            result = tool.execute(tool_call["args"])
+            assert result is not None
+            assert result.get("data") is not None
 
 
 if __name__ == "__main__":
