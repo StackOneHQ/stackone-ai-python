@@ -12,7 +12,7 @@ test:
 	uv run pytest
 
 test-tools:
-	uv run pytest stackone_ai
+	uv run pytest tests
 
 test-examples:
 	uv run pytest examples
@@ -27,3 +27,7 @@ docs-serve:
 docs-build:
 	uv run scripts/build_docs.py
 	uv run mkdocs build
+
+mcp-inspector:
+	uv sync --all-extras
+	npx @modelcontextprotocol/inspector stackmcp

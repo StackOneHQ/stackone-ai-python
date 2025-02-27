@@ -106,6 +106,22 @@ class StackOneToolSet:
 
         return matches_positive and not matches_negative
 
+    def get_tool(self, name: str, *, account_id: str | None = None) -> StackOneTool | None:
+        """Get a specific tool by name
+
+        Args:
+            name: Name of the tool to retrieve
+            account_id: Optional account ID override. If not provided, uses the one from initialization
+
+        Returns:
+            The tool if found, None otherwise
+
+        Raises:
+            ToolsetLoadError: If there is an error loading the tools
+        """
+        tools = self.get_tools(name, account_id=account_id)
+        return tools.get_tool(name)
+
     def get_tools(
         self, filter_pattern: str | list[str] | None = None, *, account_id: str | None = None
     ) -> Tools:
