@@ -8,8 +8,7 @@ This example demonstrates different ways to filter and organize tools:
 3. Using multiple patterns for cross-vertical functionality
 4. Filtering by specific operations
 5. Combining multiple operation patterns
-
-TODO: experimental - get_available_tools(account_id="your_account_id")
+6. TODO: get_account_tools(account_id="your_account_id")
 
 ```bash
 uv run examples/available_tools.py

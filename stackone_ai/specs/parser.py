@@ -6,13 +6,15 @@ from stackone_ai.models import ExecuteConfig, ToolDefinition, ToolParameters
 
 
 class OpenAPIParser:
-    def __init__(self, spec_path: Path):
+    def __init__(self, spec_path: Path, base_url: str | None = None):
         self.spec_path = spec_path
         with open(spec_path) as f:
             self.spec = json.load(f)
         # Get base URL from servers array or default to stackone API
         servers = self.spec.get("servers", [{"url": "https://api.stackone.com"}])
-        self.base_url = servers[0]["url"] if isinstance(servers, list) else "https://api.stackone.com"
+        default_url = servers[0]["url"] if isinstance(servers, list) else "https://api.stackone.com"
+        # Use provided base_url if available, otherwise use the default from the spec
+        self.base_url = base_url or default_url
 
     def _is_file_type(self, schema: dict[str, Any]) -> bool:
         """Check if a schema represents a file upload."""
