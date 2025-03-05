@@ -30,10 +30,15 @@ jobs:
           python-version: "3.11"
           enable-cache: true
 
+      - name: Update version in __init__.py
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          uv run --python-dep tomli scripts/update_version.py
+
       - name: Build and publish package
         if: ${{ steps.release.outputs.release_created }}
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          uv build --no-sources
+          uv build
           uv publish

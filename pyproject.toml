@@ -32,6 +32,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["stackone_ai"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"stackone_ai/py.typed" = "stackone_ai/py.typed"
+
+[tool.hatch.build.targets.wheel.shared-data]
+"py.typed" = "py.typed"
+
 [project.optional-dependencies]
 examples = [
     "crewai>=0.102.0",
