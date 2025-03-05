@@ -33,12 +33,17 @@ jobs:
       - name: Update version in __init__.py
         if: ${{ steps.release.outputs.release_created }}
         run: |
-          uv run --python-dep tomli scripts/update_version.py
+          uv run scripts/update_version.py
 
       - name: Build and publish package
         if: ${{ steps.release.outputs.release_created }}
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
+          # Make sure py.typed files exist
+          touch py.typed
+          mkdir -p stackone_ai
+          touch stackone_ai/py.typed
+
           uv build
           uv publish

@@ -1,10 +1,13 @@
 #!/usr/bin/env python
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "tomli",
+# ]
+# ///
 """
 Script to ensure version consistency between pyproject.toml and __init__.py.
 Run this script after release-please updates the version in pyproject.toml.
-
-Dependencies:
-- tomli
 """
 
 import re
