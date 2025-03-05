@@ -40,10 +40,5 @@ jobs:
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          # Make sure py.typed files exist
-          touch py.typed
-          mkdir -p stackone_ai
-          touch stackone_ai/py.typed
-
           uv build
           uv publish
