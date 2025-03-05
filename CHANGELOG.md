@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.4](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.3...stackone-ai-v0.0.4) (2025-03-05)
+
+
+### Bug Fixes
+
+* ci ([#14](https://github.com/StackOneHQ/stackone-ai-python/issues/14)) ([08aba6e](https://github.com/StackOneHQ/stackone-ai-python/commit/08aba6e96e55b4bedc7272e3adc91a1745d7859a))
+* script dependencies ([#12](https://github.com/StackOneHQ/stackone-ai-python/issues/12)) ([960c5d8](https://github.com/StackOneHQ/stackone-ai-python/commit/960c5d86f33fcda8bae72d58166ee5991e08f4d5))
+
 ## [0.0.3](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.2...stackone-ai-v0.0.3) (2025-03-05)
 
 
