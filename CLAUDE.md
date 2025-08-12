@@ -91,11 +91,11 @@ toolset = StackOneToolSet(
 ### Testing
 - Snapshot testing for tool parsing (`tests/snapshots/`)
 - Async tests use `pytest-asyncio`
-- Example validation: See @.cursor/rules/examples-standards
+- Example validation: See @./.cursor/rules/examples-standards
 
 ## Important Considerations
 
-1. **Dependencies**: See @.cursor/rules/package-installation for uv dependency management
+1. **Dependencies**: See @./.cursor/rules/package-installation for uv dependency management
 2. **Pre-commit**: Hooks configured for ruff and mypy - run on all commits
 3. **Python Version**: Requires Python >=3.11
 4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
@@ -115,6 +115,6 @@ toolset = StackOneToolSet(
 - Response handling in `_process_response()`
 
 ### Updating Documentation
-- Examples requirements: See @.cursor/rules/examples-standards
+- Examples requirements: See @./.cursor/rules/examples-standards
 - Run `make docs-serve` to preview changes
 - MkDocs config in `mkdocs.yml`
