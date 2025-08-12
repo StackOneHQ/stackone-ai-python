@@ -1,7 +1,9 @@
+import asyncio
 import base64
 import json
 from collections.abc import Sequence
 from enum import Enum
+from functools import partial
 from typing import Annotated, Any, TypeAlias, cast
 
 import requests
@@ -260,8 +262,6 @@ class StackOneTool(BaseModel):
         """
         # For now, we'll use asyncio to run the sync version
         # In the future, this should use aiohttp for true async
-        import asyncio
-        from functools import partial
 
         # Create a partial function with the arguments
         if args and kwargs:
