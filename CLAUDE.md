@@ -2,13 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## cursor rules
+## Cursor Rules
 
-@import .cursor/rules/package-installation
-@import .cursor/rules/no-relative-imports
-@import .cursor/rules/uv-scripts
-@import .cursor/rules/release-please-standards
-@import .cursor/rules/examples-standards
+- @./.cursor/rules/package-installation
+- @./.cursor/rules/no-relative-imports
+- @./.cursor/rules/uv-scripts
+- @./.cursor/rules/release-please-standards
+- @./.cursor/rules/examples-standards
 
 ## Project Overview
 
