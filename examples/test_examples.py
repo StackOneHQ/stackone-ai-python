@@ -1,8 +1,6 @@
 import importlib.util
-import os
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 import responses
@@ -68,8 +66,8 @@ def test_run_example(example_file: str) -> None:
             },
             status=200
         )
-        
-        # Mock document upload endpoint  
+
+        # Mock document upload endpoint
         responses.add(
             responses.POST,
             "https://api.stackone.com/unified/hris/employees/c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA/documents/upload",
@@ -78,7 +76,7 @@ def test_run_example(example_file: str) -> None:
         )
 
     example_path = Path(__file__).parent / example_file
-    
+
     # Import and run the example module directly
     spec = importlib.util.spec_from_file_location("example", example_path)
     if spec and spec.loader:
