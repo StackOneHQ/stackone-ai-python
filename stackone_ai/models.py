@@ -214,6 +214,68 @@ class StackOneTool(BaseModel):
                 ) from e
             raise StackOneError(f"Request failed: {e}") from e
 
+    def call(self, *args: Any, **kwargs: Any) -> JsonDict:
+        """Call the tool with the given arguments
+
+        This method provides a more intuitive way to execute tools directly.
+
+        Args:
+            *args: If a single argument is provided, it's treated as the full arguments dict/string
+            **kwargs: Keyword arguments to pass to the tool
+
+        Returns:
+            API response as dict
+
+        Raises:
+            StackOneAPIError: If the API request fails
+            ValueError: If the arguments are invalid
+
+        Examples:
+            >>> tool.call({"name": "John", "email": "john@example.com"})
+            >>> tool.call(name="John", email="john@example.com")
+        """
+        if args and kwargs:
+            raise ValueError("Cannot provide both positional and keyword arguments")
+
+        if args:
+            if len(args) > 1:
+                raise ValueError("Only one positional argument is allowed")
+            return self.execute(args[0])
+
+        return self.execute(kwargs if kwargs else None)
+
+    async def acall(self, *args: Any, **kwargs: Any) -> JsonDict:
+        """Async version of call method
+
+        Args:
+            *args: If a single argument is provided, it's treated as the full arguments dict/string
+            **kwargs: Keyword arguments to pass to the tool
+
+        Returns:
+            API response as dict
+
+        Raises:
+            StackOneAPIError: If the API request fails
+            ValueError: If the arguments are invalid
+        """
+        # For now, we'll use asyncio to run the sync version
+        # In the future, this should use aiohttp for true async
+        import asyncio
+        from functools import partial
+
+        # Create a partial function with the arguments
+        if args and kwargs:
+            raise ValueError("Cannot provide both positional and keyword arguments")
+
+        if args:
+            if len(args) > 1:
+                raise ValueError("Only one positional argument is allowed")
+            func = partial(self.execute, args[0])
+        else:
+            func = partial(self.execute, kwargs if kwargs else None)
+
+        return await asyncio.get_event_loop().run_in_executor(None, func)
+
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format
 
@@ -417,3 +479,29 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
+
+    def meta_tools(self) -> "Tools":
+        """Return meta tools for tool discovery and execution
+
+        Meta tools enable dynamic tool discovery and execution based on natural language queries.
+
+        Returns:
+            Tools collection containing meta_filter_relevant_tools and meta_execute_tool
+
+        Note:
+            This feature is in beta and may change in future versions
+        """
+        from stackone_ai.meta_tools import (
+            ToolIndex,
+            create_meta_execute_tool,
+            create_meta_filter_tool,
+        )
+
+        # Create search index
+        index = ToolIndex(self.tools)
+
+        # Create meta tools
+        filter_tool = create_meta_filter_tool(index)
+        execute_tool = create_meta_execute_tool(self)
+
+        return Tools([filter_tool, execute_tool])
