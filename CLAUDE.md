@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## cursor rules
 
-@import .cursor/rules/package-installation.mdc
-@import .cursor/rules/no-relative-imports.mdc
-@import .cursor/rules/uv-scripts.mdc
-@import .cursor/rules/release-please-standards.mdc
-@import .cursor/rules/examples-standards.mdc
+@import .cursor/rules/package-installation
+@import .cursor/rules/no-relative-imports
+@import .cursor/rules/uv-scripts
+@import .cursor/rules/release-please-standards
+@import .cursor/rules/examples-standards
 
 ## Project Overview
 
@@ -91,11 +91,11 @@ toolset = StackOneToolSet(
 ### Testing
 - Snapshot testing for tool parsing (`tests/snapshots/`)
 - Async tests use `pytest-asyncio`
-- Example validation in `tests/test_examples.py`
+- Example validation: See @examples-standards
 
 ## Important Considerations
 
-1. **Dependencies**: Project uses `uv` for dependency management (not pip/poetry)
+1. **Dependencies**: See @package-installation for uv dependency management
 2. **Pre-commit**: Hooks configured for ruff and mypy - run on all commits
 3. **Python Version**: Requires Python >=3.11
 4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
@@ -115,6 +115,6 @@ toolset = StackOneToolSet(
 - Response handling in `_process_response()`
 
 ### Updating Documentation
-- Examples in `examples/` directory auto-generate docs
+- Examples requirements: See @examples-standards
 - Run `make docs-serve` to preview changes
 - MkDocs config in `mkdocs.yml`
