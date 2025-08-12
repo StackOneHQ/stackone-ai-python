@@ -1,6 +1,7 @@
 """Tests for meta tools functionality"""
 
 import pytest
+import responses
 
 from stackone_ai import StackOneTool, Tools
 from stackone_ai.meta_tools import ToolIndex, create_meta_execute_tool, create_meta_filter_tool
@@ -209,8 +210,6 @@ class TestMetaExecuteTool:
         execute_tool = create_meta_execute_tool(tools_collection)
 
         # Mock the actual tool execution by patching the requests
-        import responses
-
         with responses.RequestsMock() as rsps:
             rsps.add(
                 responses.GET,
