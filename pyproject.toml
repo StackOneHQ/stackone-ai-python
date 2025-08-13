@@ -20,6 +20,8 @@ dependencies = [
     "requests>=2.32.3",
     "langchain-core>=0.1.0",
     "mcp[cli]>=1.3.0",
+    "bm25s>=0.2.2",
+    "numpy>=1.24.0",
 ]
 
 [project.scripts]
@@ -104,3 +106,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_return_any = true
 warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "bm25s"
+ignore_missing_imports = true
