@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.5](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.4...stackone-ai-v0.0.5) (2025-08-13)
+
+
+### Features
+
+* add CLAUDE.md for Claude Code guidance ([#15](https://github.com/StackOneHQ/stackone-ai-python/issues/15)) ([ac9fe98](https://github.com/StackOneHQ/stackone-ai-python/commit/ac9fe9857f44c19394654dfcbe23fecc5cf9fbb0))
+* bring Python SDK to feature parity with Node SDK ([#17](https://github.com/StackOneHQ/stackone-ai-python/issues/17)) ([8b6de99](https://github.com/StackOneHQ/stackone-ai-python/commit/8b6de99184227cb7f1580964dc3eae14f8f60fc1))
+
 ## [0.0.4](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.3...stackone-ai-v0.0.4) (2025-03-05)
 
 
