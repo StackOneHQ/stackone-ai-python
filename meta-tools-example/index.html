@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="generator" content="mkdocs-1.6.1, mkdocs-terminal-4.7.0">
+     
+     
+    
+    <link rel="canonical" href="https://stackonehq.github.io/stackone-ai-python/meta-tools-example/"><link rel="icon" type="image/png" sizes="192x192" href="../img/android-chrome-192x192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="../img/android-chrome-512x512.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../img/apple-touch-icon.png" />
+<link rel="shortcut icon" type="image/png" sizes="48x48" href="../img/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="../img/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="../img/favicon-32x32.png" />
+
+
+    
+ 
+<title>Meta Tools Example - StackOne AI SDK</title>
+
+
+<link href="../css/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+<link href="../css/fontawesome/css/solid.min.css" rel="stylesheet">
+<link href="../css/normalize.css" rel="stylesheet">
+<link href="../css/terminal.css" rel="stylesheet">
+<link href="../css/theme.css" rel="stylesheet">
+<link href="../css/theme.tile_grid.css" rel="stylesheet">
+<link href="../css/theme.footer.css" rel="stylesheet">
+<!-- default color palette -->
+<link href="../css/palettes/default.css" rel="stylesheet">
+
+<!-- page layout -->
+<style>
+/* initially set page layout to a one column grid */
+.terminal-mkdocs-main-grid {
+    display: grid;
+    grid-column-gap: 1.4em;
+    grid-template-columns: auto;
+    grid-template-rows: auto;
+}
+
+/*  
+*   when side navigation is not hidden, use a two column grid.  
+*   if the screen is too narrow, fall back to the initial one column grid layout.
+*   in this case the main content will be placed under the navigation panel. 
+*/
+@media only screen and (min-width: 70em) {
+    .terminal-mkdocs-main-grid {
+        grid-template-columns: 4fr 9fr;
+    }
+}</style>
+
+<!-- link underline override -->
+<style>
+#terminal-mkdocs-main-content a:not(.headerlink){
+    text-decoration: none;
+}
+</style>
+
+     
+    
+    
+
+    
+    <!-- search css support -->
+<link href="../css/search/bootstrap-modal.css" rel="stylesheet">
+<!-- search scripts -->
+<script>
+    var base_url = "..",
+    shortcuts = "{}";
+</script>
+<script src="../js/jquery/jquery-1.10.1.min.js" defer></script>
+<script src="../js/bootstrap/bootstrap.min.js" defer></script>
+<script src="../js/mkdocs/base.js" defer></script>
+    
+    
+    
+    
+    <script src="../search/main.js"></script>
+    
+
+    
+</head>
+
+<body class="terminal"><div class="container">
+    <div class="terminal-nav">
+        <header class="terminal-logo">
+            <div id="mkdocs-terminal-site-name" class="logo terminal-prompt"><a href="https://stackonehq.github.io/stackone-ai-python/" class="no-style">StackOne AI SDK</a></div>
+        </header>
+        
+        <nav class="terminal-menu">
+            
+            <ul vocab="https://schema.org/" typeof="BreadcrumbList">
+                
+                
+                <li property="itemListElement" typeof="ListItem">
+                    <a href=".." class="menu-item " property="item" typeof="WebPage">
+                        <span property="name">Home</span>
+                    </a>
+                    <meta property="position" content="0">
+                </li>
+                
+                
+                
+                
+                
+                    
+                    
+
+
+<li property="itemListElement" typeof="ListItem">
+    <a href="#" class="menu-item" data-toggle="modal" data-target="#mkdocs_search_modal" property="item" typeof="SearchAction">
+        <i aria-hidden="true" class="fa fa-search"></i> <span property="name">Search</span>
+    </a>
+    <meta property="position" content="1">
+</li>
+                    
+            </ul>
+            
+        </nav>
+    </div>
+</div>
+        
+    <div class="container">
+        <div class="terminal-mkdocs-main-grid"><aside id="terminal-mkdocs-side-panel"><nav>
+  
+    <ul class="terminal-mkdocs-side-nav-items">
+        
+          
+
+
+
+<li class="terminal-mkdocs-side-nav-li">
+    
+    
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="..">Home</a>
+        
+    
+    
+    
+  </li>
+        
+          
+
+
+
+<li class="terminal-mkdocs-side-nav-li">
+    
+    
+        
+        
+            
+                
+        
+
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+            
+        
+    
+
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Usage</span>
+        
+    
+    
+        
+      
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../stackone-account-ids/">StackOne Account IDs</a>
+        
+    
+    </li>
+            
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../error-handling/">Error Handling</a>
+        
+    
+    </li>
+            
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../available-tools/">Available Tools</a>
+        
+    
+    </li>
+            
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../file-uploads/">File Uploads</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+  </li>
+        
+          
+
+
+
+<li class="terminal-mkdocs-side-nav-li">
+    
+    
+        
+        
+            
+                
+        
+
+        
+            
+    
+        
+        
+            
+            
+            <span class="
+        
+            
+        
+    
+
+    terminal-mkdocs-side-nav-item terminal-mkdocs-side-nav-section-no-index">Integrations</span>
+        
+    
+    
+        
+      
+        
+            <ul class="terminal-mkdocs-side-nav-li-ul">
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../openai-integration/">OpenAI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../crewai-integration/">CrewAI</a>
+        
+    
+    </li>
+            
+        
+            
+            
+                
+                
+            
+
+             
+                <li class="terminal-mkdocs-side-nav-li-ul-li">
+    
+        
+        
+            <a class="
+
+    terminal-mkdocs-side-nav-item" href="../langchain-integration/">LangChain</a>
+        
+    
+    </li>
+            
+            
+    </ul>
+        
+    
+  </li>
+        
+    </ul>
+  
+</nav>
+</aside>
+            <main id="terminal-mkdocs-main-content">
+<section id="mkdocs-terminal-content">
+    <h1 id="meta-tools-example">Meta Tools Example<a class="headerlink" href="#meta-tools-example" title="Anchor link to this section for reference">#</a></h1>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #287088; font-style: italic">#!/usr/bin/env python</span>
+</code></pre></div>
+<p>Example demonstrating meta tools for dynamic tool discovery and execution.</p>
+<p>Meta tools allow AI agents to search for relevant tools based on natural language queries
+and execute them dynamically without hardcoding tool names.</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #2838B0">import</span><span style="color: #A89028"> </span><span style="color: #289870">os</span>
+
+<span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">dotenv</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> load_dotenv
+
+<span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">stackone_ai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> StackOneToolSet
+
+<span style="color: #888; font-style: italic"># Load environment variables</span>
+load_dotenv<span style="color: #888">()</span>
+
+
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_meta_tools_basic</span><span style="color: #888">():</span>
+</code></pre></div>
+<p>Basic example of using meta tools for tool discovery</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🔍 Example 1: Dynamic tool discovery</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #888; font-style: italic"># Initialize StackOne toolset</span>
+    toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Get all available tools (you can also use pattern like &quot;hris_*&quot;)</span>
+    all_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Total HRIS tools available: </span><span style="color: #B83838; text-decoration: underline">{</span><span style="color: #388038">len</span><span style="color: #888">(</span>all_tools<span style="color: #888">)</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #888; font-style: italic"># Get meta tools for dynamic discovery</span>
+    meta_tools <span style="color: #666">=</span> all_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Get the filter tool to search for relevant tools</span>
+    filter_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_filter_relevant_tools&quot;</span><span style="color: #888">)</span>
+    <span style="color: #2838B0">if</span> filter_tool<span style="color: #888">:</span>
+        <span style="color: #888; font-style: italic"># Search for employee management tools</span>
+        result <span style="color: #666">=</span> filter_tool<span style="color: #666">.</span>call<span style="color: #888">(</span>query<span style="color: #666">=</span><span style="color: #B83838">&quot;manage employees create update list&quot;</span><span style="color: #888">,</span> limit<span style="color: #666">=</span><span style="color: #444">5</span><span style="color: #888">,</span> minScore<span style="color: #666">=</span><span style="color: #444">0.0</span><span style="color: #888">)</span>
+
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Found relevant tools:&quot;</span><span style="color: #888">)</span>
+        <span style="color: #2838B0">for</span> tool <span style="color: #A848A8">in</span> result<span style="color: #666">.</span>get<span style="color: #888">(</span><span style="color: #B83838">&quot;tools&quot;</span><span style="color: #888">,</span> <span style="color: #888">[]):</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;  - </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #888">[</span><span style="color: #B83838">&#39;name&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838"> (score: </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #888">[</span><span style="color: #B83838">&#39;score&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">:</span><span style="color: #B83838">.2f</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">): </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #888">[</span><span style="color: #B83838">&#39;description&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #388038">print</span><span style="color: #888">()</span>
+
+
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_meta_tools_with_execution</span><span style="color: #888">():</span>
+</code></pre></div>
+<p>Example of discovering and executing tools dynamically</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🚀 Example 2: Dynamic tool execution</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #888; font-style: italic"># Initialize toolset</span>
+    toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Get all tools</span>
+    all_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">()</span>
+    meta_tools <span style="color: #666">=</span> all_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Step 1: Search for relevant tools</span>
+    filter_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_filter_relevant_tools&quot;</span><span style="color: #888">)</span>
+    execute_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_execute_tool&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #2838B0">if</span> filter_tool <span style="color: #A848A8">and</span> execute_tool<span style="color: #888">:</span>
+        <span style="color: #888; font-style: italic"># Find tools for listing employees</span>
+        search_result <span style="color: #666">=</span> filter_tool<span style="color: #666">.</span>call<span style="color: #888">(</span>query<span style="color: #666">=</span><span style="color: #B83838">&quot;list all employees&quot;</span><span style="color: #888">,</span> limit<span style="color: #666">=</span><span style="color: #444">1</span><span style="color: #888">)</span>
+
+        tools_found <span style="color: #666">=</span> search_result<span style="color: #666">.</span>get<span style="color: #888">(</span><span style="color: #B83838">&quot;tools&quot;</span><span style="color: #888">,</span> <span style="color: #888">[])</span>
+        <span style="color: #2838B0">if</span> tools_found<span style="color: #888">:</span>
+            best_tool <span style="color: #666">=</span> tools_found<span style="color: #888">[</span><span style="color: #444">0</span><span style="color: #888">]</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Best matching tool: </span><span style="color: #B83838; text-decoration: underline">{</span>best_tool<span style="color: #888">[</span><span style="color: #B83838">&#39;name&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Description: </span><span style="color: #B83838; text-decoration: underline">{</span>best_tool<span style="color: #888">[</span><span style="color: #B83838">&#39;description&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Relevance score: </span><span style="color: #B83838; text-decoration: underline">{</span>best_tool<span style="color: #888">[</span><span style="color: #B83838">&#39;score&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">:</span><span style="color: #B83838">.2f</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+            <span style="color: #888; font-style: italic"># Step 2: Execute the found tool</span>
+            <span style="color: #2838B0">try</span><span style="color: #888">:</span>
+                <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;</span><span style="color: #709030">\n</span><span style="color: #B83838">Executing </span><span style="color: #B83838; text-decoration: underline">{</span>best_tool<span style="color: #888">[</span><span style="color: #B83838">&#39;name&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">...&quot;</span><span style="color: #888">)</span>
+                result <span style="color: #666">=</span> execute_tool<span style="color: #666">.</span>call<span style="color: #888">(</span>toolName<span style="color: #666">=</span>best_tool<span style="color: #888">[</span><span style="color: #B83838">&quot;name&quot;</span><span style="color: #888">],</span> params<span style="color: #666">=</span><span style="color: #888">{</span><span style="color: #B83838">&quot;limit&quot;</span><span style="color: #888">:</span> <span style="color: #444">5</span><span style="color: #888">})</span>
+                <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Execution result: </span><span style="color: #B83838; text-decoration: underline">{</span>result<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+            <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
+                <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Execution failed (expected in example): </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #388038">print</span><span style="color: #888">()</span>
+
+
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_tool_calling</span><span style="color: #888">():</span>
+</code></pre></div>
+<p>Example of the new tool calling functionality</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;📞 Example 3: Tool calling functionality</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #888; font-style: italic"># Initialize toolset</span>
+    toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Get a specific tool</span>
+    tool <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_list_employees&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #2838B0">if</span> tool<span style="color: #888">:</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Tool: </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #666">.</span>name<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Description: </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #666">.</span>description<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+        <span style="color: #888; font-style: italic"># New calling methods</span>
+        <span style="color: #2838B0">try</span><span style="color: #888">:</span>
+            <span style="color: #888; font-style: italic"># Method 1: Call with keyword arguments</span>
+            result <span style="color: #666">=</span> tool<span style="color: #666">.</span>call<span style="color: #888">(</span>limit<span style="color: #666">=</span><span style="color: #444">10</span><span style="color: #888">,</span> page<span style="color: #666">=</span><span style="color: #444">1</span><span style="color: #888">)</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Called with kwargs: </span><span style="color: #B83838; text-decoration: underline">{</span>result<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+        <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Call with kwargs (expected to fail in example): </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+        <span style="color: #2838B0">try</span><span style="color: #888">:</span>
+            <span style="color: #888; font-style: italic"># Method 2: Call with dictionary</span>
+            result <span style="color: #666">=</span> tool<span style="color: #666">.</span>call<span style="color: #888">({</span><span style="color: #B83838">&quot;limit&quot;</span><span style="color: #888">:</span> <span style="color: #444">10</span><span style="color: #888">,</span> <span style="color: #B83838">&quot;page&quot;</span><span style="color: #888">:</span> <span style="color: #444">1</span><span style="color: #888">})</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Called with dict: </span><span style="color: #B83838; text-decoration: underline">{</span>result<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+        <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Call with dict (expected to fail in example): </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #388038">print</span><span style="color: #888">()</span>
+
+
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_with_openai</span><span style="color: #888">():</span>
+</code></pre></div>
+<p>Example of using meta tools with OpenAI</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🤖 Example 4: Using meta tools with OpenAI</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #2838B0">try</span><span style="color: #888">:</span>
+        <span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">openai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> OpenAI
+
+        <span style="color: #888; font-style: italic"># Initialize OpenAI client</span>
+        client <span style="color: #666">=</span> OpenAI<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Initialize StackOne toolset</span>
+        toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Get HRIS tools and their meta tools</span>
+        hris_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">)</span>
+        meta_tools <span style="color: #666">=</span> hris_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Convert to OpenAI format</span>
+        openai_tools <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>to_openai<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Create a chat completion with meta tools</span>
+        response <span style="color: #666">=</span> client<span style="color: #666">.</span>chat<span style="color: #666">.</span>completions<span style="color: #666">.</span>create<span style="color: #888">(</span>
+            model<span style="color: #666">=</span><span style="color: #B83838">&quot;gpt-4&quot;</span><span style="color: #888">,</span>
+            messages<span style="color: #666">=</span><span style="color: #888">[</span>
+                <span style="color: #888">{</span>
+                    <span style="color: #B83838">&quot;role&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;system&quot;</span><span style="color: #888">,</span>
+                    <span style="color: #B83838">&quot;content&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;You are an HR assistant. Use meta_filter_relevant_tools to find appropriate tools, then meta_execute_tool to execute them.&quot;</span><span style="color: #888">,</span>
+                <span style="color: #888">},</span>
+                <span style="color: #888">{</span><span style="color: #B83838">&quot;role&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;user&quot;</span><span style="color: #888">,</span> <span style="color: #B83838">&quot;content&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;Can you help me find tools for managing employee records?&quot;</span><span style="color: #888">},</span>
+            <span style="color: #888">],</span>
+            tools<span style="color: #666">=</span>openai_tools<span style="color: #888">,</span>
+            tool_choice<span style="color: #666">=</span><span style="color: #B83838">&quot;auto&quot;</span><span style="color: #888">,</span>
+        <span style="color: #888">)</span>
+
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;OpenAI Response:&quot;</span><span style="color: #888">,</span> response<span style="color: #666">.</span>choices<span style="color: #888">[</span><span style="color: #444">0</span><span style="color: #888">]</span><span style="color: #666">.</span>message<span style="color: #666">.</span>content<span style="color: #888">)</span>
+
+        <span style="color: #2838B0">if</span> response<span style="color: #666">.</span>choices<span style="color: #888">[</span><span style="color: #444">0</span><span style="color: #888">]</span><span style="color: #666">.</span>message<span style="color: #666">.</span>tool_calls<span style="color: #888">:</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;</span><span style="color: #709030">\n</span><span style="color: #B83838">Tool calls made:&quot;</span><span style="color: #888">)</span>
+            <span style="color: #2838B0">for</span> tool_call <span style="color: #A848A8">in</span> response<span style="color: #666">.</span>choices<span style="color: #888">[</span><span style="color: #444">0</span><span style="color: #888">]</span><span style="color: #666">.</span>message<span style="color: #666">.</span>tool_calls<span style="color: #888">:</span>
+                <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;  - </span><span style="color: #B83838; text-decoration: underline">{</span>tool_call<span style="color: #666">.</span>function<span style="color: #666">.</span>name<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #2838B0">except</span> <span style="color: #908828">ImportError</span><span style="color: #888">:</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;OpenAI library not installed. Install with: pip install openai&quot;</span><span style="color: #888">)</span>
+    <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;OpenAI example failed: </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #388038">print</span><span style="color: #888">()</span>
+
+
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_with_langchain</span><span style="color: #888">():</span>
+</code></pre></div>
+<p>Example of using tools with LangChain</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🔗 Example 5: Using tools with LangChain</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #2838B0">try</span><span style="color: #888">:</span>
+        <span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">langchain.agents</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> AgentExecutor<span style="color: #888">,</span> create_tool_calling_agent
+        <span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">langchain_core.prompts</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> ChatPromptTemplate
+        <span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">langchain_openai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> ChatOpenAI
+
+        <span style="color: #888; font-style: italic"># Initialize StackOne toolset</span>
+        toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Get tools and convert to LangChain format</span>
+        tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_list_*&quot;</span><span style="color: #888">)</span>
+        langchain_tools <span style="color: #666">=</span> tools<span style="color: #666">.</span>to_langchain<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Get meta tools as well</span>
+        meta_tools <span style="color: #666">=</span> tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
+        langchain_meta_tools <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>to_langchain<span style="color: #888">()</span>
+
+        <span style="color: #888; font-style: italic"># Combine all tools</span>
+        all_langchain_tools <span style="color: #666">=</span> <span style="color: #388038">list</span><span style="color: #888">(</span>langchain_tools<span style="color: #888">)</span> <span style="color: #666">+</span> <span style="color: #388038">list</span><span style="color: #888">(</span>langchain_meta_tools<span style="color: #888">)</span>
+
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Available tools for LangChain: </span><span style="color: #B83838; text-decoration: underline">{</span><span style="color: #388038">len</span><span style="color: #888">(</span>all_langchain_tools<span style="color: #888">)</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+        <span style="color: #2838B0">for</span> tool <span style="color: #A848A8">in</span> all_langchain_tools<span style="color: #888">:</span>
+            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;  - </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #666">.</span>name<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">: </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #666">.</span>description<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+        <span style="color: #888; font-style: italic"># Create LangChain agent</span>
+        llm <span style="color: #666">=</span> ChatOpenAI<span style="color: #888">(</span>model<span style="color: #666">=</span><span style="color: #B83838">&quot;gpt-4&quot;</span><span style="color: #888">,</span> temperature<span style="color: #666">=</span><span style="color: #444">0</span><span style="color: #888">)</span>
+
+        prompt <span style="color: #666">=</span> ChatPromptTemplate<span style="color: #666">.</span>from_messages<span style="color: #888">(</span>
+            <span style="color: #888">[</span>
+                <span style="color: #888">(</span>
+                    <span style="color: #B83838">&quot;system&quot;</span><span style="color: #888">,</span>
+                    <span style="color: #B83838">&quot;You are an HR assistant. Use the meta tools to discover and execute relevant tools.&quot;</span><span style="color: #888">,</span>
+                <span style="color: #888">),</span>
+                <span style="color: #888">(</span><span style="color: #B83838">&quot;human&quot;</span><span style="color: #888">,</span> <span style="color: #B83838">&quot;</span><span style="color: #B83838; text-decoration: underline">{input}</span><span style="color: #B83838">&quot;</span><span style="color: #888">),</span>
+                <span style="color: #888">(</span><span style="color: #B83838">&quot;placeholder&quot;</span><span style="color: #888">,</span> <span style="color: #B83838">&quot;</span><span style="color: #B83838; text-decoration: underline">{agent_scratchpad}</span><span style="color: #B83838">&quot;</span><span style="color: #888">),</span>
+            <span style="color: #888">]</span>
+        <span style="color: #888">)</span>
+
+        agent <span style="color: #666">=</span> create_tool_calling_agent<span style="color: #888">(</span>llm<span style="color: #888">,</span> all_langchain_tools<span style="color: #888">,</span> prompt<span style="color: #888">)</span>
+        agent_executor <span style="color: #666">=</span> AgentExecutor<span style="color: #888">(</span>agent<span style="color: #666">=</span>agent<span style="color: #888">,</span> tools<span style="color: #666">=</span>all_langchain_tools<span style="color: #888">,</span> verbose<span style="color: #666">=</span><span style="color: #444; font-style: italic">True</span><span style="color: #888">)</span>
+
+        <span style="color: #888; font-style: italic"># Run the agent</span>
+        result <span style="color: #666">=</span> agent_executor<span style="color: #666">.</span>invoke<span style="color: #888">({</span><span style="color: #B83838">&quot;input&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;Find tools that can list employee data&quot;</span><span style="color: #888">})</span>
+
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;</span><span style="color: #709030">\n</span><span style="color: #B83838">Agent result: </span><span style="color: #B83838; text-decoration: underline">{</span>result<span style="color: #888">[</span><span style="color: #B83838">&#39;output&#39;</span><span style="color: #888">]</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #2838B0">except</span> <span style="color: #908828">ImportError</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;LangChain dependencies not installed: </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Install with: pip install langchain-openai&quot;</span><span style="color: #888">)</span>
+    <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;LangChain example failed: </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #388038">print</span><span style="color: #888">()</span>
+
+
+<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">main</span><span style="color: #888">():</span>
+</code></pre></div>
+<p>Run all examples</p>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;StackOne AI SDK - Meta Tools &amp; Tool Calling Examples&quot;</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Basic examples that work without external APIs</span>
+    example_meta_tools_basic<span style="color: #888">()</span>
+    example_meta_tools_with_execution<span style="color: #888">()</span>
+    example_tool_calling<span style="color: #888">()</span>
+
+    <span style="color: #888; font-style: italic"># Examples that require OpenAI API</span>
+    <span style="color: #2838B0">if</span> os<span style="color: #666">.</span>getenv<span style="color: #888">(</span><span style="color: #B83838">&quot;OPENAI_API_KEY&quot;</span><span style="color: #888">):</span>
+        example_with_openai<span style="color: #888">()</span>
+        example_with_langchain<span style="color: #888">()</span>
+    <span style="color: #2838B0">else</span><span style="color: #888">:</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;ℹ️  Set OPENAI_API_KEY to run OpenAI and LangChain examples</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Examples completed!&quot;</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
+
+
+<span style="color: #2838B0">if</span> <span style="color: #B85820">__name__</span> <span style="color: #666">==</span> <span style="color: #B83838">&quot;__main__&quot;</span><span style="color: #888">:</span>
+    main<span style="color: #888">()</span>
+</code></pre></div>
+</section>
+
+            </main>
+        </div>
+        <hr><footer>
+    <div class="terminal-mkdocs-footer-grid">
+        <div id="terminal-mkdocs-footer-copyright-info">
+             Site built with <a href="http://www.mkdocs.org">MkDocs</a> and <a href="https://github.com/ntno/mkdocs-terminal">Terminal for MkDocs</a>.
+        </div>
+    </div>
+</footer>
+    </div>
+
+    
+    <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="searchModalLabel">
+    <div class="modal-dialog modal-lg" role="search">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="searchModalLabel">Search</h5>
+                <button type="button" class="close btn btn-default btn-ghost" data-dismiss="modal"><span aria-hidden="true">x</span><span class="sr-only">Close</span></button>
+            </div>
+            <div class="modal-body">
+                <p id="searchInputLabel">Type to start searching</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" aria-labelledby="searchInputLabel" placeholder="" id="mkdocs-search-query" title="Please enter search terms here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No document matches found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+    
+    
+</body>
+
+</html>
