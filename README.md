@@ -1,5 +1,8 @@
 # StackOne AI SDK
 
+[![PyPI version](https://badge.fury.io/py/stackone-ai.svg)](https://badge.fury.io/py/stackone-ai)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/StackOneHQ/stackone-ai-python)](https://github.com/StackOneHQ/stackone-ai-python/releases)
+
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
 ## Features
