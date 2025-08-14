@@ -9,6 +9,7 @@ from typing import Annotated, Any, TypeAlias, cast
 import requests
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
+from pydantic_ai.tools import Tool as PydanticAITool
 from requests.exceptions import RequestException
 
 # Type aliases for common types
@@ -397,6 +398,24 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
+    def to_pydantic_ai(self) -> PydanticAITool:
+        """Convert this tool to Pydantic AI format
+
+        Returns:
+            Tool in Pydantic AI format
+        """
+        parent_tool = self
+
+        async def pydantic_ai_wrapper(**kwargs: Any) -> JsonDict:
+            """Async wrapper for the tool execution compatible with Pydantic AI"""
+            return await parent_tool.acall(kwargs)
+
+        # Create the Pydantic AI tool with proper schema
+        return PydanticAITool(
+            pydantic_ai_wrapper,
+            description=self.description,
+        )
+
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool
 
@@ -479,6 +498,14 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
+
+    def to_pydantic_ai(self) -> list[PydanticAITool]:
+        """Convert all tools to Pydantic AI format
+
+        Returns:
+            List of tools in Pydantic AI format
+        """
+        return [tool.to_pydantic_ai() for tool in self.tools]
 
     def meta_tools(self) -> "Tools":
         """Return meta tools for tool discovery and execution
