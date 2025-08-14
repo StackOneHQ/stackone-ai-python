@@ -7,6 +7,7 @@ from functools import partial
 from typing import Annotated, Any, TypeAlias, cast
 
 import requests
+from agents import function_tool
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
 from requests.exceptions import RequestException
@@ -397,6 +398,28 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
+    def to_openai_agents(self) -> Any:
+        """Convert this tool to OpenAI Agents SDK format
+
+        The OpenAI Agents SDK enables building agentic AI apps with lightweight abstractions.
+        See: https://openai.github.io/openai-agents-python/
+
+        Returns:
+            Function tool compatible with OpenAI Agents SDK
+        """
+        parent_tool = self
+
+        async def openai_agents_wrapper(**kwargs: Any) -> JsonDict:
+            """Async wrapper for the tool execution compatible with OpenAI Agents SDK"""
+            return await parent_tool.acall(kwargs)
+
+        # Use the function_tool decorator to create an OpenAI Agents compatible tool
+        return function_tool(
+            openai_agents_wrapper,
+            name_override=self.name,
+            description_override=self.description,
+        )
+
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool
 
@@ -479,6 +502,17 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
+
+    def to_openai_agents(self) -> list[Any]:
+        """Convert all tools to OpenAI Agents SDK format
+
+        The OpenAI Agents SDK enables building agentic AI apps with lightweight abstractions.
+        See: https://openai.github.io/openai-agents-python/
+
+        Returns:
+            List of function tools compatible with OpenAI Agents SDK
+        """
+        return [tool.to_openai_agents() for tool in self.tools]
 
     def meta_tools(self) -> "Tools":
         """Return meta tools for tool discovery and execution
