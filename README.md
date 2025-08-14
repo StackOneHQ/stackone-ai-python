@@ -30,6 +30,19 @@ employee = employee_tool.call(id="employee-id")
 employee = employee_tool.execute({"id": "employee-id"})
 ```
 
+## Features
+
+- Unified interface for multiple SaaS tools
+- AI-friendly tool descriptions and parameters
+- **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
+- **Glob Pattern Filtering**: Advanced tool filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
+- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- Integration with popular AI frameworks:
+  - OpenAI Functions
+  - LangChain Tools
+  - CrewAI Tools
+  - LangGraph Tool Node
+
 ## Meta Tools (Beta)
 
 Meta tools enable dynamic tool discovery and execution without hardcoding tool names:
@@ -110,19 +123,6 @@ task = Task(
 crew = Crew(agents=[agent], tasks=[task])
 result = crew.kickoff()
 ```
-
-## Features
-
-- Unified interface for multiple SaaS tools
-- AI-friendly tool descriptions and parameters
-- **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
-- **Glob Pattern Filtering**: Advanced tool filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
-- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
-- Integration with popular AI frameworks:
-  - OpenAI Functions
-  - LangChain Tools
-  - CrewAI Tools
-  - LangGraph Tool Node
 
 ## Documentation
 
