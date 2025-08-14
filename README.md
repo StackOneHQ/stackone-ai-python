@@ -48,6 +48,69 @@ execute_tool = meta_tools.get_tool("meta_execute_tool")
 result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 ```
 
+## LangChain Integration
+
+StackOne tools work seamlessly with LangChain, enabling powerful AI agent workflows:
+
+```python
+from langchain_openai import ChatOpenAI
+from stackone_ai import StackOneToolSet
+
+# Initialize StackOne tools
+toolset = StackOneToolSet()
+tools = toolset.get_tools("hris_*", account_id="your-account-id")
+
+# Convert to LangChain format
+langchain_tools = tools.to_langchain()
+
+# Use with LangChain models
+model = ChatOpenAI(model="gpt-4o-mini")
+model_with_tools = model.bind_tools(langchain_tools)
+
+# Execute AI-driven tool calls
+response = model_with_tools.invoke("Get employee information for ID: emp123")
+
+# Handle tool calls
+for tool_call in response.tool_calls:
+    tool = tools.get_tool(tool_call["name"])
+    if tool:
+        result = tool.execute(tool_call["args"])
+        print(f"Result: {result}")
+```
+
+### CrewAI Integration
+
+CrewAI uses LangChain tools natively, making integration seamless:
+
+```python
+from crewai import Agent, Crew, Task
+from stackone_ai import StackOneToolSet
+
+# Get tools and convert to LangChain format
+toolset = StackOneToolSet()
+tools = toolset.get_tools("hris_*", account_id="your-account-id")
+langchain_tools = tools.to_langchain()
+
+# Create CrewAI agent with StackOne tools
+agent = Agent(
+    role="HR Manager",
+    goal="Analyze employee data and generate insights",
+    backstory="Expert in HR analytics and employee management",
+    tools=langchain_tools,
+    llm="gpt-4o-mini"
+)
+
+# Define task and execute
+task = Task(
+    description="Find all employees in the engineering department",
+    agent=agent,
+    expected_output="List of engineering employees with their details"
+)
+
+crew = Crew(agents=[agent], tasks=[task])
+result = crew.kickoff()
+```
+
 ## Features
 
 - Unified interface for multiple SaaS tools
