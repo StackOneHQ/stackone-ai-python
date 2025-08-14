@@ -58,24 +58,47 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
+  - Pydantic AI Tools
   - CrewAI Tools
   - LangGraph Tool Node
 
-## Documentation
-
-For more examples and documentation, visit:
-
-- [Error Handling](docs/error-handling.md)
-- [StackOne Account IDs](docs/stackone-account-ids.md)
-- [Available Tools](docs/available-tools.md)
-- [File Uploads](docs/file-uploads.md)
-
 ## AI Framework Integration
 
-- [OpenAI Integration](docs/openai-integration.md)
-- [LangChain Integration](docs/langchain-integration.md)
-- [CrewAI Integration](docs/crewai-integration.md)
-- [LangGraph Tool Node](docs/langgraph-tool-node.md)
+StackOne tools integrate seamlessly with popular AI frameworks. Convert your tools to the appropriate format:
+
+### Pydantic AI
+
+```python
+# Convert to Pydantic AI format
+pydantic_ai_tools = tools.to_pydantic_ai()
+
+# Use with Pydantic AI agent
+from pydantic_ai import Agent
+agent = Agent(model="openai:gpt-4", tools=pydantic_ai_tools)
+```
+
+### LangChain
+
+```python
+# Convert to LangChain format
+langchain_tools = tools.to_langchain()
+
+# Use with LangChain
+from langchain_openai import ChatOpenAI
+model = ChatOpenAI().bind_tools(langchain_tools)
+```
+
+### OpenAI Functions
+
+```python
+# Convert to OpenAI function format
+openai_tools = tools.to_openai()
+
+# Use with OpenAI client
+import openai
+client = openai.OpenAI()
+client.chat.completions.create(tools=openai_tools, ...)
+```
 
 ## License
 
