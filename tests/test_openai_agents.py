@@ -1,8 +1,7 @@
 """Tests for OpenAI Agents SDK integration"""
 
-from collections.abc import Callable
-
 import pytest
+from agents import FunctionTool
 
 from stackone_ai import StackOneToolSet
 
@@ -23,9 +22,11 @@ def test_single_tool_openai_agents_conversion(toolset: StackOneToolSet) -> None:
     tool = tools.tools[0]
     openai_agents_tool = tool.to_openai_agents()
 
-    # Verify it's a callable function tool
-    assert callable(openai_agents_tool)
-    assert isinstance(openai_agents_tool, Callable)
+    # Verify it's a FunctionTool object
+    assert isinstance(openai_agents_tool, FunctionTool)
+    assert hasattr(openai_agents_tool, "name")
+    assert hasattr(openai_agents_tool, "description")
+    assert hasattr(openai_agents_tool, "on_invoke_tool")
 
 
 def test_tools_openai_agents_conversion(toolset: StackOneToolSet) -> None:
@@ -39,8 +40,8 @@ def test_tools_openai_agents_conversion(toolset: StackOneToolSet) -> None:
 
     # Verify conversion
     assert len(openai_agents_tools) == len(tools.tools)
-    assert all(callable(tool) for tool in openai_agents_tools)
-    assert all(isinstance(tool, Callable) for tool in openai_agents_tools)
+    assert all(isinstance(tool, FunctionTool) for tool in openai_agents_tools)
+    assert all(hasattr(tool, "on_invoke_tool") for tool in openai_agents_tools)
 
 
 @pytest.mark.asyncio
@@ -54,9 +55,10 @@ async def test_openai_agents_tool_execution(toolset: StackOneToolSet) -> None:
     tool = tools.tools[0]
     openai_agents_tool = tool.to_openai_agents()
 
-    # Test that the tool function exists and is callable
-    assert callable(openai_agents_tool)
-    assert callable(openai_agents_tool)
+    # Test that the tool function exists and has on_invoke_tool method
+    assert isinstance(openai_agents_tool, FunctionTool)
+    assert hasattr(openai_agents_tool, "on_invoke_tool")
+    assert openai_agents_tool.name == tool.name
 
 
 def test_openai_agents_tool_attributes(toolset: StackOneToolSet) -> None:
@@ -70,9 +72,11 @@ def test_openai_agents_tool_attributes(toolset: StackOneToolSet) -> None:
     openai_agents_tool = tool.to_openai_agents()
 
     # Verify the tool has required attributes for function_tool
-    assert callable(openai_agents_tool)
-    # The function_tool decorator should preserve the original function properties
-    assert hasattr(openai_agents_tool, "__name__") or hasattr(openai_agents_tool, "__qualname__")
+    assert isinstance(openai_agents_tool, FunctionTool)
+    assert hasattr(openai_agents_tool, "name")
+    assert hasattr(openai_agents_tool, "description")
+    assert openai_agents_tool.name == tool.name
+    assert openai_agents_tool.description == tool.description
 
 
 def test_openai_agents_tool_naming(toolset: StackOneToolSet) -> None:
@@ -86,8 +90,8 @@ def test_openai_agents_tool_naming(toolset: StackOneToolSet) -> None:
     openai_agents_tool = tool.to_openai_agents()
 
     # Verify function tool exists and is properly named
-    assert callable(openai_agents_tool)
-    # The function should be a decorated function with proper metadata
+    assert isinstance(openai_agents_tool, FunctionTool)
+    assert openai_agents_tool.name == tool.name
     original_name = tool.name
     assert original_name is not None
     assert len(original_name) > 0

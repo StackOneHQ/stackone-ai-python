@@ -409,15 +409,17 @@ class StackOneTool(BaseModel):
         """
         parent_tool = self
 
-        async def openai_agents_wrapper(**kwargs: Any) -> JsonDict:
+        async def openai_agents_wrapper(params: dict[str, Any]) -> JsonDict:
             """Async wrapper for the tool execution compatible with OpenAI Agents SDK"""
-            return await parent_tool.acall(kwargs)
+            return await parent_tool.acall(params)
 
         # Use the function_tool decorator to create an OpenAI Agents compatible tool
+        # Disable strict mode to allow additionalProperties in schemas
         return function_tool(
             openai_agents_wrapper,
             name_override=self.name,
             description_override=self.description,
+            strict_mode=False,
         )
 
     def set_account_id(self, account_id: str | None) -> None:
