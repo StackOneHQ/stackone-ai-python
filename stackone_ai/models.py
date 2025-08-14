@@ -481,9 +481,9 @@ class Tools:
         return [tool.to_langchain() for tool in self.tools]
 
     def meta_search_tools(self) -> "Tools":
-        """Return meta tools for tool discovery and execution
+        """Return meta search tools for tool discovery and execution
 
-        Meta tools enable dynamic tool discovery and execution based on natural language queries.
+        Meta search tools enable dynamic tool discovery and execution based on natural language queries.
 
         Returns:
             Tools collection containing meta_filter_relevant_tools and meta_execute_tool
@@ -500,7 +500,7 @@ class Tools:
         # Create search index
         index = ToolIndex(self.tools)
 
-        # Create meta tools
+        # Create meta search tools
         filter_tool = create_meta_search_tools_filter_tool(index)
         execute_tool = create_meta_search_tools_execute_tool(self)
 

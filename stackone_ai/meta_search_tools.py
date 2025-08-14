@@ -1,4 +1,4 @@
-"""Meta tools for dynamic tool discovery and execution"""
+"""Meta search tools for dynamic tool discovery and execution"""
 
 from __future__ import annotations
 
@@ -175,7 +175,7 @@ def create_meta_search_tools_filter_tool(index: ToolIndex) -> StackOneTool:
     execute_config = ExecuteConfig(
         name=name,
         method="POST",
-        url="",  # Meta tools don't make HTTP requests
+        url="",  # Meta search tools don't make HTTP requests
         headers={},
     )
 
@@ -188,7 +188,7 @@ def create_meta_search_tools_filter_tool(index: ToolIndex) -> StackOneTool:
                 description=description,
                 parameters=parameters,
                 _execute_config=execute_config,
-                _api_key="",  # Meta tools don't need API key
+                _api_key="",  # Meta search tools don't need API key
                 _account_id=None,
             )
 
@@ -254,7 +254,7 @@ def create_meta_search_tools_execute_tool(tools_collection: Tools) -> StackOneTo
     execute_config = ExecuteConfig(
         name=name,
         method="POST",
-        url="",  # Meta tools don't make HTTP requests
+        url="",  # Meta search tools don't make HTTP requests
         headers={},
     )
 
@@ -267,7 +267,7 @@ def create_meta_search_tools_execute_tool(tools_collection: Tools) -> StackOneTo
                 description=description,
                 parameters=parameters,
                 _execute_config=execute_config,
-                _api_key="",  # Meta tools don't need API key
+                _api_key="",  # Meta search tools don't need API key
                 _account_id=None,
             )
 

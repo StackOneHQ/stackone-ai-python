@@ -1,4 +1,4 @@
-"""Tests for meta tools functionality"""
+"""Tests for meta search tools functionality"""
 
 import pytest
 import responses
