@@ -37,7 +37,7 @@ Meta tools enable dynamic tool discovery and execution without hardcoding tool n
 ```python
 # Get meta tools for dynamic discovery
 tools = toolset.get_tools("hris_*")
-meta_tools = tools.meta_tools()
+meta_tools = tools.meta_search_tools()
 
 # Search for relevant tools using natural language
 filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")

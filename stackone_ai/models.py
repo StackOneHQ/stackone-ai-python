@@ -480,7 +480,7 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def meta_tools(self) -> "Tools":
+    def meta_search_tools(self) -> "Tools":
         """Return meta tools for tool discovery and execution
 
         Meta tools enable dynamic tool discovery and execution based on natural language queries.

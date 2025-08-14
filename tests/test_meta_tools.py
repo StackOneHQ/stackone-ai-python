@@ -225,12 +225,12 @@ class TestMetaExecuteTool:
             assert "success" in result or "employees" in result
 
 
-class TestToolsMetaTools:
-    """Test the meta_tools method on Tools collection"""
+class TestToolsMetaSearchTools:
+    """Test the meta_search_tools method on Tools collection"""
 
-    def test_meta_tools_creation(self, tools_collection):
-        """Test creating meta tools from a Tools collection"""
-        meta_tools = tools_collection.meta_tools()
+    def test_meta_search_tools_creation(self, tools_collection):
+        """Test creating meta search tools from a Tools collection"""
+        meta_tools = tools_collection.meta_search_tools()
 
         assert isinstance(meta_tools, Tools)
         assert len(meta_tools) == 2
@@ -240,9 +240,9 @@ class TestToolsMetaTools:
         assert "meta_filter_relevant_tools" in tool_names
         assert "meta_execute_tool" in tool_names
 
-    def test_meta_tools_functionality(self, tools_collection):
-        """Test that meta tools work correctly"""
-        meta_tools = tools_collection.meta_tools()
+    def test_meta_search_tools_functionality(self, tools_collection):
+        """Test that meta search tools work correctly"""
+        meta_tools = tools_collection.meta_search_tools()
 
         # Get the filter tool
         filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")

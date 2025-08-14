@@ -28,7 +28,7 @@ def example_meta_tools_basic():
     print(f"Total HRIS tools available: {len(all_tools)}")
 
     # Get meta tools for dynamic discovery
-    meta_tools = all_tools.meta_tools()
+    meta_tools = all_tools.meta_search_tools()
 
     # Get the filter tool to search for relevant tools
     filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
@@ -52,7 +52,7 @@ def example_meta_tools_with_execution():
 
     # Get all tools
     all_tools = toolset.get_tools()
-    meta_tools = all_tools.meta_tools()
+    meta_tools = all_tools.meta_search_tools()
 
     # Step 1: Search for relevant tools
     filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
@@ -127,7 +127,7 @@ def example_with_openai():
 
         # Get HRIS tools and their meta tools
         hris_tools = toolset.get_tools("hris_*")
-        meta_tools = hris_tools.meta_tools()
+        meta_tools = hris_tools.meta_search_tools()
 
         # Convert to OpenAI format
         openai_tools = meta_tools.to_openai()
@@ -178,7 +178,7 @@ def example_with_langchain():
         langchain_tools = tools.to_langchain()
 
         # Get meta tools as well
-        meta_tools = tools.meta_tools()
+        meta_tools = tools.meta_search_tools()
         langchain_meta_tools = meta_tools.to_langchain()
 
         # Combine all tools
