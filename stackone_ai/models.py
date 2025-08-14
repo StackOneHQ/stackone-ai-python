@@ -493,15 +493,15 @@ class Tools:
         """
         from stackone_ai.meta_tools import (
             ToolIndex,
-            create_meta_execute_tool,
-            create_meta_filter_tool,
+            create_meta_search_tools_execute_tool,
+            create_meta_search_tools_filter_tool,
         )
 
         # Create search index
         index = ToolIndex(self.tools)
 
         # Create meta tools
-        filter_tool = create_meta_filter_tool(index)
-        execute_tool = create_meta_execute_tool(self)
+        filter_tool = create_meta_search_tools_filter_tool(index)
+        execute_tool = create_meta_search_tools_execute_tool(self)
 
         return Tools([filter_tool, execute_tool])

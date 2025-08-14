@@ -106,7 +106,7 @@ class ToolIndex:
         return search_results
 
 
-def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
+def create_meta_search_tools_filter_tool(index: ToolIndex) -> StackOneTool:
     """Create the meta_filter_relevant_tools tool
 
     Args:
@@ -198,7 +198,7 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
     return MetaFilterTool()
 
 
-def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
+def create_meta_search_tools_execute_tool(tools_collection: Tools) -> StackOneTool:
     """Create the meta_execute_tool
 
     Args:
