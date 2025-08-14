@@ -491,7 +491,7 @@ class Tools:
         Note:
             This feature is in beta and may change in future versions
         """
-        from stackone_ai.meta_tools import (
+        from stackone_ai.meta_search_tools import (
             ToolIndex,
             create_meta_search_tools_execute_tool,
             create_meta_search_tools_filter_tool,

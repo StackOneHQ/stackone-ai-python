@@ -4,7 +4,7 @@ import pytest
 import responses
 
 from stackone_ai import StackOneTool, Tools
-from stackone_ai.meta_tools import (
+from stackone_ai.meta_search_tools import (
     ToolIndex,
     create_meta_search_tools_execute_tool,
     create_meta_search_tools_filter_tool,
