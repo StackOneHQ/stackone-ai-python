@@ -1,10 +1,14 @@
-"""Tests for meta tools functionality"""
+"""Tests for meta search tools functionality"""
 
 import pytest
 import responses
 
 from stackone_ai import StackOneTool, Tools
-from stackone_ai.meta_tools import ToolIndex, create_meta_execute_tool, create_meta_filter_tool
+from stackone_ai.meta_search_tools import (
+    ToolIndex,
+    create_meta_search_tools_execute_tool,
+    create_meta_search_tools_filter_tool,
+)
 from stackone_ai.models import ExecuteConfig, ToolParameters
 
 
@@ -134,15 +138,15 @@ class TestMetaFilterTool:
     def test_filter_tool_creation(self, sample_tools):
         """Test creating the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools_filter_tool(index)
 
-        assert filter_tool.name == "meta_filter_relevant_tools"
+        assert filter_tool.name == "meta_search_tools"
         assert "natural language query" in filter_tool.description.lower()
 
     def test_filter_tool_execute(self, sample_tools):
         """Test executing the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools_filter_tool(index)
 
         # Execute with a query
         result = filter_tool.execute(
@@ -167,7 +171,7 @@ class TestMetaFilterTool:
     def test_filter_tool_call(self, sample_tools):
         """Test calling the filter tool with call method"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools_filter_tool(index)
 
         # Call with kwargs
         result = filter_tool.call(query="candidate", limit=2)
@@ -181,21 +185,21 @@ class TestMetaExecuteTool:
 
     def test_execute_tool_creation(self, tools_collection):
         """Test creating the execute tool"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_meta_search_tools_execute_tool(tools_collection)
 
         assert execute_tool.name == "meta_execute_tool"
         assert "executes a tool" in execute_tool.description.lower()
 
     def test_execute_tool_missing_name(self, tools_collection):
         """Test execute tool with missing tool name"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_meta_search_tools_execute_tool(tools_collection)
 
         with pytest.raises(ValueError, match="toolName is required"):
             execute_tool.execute({"params": {}})
 
     def test_execute_tool_invalid_name(self, tools_collection):
         """Test execute tool with invalid tool name"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_meta_search_tools_execute_tool(tools_collection)
 
         with pytest.raises(ValueError, match="Tool 'invalid_tool' not found"):
             execute_tool.execute(
@@ -207,7 +211,7 @@ class TestMetaExecuteTool:
 
     def test_execute_tool_call(self, tools_collection):
         """Test calling the execute tool with call method"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_meta_search_tools_execute_tool(tools_collection)
 
         # Mock the actual tool execution by patching the requests
         with responses.RequestsMock() as rsps:
@@ -225,27 +229,27 @@ class TestMetaExecuteTool:
             assert "success" in result or "employees" in result
 
 
-class TestToolsMetaTools:
-    """Test the meta_tools method on Tools collection"""
+class TestToolsMetaSearchTools:
+    """Test the meta_search_tools method on Tools collection"""
 
-    def test_meta_tools_creation(self, tools_collection):
-        """Test creating meta tools from a Tools collection"""
-        meta_tools = tools_collection.meta_tools()
+    def test_meta_search_tools_creation(self, tools_collection):
+        """Test creating meta search tools from a Tools collection"""
+        meta_tools = tools_collection.meta_search_tools()
 
         assert isinstance(meta_tools, Tools)
         assert len(meta_tools) == 2
 
         # Check tool names
         tool_names = [tool.name for tool in meta_tools.tools]
-        assert "meta_filter_relevant_tools" in tool_names
+        assert "meta_search_tools" in tool_names
         assert "meta_execute_tool" in tool_names
 
-    def test_meta_tools_functionality(self, tools_collection):
-        """Test that meta tools work correctly"""
-        meta_tools = tools_collection.meta_tools()
+    def test_meta_search_tools_functionality(self, tools_collection):
+        """Test that meta search tools work correctly"""
+        meta_tools = tools_collection.meta_search_tools()
 
         # Get the filter tool
-        filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+        filter_tool = meta_tools.get_tool("meta_search_tools")
         assert filter_tool is not None
 
         # Search for tools

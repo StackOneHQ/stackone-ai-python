@@ -480,10 +480,10 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def meta_tools(self) -> "Tools":
-        """Return meta tools for tool discovery and execution
+    def meta_search_tools(self) -> "Tools":
+        """Return meta search tools for tool discovery and execution
 
-        Meta tools enable dynamic tool discovery and execution based on natural language queries.
+        Meta search tools enable dynamic tool discovery and execution based on natural language queries.
 
         Returns:
             Tools collection containing meta_filter_relevant_tools and meta_execute_tool
@@ -491,17 +491,17 @@ class Tools:
         Note:
             This feature is in beta and may change in future versions
         """
-        from stackone_ai.meta_tools import (
+        from stackone_ai.meta_search_tools import (
             ToolIndex,
-            create_meta_execute_tool,
-            create_meta_filter_tool,
+            create_meta_search_tools_execute_tool,
+            create_meta_search_tools_filter_tool,
         )
 
         # Create search index
         index = ToolIndex(self.tools)
 
-        # Create meta tools
-        filter_tool = create_meta_filter_tool(index)
-        execute_tool = create_meta_execute_tool(self)
+        # Create meta search tools
+        filter_tool = create_meta_search_tools_filter_tool(index)
+        execute_tool = create_meta_search_tools_execute_tool(self)
 
         return Tools([filter_tool, execute_tool])

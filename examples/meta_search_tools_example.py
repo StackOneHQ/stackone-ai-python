@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Example demonstrating meta tools for dynamic tool discovery and execution.
+Example demonstrating meta search tools for dynamic tool discovery and execution.
 
-Meta tools allow AI agents to search for relevant tools based on natural language queries
+Meta search tools allow AI agents to search for relevant tools based on natural language queries
 and execute them dynamically without hardcoding tool names.
 """
 
@@ -17,7 +17,7 @@ load_dotenv()
 
 
 def example_meta_tools_basic():
-    """Basic example of using meta tools for tool discovery"""
+    """Basic example of using meta search tools for tool discovery"""
     print("🔍 Example 1: Dynamic tool discovery\n")
 
     # Initialize StackOne toolset
@@ -27,11 +27,11 @@ def example_meta_tools_basic():
     all_tools = toolset.get_tools("hris_*")
     print(f"Total HRIS tools available: {len(all_tools)}")
 
-    # Get meta tools for dynamic discovery
-    meta_tools = all_tools.meta_tools()
+    # Get meta search tools for dynamic discovery
+    meta_tools = all_tools.meta_search_tools()
 
     # Get the filter tool to search for relevant tools
-    filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+    filter_tool = meta_tools.get_tool("meta_search_tools")
     if filter_tool:
         # Search for employee management tools
         result = filter_tool.call(query="manage employees create update list", limit=5, minScore=0.0)
@@ -52,10 +52,10 @@ def example_meta_tools_with_execution():
 
     # Get all tools
     all_tools = toolset.get_tools()
-    meta_tools = all_tools.meta_tools()
+    meta_tools = all_tools.meta_search_tools()
 
     # Step 1: Search for relevant tools
-    filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+    filter_tool = meta_tools.get_tool("meta_search_tools")
     execute_tool = meta_tools.get_tool("meta_execute_tool")
 
     if filter_tool and execute_tool:
@@ -113,8 +113,8 @@ def example_tool_calling():
 
 
 def example_with_openai():
-    """Example of using meta tools with OpenAI"""
-    print("🤖 Example 4: Using meta tools with OpenAI\n")
+    """Example of using meta search tools with OpenAI"""
+    print("🤖 Example 4: Using meta search tools with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -125,14 +125,14 @@ def example_with_openai():
         # Initialize StackOne toolset
         toolset = StackOneToolSet()
 
-        # Get HRIS tools and their meta tools
+        # Get HRIS tools and their meta search tools
         hris_tools = toolset.get_tools("hris_*")
-        meta_tools = hris_tools.meta_tools()
+        meta_tools = hris_tools.meta_search_tools()
 
         # Convert to OpenAI format
         openai_tools = meta_tools.to_openai()
 
-        # Create a chat completion with meta tools
+        # Create a chat completion with meta search tools
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -177,8 +177,8 @@ def example_with_langchain():
         tools = toolset.get_tools("hris_list_*")
         langchain_tools = tools.to_langchain()
 
-        # Get meta tools as well
-        meta_tools = tools.meta_tools()
+        # Get meta search tools as well
+        meta_tools = tools.meta_search_tools()
         langchain_meta_tools = meta_tools.to_langchain()
 
         # Combine all tools
@@ -195,7 +195,7 @@ def example_with_langchain():
             [
                 (
                     "system",
-                    "You are an HR assistant. Use the meta tools to discover and execute relevant tools.",
+                    "You are an HR assistant. Use the meta search tools to discover and execute relevant tools.",
                 ),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
@@ -222,7 +222,7 @@ def example_with_langchain():
 def main():
     """Run all examples"""
     print("=" * 60)
-    print("StackOne AI SDK - Meta Tools & Tool Calling Examples")
+    print("StackOne AI SDK - Meta Search Tools & Tool Calling Examples")
     print("=" * 60)
     print()
 

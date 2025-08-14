@@ -1,4 +1,4 @@
-"""Meta tools for dynamic tool discovery and execution"""
+"""Meta search tools for dynamic tool discovery and execution"""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class ToolIndex:
         return search_results
 
 
-def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
+def create_meta_search_tools_filter_tool(index: ToolIndex) -> StackOneTool:
     """Create the meta_filter_relevant_tools tool
 
     Args:
@@ -115,7 +115,7 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
     Returns:
         Meta tool for filtering relevant tools
     """
-    name = "meta_filter_relevant_tools"
+    name = "meta_search_tools"
     description = (
         "Searches for relevant tools based on a natural language query. "
         "This tool should be called first to discover available tools before executing them."
@@ -175,7 +175,7 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
     execute_config = ExecuteConfig(
         name=name,
         method="POST",
-        url="",  # Meta tools don't make HTTP requests
+        url="",  # Meta search tools don't make HTTP requests
         headers={},
     )
 
@@ -188,7 +188,7 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
                 description=description,
                 parameters=parameters,
                 _execute_config=execute_config,
-                _api_key="",  # Meta tools don't need API key
+                _api_key="",  # Meta search tools don't need API key
                 _account_id=None,
             )
 
@@ -198,7 +198,7 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
     return MetaFilterTool()
 
 
-def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
+def create_meta_search_tools_execute_tool(tools_collection: Tools) -> StackOneTool:
     """Create the meta_execute_tool
 
     Args:
@@ -210,7 +210,7 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
     name = "meta_execute_tool"
     description = (
         "Executes a tool by name with the provided parameters. "
-        "Use this after discovering tools with meta_filter_relevant_tools."
+        "Use this after discovering tools with meta_search_tools."
     )
 
     parameters = ToolParameters(
@@ -254,7 +254,7 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
     execute_config = ExecuteConfig(
         name=name,
         method="POST",
-        url="",  # Meta tools don't make HTTP requests
+        url="",  # Meta search tools don't make HTTP requests
         headers={},
     )
 
@@ -267,7 +267,7 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
                 description=description,
                 parameters=parameters,
                 _execute_config=execute_config,
-                _api_key="",  # Meta tools don't need API key
+                _api_key="",  # Meta search tools don't need API key
                 _account_id=None,
             )
 

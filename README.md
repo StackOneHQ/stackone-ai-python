@@ -30,17 +30,17 @@ employee = employee_tool.call(id="employee-id")
 employee = employee_tool.execute({"id": "employee-id"})
 ```
 
-## Meta Tools (Beta)
+## Meta Search Tools (Beta)
 
-Meta tools enable dynamic tool discovery and execution without hardcoding tool names:
+Meta search tools enable dynamic tool discovery and execution without hardcoding tool names:
 
 ```python
-# Get meta tools for dynamic discovery
+# Get meta search tools for dynamic discovery
 tools = toolset.get_tools("hris_*")
-meta_tools = tools.meta_tools()
+meta_tools = tools.meta_search_tools()
 
 # Search for relevant tools using natural language
-filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+filter_tool = meta_tools.get_tool("meta_search_tools")
 results = filter_tool.call(query="manage employees", limit=5)
 
 # Execute discovered tools dynamically
@@ -54,7 +54,7 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 - AI-friendly tool descriptions and parameters
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
 - **Glob Pattern Filtering**: Advanced tool filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
-- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- **Meta Search Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
