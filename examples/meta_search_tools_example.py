@@ -31,7 +31,7 @@ def example_meta_tools_basic():
     meta_tools = all_tools.meta_search_tools()
 
     # Get the filter tool to search for relevant tools
-    filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+    filter_tool = meta_tools.get_tool("meta_search_tools")
     if filter_tool:
         # Search for employee management tools
         result = filter_tool.call(query="manage employees create update list", limit=5, minScore=0.0)
@@ -55,7 +55,7 @@ def example_meta_tools_with_execution():
     meta_tools = all_tools.meta_search_tools()
 
     # Step 1: Search for relevant tools
-    filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+    filter_tool = meta_tools.get_tool("meta_search_tools")
     execute_tool = meta_tools.get_tool("meta_execute_tool")
 
     if filter_tool and execute_tool:

@@ -140,7 +140,7 @@ class TestMetaFilterTool:
         index = ToolIndex(sample_tools)
         filter_tool = create_meta_search_tools_filter_tool(index)
 
-        assert filter_tool.name == "meta_filter_relevant_tools"
+        assert filter_tool.name == "meta_search_tools"
         assert "natural language query" in filter_tool.description.lower()
 
     def test_filter_tool_execute(self, sample_tools):
@@ -241,7 +241,7 @@ class TestToolsMetaSearchTools:
 
         # Check tool names
         tool_names = [tool.name for tool in meta_tools.tools]
-        assert "meta_filter_relevant_tools" in tool_names
+        assert "meta_search_tools" in tool_names
         assert "meta_execute_tool" in tool_names
 
     def test_meta_search_tools_functionality(self, tools_collection):
@@ -249,7 +249,7 @@ class TestToolsMetaSearchTools:
         meta_tools = tools_collection.meta_search_tools()
 
         # Get the filter tool
-        filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+        filter_tool = meta_tools.get_tool("meta_search_tools")
         assert filter_tool is not None
 
         # Search for tools

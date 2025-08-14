@@ -115,7 +115,7 @@ def create_meta_search_tools_filter_tool(index: ToolIndex) -> StackOneTool:
     Returns:
         Meta tool for filtering relevant tools
     """
-    name = "meta_filter_relevant_tools"
+    name = "meta_search_tools"
     description = (
         "Searches for relevant tools based on a natural language query. "
         "This tool should be called first to discover available tools before executing them."
@@ -210,7 +210,7 @@ def create_meta_search_tools_execute_tool(tools_collection: Tools) -> StackOneTo
     name = "meta_execute_tool"
     description = (
         "Executes a tool by name with the provided parameters. "
-        "Use this after discovering tools with meta_filter_relevant_tools."
+        "Use this after discovering tools with meta_search_tools."
     )
 
     parameters = ToolParameters(
