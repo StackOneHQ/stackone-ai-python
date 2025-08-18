@@ -4,7 +4,11 @@ import pytest
 import responses
 
 from stackone_ai import StackOneTool, Tools
-from stackone_ai.meta_tools import ToolIndex, create_meta_execute_tool, create_meta_filter_tool
+from stackone_ai.meta_tools import (
+    ToolIndex,
+    create_meta_execute_tool,
+    create_meta_search_tools,
+)
 from stackone_ai.models import ExecuteConfig, ToolParameters
 
 
@@ -128,21 +132,21 @@ class TestToolIndex:
         assert len(results) <= 3
 
 
-class TestMetaFilterTool:
-    """Test the meta_filter_relevant_tools functionality"""
+class TestMetaSearchTool:
+    """Test the meta_search_tools functionality"""
 
     def test_filter_tool_creation(self, sample_tools):
         """Test creating the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools(index)
 
-        assert filter_tool.name == "meta_filter_relevant_tools"
+        assert filter_tool.name == "meta_search_tools"
         assert "natural language query" in filter_tool.description.lower()
 
     def test_filter_tool_execute(self, sample_tools):
         """Test executing the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools(index)
 
         # Execute with a query
         result = filter_tool.execute(
@@ -167,7 +171,7 @@ class TestMetaFilterTool:
     def test_filter_tool_call(self, sample_tools):
         """Test calling the filter tool with call method"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools(index)
 
         # Call with kwargs
         result = filter_tool.call(query="candidate", limit=2)
@@ -237,7 +241,7 @@ class TestToolsMetaTools:
 
         # Check tool names
         tool_names = [tool.name for tool in meta_tools.tools]
-        assert "meta_filter_relevant_tools" in tool_names
+        assert "meta_search_tools" in tool_names
         assert "meta_execute_tool" in tool_names
 
     def test_meta_tools_functionality(self, tools_collection):
@@ -245,7 +249,7 @@ class TestToolsMetaTools:
         meta_tools = tools_collection.meta_tools()
 
         # Get the filter tool
-        filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+        filter_tool = meta_tools.get_tool("meta_search_tools")
         assert filter_tool is not None
 
         # Search for tools
