@@ -79,7 +79,7 @@ tools = StackOneToolSet(include_tools=["hris_*", "!hris_create_*"])
 # Uses environment variables or direct configuration
 toolset = StackOneToolSet(
     api_key="your-api-key",  # or STACKONE_API_KEY env var
-    account_id="optional-id"  # or STACKONE_ACCOUNT_ID env var
+    account_id="optional-id"  # explicit account ID required
 )
 ```
 
