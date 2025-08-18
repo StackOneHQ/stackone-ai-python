@@ -399,7 +399,7 @@ load_dotenv<span style="color: #888">()</span>
     meta_tools <span style="color: #666">=</span> all_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
 
     <span style="color: #888; font-style: italic"># Get the filter tool to search for relevant tools</span>
-    filter_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_filter_relevant_tools&quot;</span><span style="color: #888">)</span>
+    filter_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_search_tools&quot;</span><span style="color: #888">)</span>
     <span style="color: #2838B0">if</span> filter_tool<span style="color: #888">:</span>
         <span style="color: #888; font-style: italic"># Search for employee management tools</span>
         result <span style="color: #666">=</span> filter_tool<span style="color: #666">.</span>call<span style="color: #888">(</span>query<span style="color: #666">=</span><span style="color: #B83838">&quot;manage employees create update list&quot;</span><span style="color: #888">,</span> limit<span style="color: #666">=</span><span style="color: #444">5</span><span style="color: #888">,</span> minScore<span style="color: #666">=</span><span style="color: #444">0.0</span><span style="color: #888">)</span>
@@ -424,7 +424,7 @@ load_dotenv<span style="color: #888">()</span>
     meta_tools <span style="color: #666">=</span> all_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
 
     <span style="color: #888; font-style: italic"># Step 1: Search for relevant tools</span>
-    filter_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_filter_relevant_tools&quot;</span><span style="color: #888">)</span>
+    filter_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_search_tools&quot;</span><span style="color: #888">)</span>
     execute_tool <span style="color: #666">=</span> meta_tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;meta_execute_tool&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #2838B0">if</span> filter_tool <span style="color: #A848A8">and</span> execute_tool<span style="color: #888">:</span>
@@ -509,7 +509,7 @@ load_dotenv<span style="color: #888">()</span>
             messages<span style="color: #666">=</span><span style="color: #888">[</span>
                 <span style="color: #888">{</span>
                     <span style="color: #B83838">&quot;role&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;system&quot;</span><span style="color: #888">,</span>
-                    <span style="color: #B83838">&quot;content&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;You are an HR assistant. Use meta_filter_relevant_tools to find appropriate tools, then meta_execute_tool to execute them.&quot;</span><span style="color: #888">,</span>
+                    <span style="color: #B83838">&quot;content&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;You are an HR assistant. Use meta_search_tools to find appropriate tools, then meta_execute_tool to execute them.&quot;</span><span style="color: #888">,</span>
                 <span style="color: #888">},</span>
                 <span style="color: #888">{</span><span style="color: #B83838">&quot;role&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;user&quot;</span><span style="color: #888">,</span> <span style="color: #B83838">&quot;content&quot;</span><span style="color: #888">:</span> <span style="color: #B83838">&quot;Can you help me find tools for managing employee records?&quot;</span><span style="color: #888">},</span>
             <span style="color: #888">],</span>
