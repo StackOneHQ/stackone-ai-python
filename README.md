@@ -57,6 +57,7 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 - **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
+  - OpenAI Agents SDK
   - LangChain Tools
   - CrewAI Tools
   - LangGraph Tool Node
@@ -72,10 +73,44 @@ For more examples and documentation, visit:
 
 ## AI Framework Integration
 
-- [OpenAI Integration](docs/openai-integration.md)
-- [LangChain Integration](docs/langchain-integration.md)
-- [CrewAI Integration](docs/crewai-integration.md)
-- [LangGraph Tool Node](docs/langgraph-tool-node.md)
+StackOne tools integrate seamlessly with popular AI frameworks. Convert your tools to the appropriate format:
+
+### OpenAI Agents SDK
+
+The [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) enables building agentic AI apps with lightweight abstractions.
+
+```python
+# Convert to OpenAI Agents format
+openai_agents_tools = tools.to_openai_agents()
+
+# Use with OpenAI Agents
+from agents import Agent, Runner
+agent = Agent(name="Assistant", tools=openai_agents_tools)
+result = Runner.run_sync(agent, "Your query")
+```
+
+### LangChain
+
+```python
+# Convert to LangChain format
+langchain_tools = tools.to_langchain()
+
+# Use with LangChain
+from langchain_openai import ChatOpenAI
+model = ChatOpenAI().bind_tools(langchain_tools)
+```
+
+### OpenAI Functions
+
+```python
+# Convert to OpenAI function format
+openai_tools = tools.to_openai()
+
+# Use with OpenAI client
+import openai
+client = openai.OpenAI()
+client.chat.completions.create(tools=openai_tools, ...)
+```
 
 ## License
 

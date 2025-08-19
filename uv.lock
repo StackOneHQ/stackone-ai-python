@@ -818,6 +818,18 @@ wheels = [
 ]
 
 [[package]]
+name = "griffe"
+version = "1.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/10/19c2f0ad37d9634b6976a812b62d5095c047194a8efd075d96c641108578/griffe-1.12.0.tar.gz", hash = "sha256:6085b03f3763f67a7ec6675d29017573f72dd2826b14e3f92c88525a058eb16a", size = 411340, upload-time = "2025-08-14T12:11:43.396Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/4b/d1048082a7c9af83c0a426880a7bbebb517b3646a6e57f43315421c672b6/griffe-1.12.0-py3-none-any.whl", hash = "sha256:634cf7bf93ab7d12003f3704043e8e530637fc3d40c67a2a052e57d2fcde173a", size = 138849, upload-time = "2025-08-14T12:11:41.767Z" },
+]
+
+[[package]]
 name = "grpcio"
 version = "1.74.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1911,6 +1923,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/d2/ef89c6f3f36b13b06e271d3cc984ddd2f62508a0972c1cbcc8485a6644ff/openai-1.99.9.tar.gz", hash = "sha256:f2082d155b1ad22e83247c3de3958eb4255b20ccf4a1de2e6681b6957b554e92", size = 506992, upload-time = "2025-08-12T02:31:10.054Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/fb/df274ca10698ee77b07bff952f302ea627cc12dac6b85289485dd77db6de/openai-1.99.9-py3-none-any.whl", hash = "sha256:9dbcdb425553bae1ac5d947147bebbd630d91bbfc7788394d4c4f3a35682ab3a", size = 786816, upload-time = "2025-08-12T02:31:08.34Z" },
+]
+
+[[package]]
+name = "openai-agents"
+version = "0.2.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "griffe" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "types-requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/06/689e083e0d8d5bc6b311aed5cd3c6f0587bbe7eab812c348ab549c2f0409/openai_agents-0.2.6.tar.gz", hash = "sha256:39d11c77775aee1ab46045f40abbe0e36f39232fedc97fb3c309c1454c4d55cb", size = 1487031, upload-time = "2025-08-11T18:52:17.2Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/9a/764fda0cd4951998dd0cb375b8c9d1f5ced2b2d785d17eeb1f03afa598bc/openai_agents-0.2.6-py3-none-any.whl", hash = "sha256:bc4395f57d556af819fcea6b6a15932d45e549b657508524121707c3448cfbcb", size = 166125, upload-time = "2025-08-11T18:52:15.276Z" },
 ]
 
 [[package]]
@@ -3348,6 +3378,7 @@ dependencies = [
     { name = "langchain-core" },
     { name = "mcp", extra = ["cli"] },
     { name = "numpy" },
+    { name = "openai-agents" },
     { name = "pydantic" },
     { name = "requests" },
 ]
@@ -3389,6 +3420,7 @@ requires-dist = [
     { name = "mkdocs-terminal", marker = "extra == 'docs'", specifier = ">=4.7.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "openai", marker = "extra == 'examples'", specifier = ">=1.63.2" },
+    { name = "openai-agents", specifier = ">=0.1.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pygments", marker = "extra == 'docs'", specifier = ">=2.12" },
     { name = "pymdown-extensions", marker = "extra == 'docs'" },
