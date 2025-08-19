@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.4...stackone-ai-v0.3.0) (2025-08-19)
+
+
+### Features
+
+* add CLAUDE.md for Claude Code guidance ([#15](https://github.com/StackOneHQ/stackone-ai-python/issues/15)) ([ac9fe98](https://github.com/StackOneHQ/stackone-ai-python/commit/ac9fe9857f44c19394654dfcbe23fecc5cf9fbb0))
+* bring Python SDK to feature parity with Node SDK ([#17](https://github.com/StackOneHQ/stackone-ai-python/issues/17)) ([8b6de99](https://github.com/StackOneHQ/stackone-ai-python/commit/8b6de99184227cb7f1580964dc3eae14f8f60fc1))
+* remove automatic STACKONE_ACCOUNT_ID environment variable loading ([#23](https://github.com/StackOneHQ/stackone-ai-python/issues/23)) ([aa0aaf6](https://github.com/StackOneHQ/stackone-ai-python/commit/aa0aaf6d6bf528f8e29def9b008db23cf94b97c7))
+* simplify meta tool function names to match Node SDK ([#19](https://github.com/StackOneHQ/stackone-ai-python/issues/19)) ([4572609](https://github.com/StackOneHQ/stackone-ai-python/commit/4572609a9b85a88fc3067be12f821ec0bc54e769))
+
+
+### Miscellaneous Chores
+
+* release 0.3.0 ([#24](https://github.com/StackOneHQ/stackone-ai-python/issues/24)) ([beea911](https://github.com/StackOneHQ/stackone-ai-python/commit/beea91165ed2ba3eb5f5ad6ca8656344561b0b43))
+
 ## [0.0.4](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.3...stackone-ai-v0.0.4) (2025-03-05)
 
 
