@@ -127,7 +127,7 @@ tools = toolset.get_tools("hris_*")
 meta_tools = tools.meta_tools()
 
 # Search for relevant tools using natural language
-filter_tool = meta_tools.get_tool("meta_filter_relevant_tools")
+filter_tool = meta_tools.get_tool("meta_search_tools")
 results = filter_tool.call(query="manage employees", limit=5)
 
 # Execute discovered tools dynamically
