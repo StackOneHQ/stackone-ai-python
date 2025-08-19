@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-StackOne AI SDK is a Python library that provides a unified interface for accessing various SaaS tools through AI-friendly APIs. It acts as a bridge between AI applications and multiple SaaS platforms (HRIS, CRM, ATS, LMS, Marketing, etc.) with support for OpenAI, LangChain, CrewAI, and Model Context Protocol (MCP).
+StackOne AI SDK is a Python library that provides a unified interface for accessing various SaaS tools through AI-friendly APIs. It acts as a bridge between AI applications and multiple SaaS platforms (HRIS, CRM, ATS, LMS, Marketing, etc.) with support for Agno, OpenAI, LangChain, CrewAI, and Model Context Protocol (MCP).
 
 ## Essential Development Commands
 
@@ -50,7 +50,7 @@ make mcp-inspector    # Run MCP server inspector for debugging
 2. **Models** (`stackone_ai/models.py`): Data structures
    - `StackOneTool`: Base class with execution logic
    - `Tools`: Container for managing multiple tools
-   - Format converters for different AI frameworks
+   - Format converters for different AI frameworks (Agno, OpenAI, LangChain)
 
 3. **OpenAPI Parser** (`stackone_ai/specs/parser.py`): Spec conversion
    - Converts OpenAPI specs to tool definitions

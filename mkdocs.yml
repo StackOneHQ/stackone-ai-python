@@ -46,6 +46,7 @@ nav:
       - Available Tools: available-tools.md
       - File Uploads: file-uploads.md
   - Integrations:
+      - Agno: agno-integration.md
       - OpenAI: openai-integration.md
       - CrewAI: crewai-integration.md
       - LangChain: langchain-integration.md

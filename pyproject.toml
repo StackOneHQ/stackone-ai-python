@@ -42,6 +42,7 @@ packages = ["stackone_ai"]
 
 [project.optional-dependencies]
 examples = [
+    "agno>=1.7.0",
     "crewai>=0.102.0",
     "langchain-openai>=0.3.6",
     "openai>=1.63.2",

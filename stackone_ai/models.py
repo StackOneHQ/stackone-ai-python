@@ -397,6 +397,35 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
+    def to_agno(self) -> Any:
+        """Convert this tool to Agno format
+
+        Returns:
+            Tool in Agno format
+        """
+        try:
+            from agno.tools import Tool as AgnoBaseTool  # type: ignore[import-not-found]
+        except ImportError as e:
+            raise ImportError(
+                "Agno is not installed. Please install it with 'pip install agno>=1.7.0' "
+                "or add 'agno>=1.7.0' to your requirements."
+            ) from e
+
+        parent_tool = self
+
+        class StackOneAgnoTool(AgnoBaseTool):
+            def __init__(self) -> None:
+                super().__init__(
+                    name=parent_tool.name,
+                    description=parent_tool.description,
+                )
+
+            def run(self, **kwargs: Any) -> JsonDict:
+                """Run the tool with the provided arguments"""
+                return parent_tool.execute(kwargs)
+
+        return StackOneAgnoTool()
+
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool
 
@@ -479,6 +508,14 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
+
+    def to_agno(self) -> list[Any]:
+        """Convert all tools to Agno format
+
+        Returns:
+            List of tools in Agno format
+        """
+        return [tool.to_agno() for tool in self.tools]
 
     def meta_tools(self) -> "Tools":
         """Return meta tools for tool discovery and execution

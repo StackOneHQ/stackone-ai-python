@@ -24,6 +24,7 @@ EXAMPLES = get_example_files()
 
 # Map of example files to required optional packages
 OPTIONAL_DEPENDENCIES = {
+    "agno_integration.py": ["agno"],
     "openai_integration.py": ["openai"],
     "langchain_integration.py": ["langchain_openai"],
     "crewai_integration.py": ["crewai"],

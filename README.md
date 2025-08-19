@@ -56,6 +56,7 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 - **Glob Pattern Filtering**: Advanced tool filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
 - **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
+  - Agno Agents
   - OpenAI Functions
   - LangChain Tools
   - CrewAI Tools
@@ -72,6 +73,7 @@ For more examples and documentation, visit:
 
 ## AI Framework Integration
 
+- [Agno Integration](docs/agno-integration.md)
 - [OpenAI Integration](docs/openai-integration.md)
 - [LangChain Integration](docs/langchain-integration.md)
 - [CrewAI Integration](docs/crewai-integration.md)
