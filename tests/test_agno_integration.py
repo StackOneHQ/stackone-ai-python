@@ -45,7 +45,7 @@ class TestAgnoIntegration:
 
     def test_to_agno_without_agno_installed(self, mock_tool: StackOneTool) -> None:
         """Test that proper error is raised when Agno is not installed"""
-        with patch.dict('sys.modules', {'agno': None, 'agno.tools': None}):
+        with patch.dict("sys.modules", {"agno": None, "agno.tools": None}):
             with pytest.raises(ImportError) as exc_info:
                 mock_tool.to_agno()
 
@@ -58,10 +58,10 @@ class TestAgnoIntegration:
         mock_agno_base_tool = MagicMock()
         mock_agno_module = MagicMock()
         mock_agno_module.Tool = mock_agno_base_tool
-        
-        with patch.dict('sys.modules', {'agno.tools': mock_agno_module}):
+
+        with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tool = mock_tool.to_agno()
-            
+
             # Verify an Agno tool instance was created
             assert agno_tool is not None
 
@@ -70,23 +70,23 @@ class TestAgnoIntegration:
         mock_agno_base_tool = MagicMock()
         mock_agno_module = MagicMock()
         mock_agno_module.Tool = mock_agno_base_tool
-        
-        with patch.dict('sys.modules', {'agno.tools': mock_agno_module}):
+
+        with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tool = mock_tool.to_agno()
-            
+
             # Verify the tool was created (basic functionality test)
             assert agno_tool is not None
-            assert hasattr(agno_tool, 'run')
+            assert hasattr(agno_tool, "run")
 
     def test_tools_to_agno(self, tools_collection: Tools) -> None:
         """Test converting Tools collection to Agno format"""
         mock_agno_base_tool = MagicMock()
         mock_agno_module = MagicMock()
         mock_agno_module.Tool = mock_agno_base_tool
-        
-        with patch.dict('sys.modules', {'agno.tools': mock_agno_module}):
+
+        with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tools = tools_collection.to_agno()
-            
+
             # Verify we got the expected number of tools
             assert len(agno_tools) == 1
             assert agno_tools[0] is not None
@@ -112,14 +112,14 @@ class TestAgnoIntegration:
         )
 
         tools = Tools([tool1, tool2])
-        
+
         mock_agno_base_tool = MagicMock()
         mock_agno_module = MagicMock()
         mock_agno_module.Tool = mock_agno_base_tool
-        
-        with patch.dict('sys.modules', {'agno.tools': mock_agno_module}):
+
+        with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tools = tools.to_agno()
-            
+
             assert len(agno_tools) == 2
             assert all(tool is not None for tool in agno_tools)
 
@@ -128,15 +128,15 @@ class TestAgnoIntegration:
         mock_agno_base_tool = MagicMock()
         mock_agno_module = MagicMock()
         mock_agno_module.Tool = mock_agno_base_tool
-        
-        with patch.dict('sys.modules', {'agno.tools': mock_agno_module}):
+
+        with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tool = mock_tool.to_agno()
-            
+
             # Verify the tool was created with expected attributes
             assert agno_tool is not None
             # For real integration, name and description would be set by the Agno base class
-            assert hasattr(agno_tool, 'name')
-            assert hasattr(agno_tool, 'description')
+            assert hasattr(agno_tool, "name")
+            assert hasattr(agno_tool, "description")
 
 
 class TestAgnoIntegrationErrors:
@@ -144,7 +144,7 @@ class TestAgnoIntegrationErrors:
 
     def test_agno_import_error_message(self, mock_tool: StackOneTool) -> None:
         """Test that ImportError contains helpful installation instructions"""
-        with patch.dict('sys.modules', {'agno': None, 'agno.tools': None}):
+        with patch.dict("sys.modules", {"agno": None, "agno.tools": None}):
             with pytest.raises(ImportError) as exc_info:
                 mock_tool.to_agno()
 

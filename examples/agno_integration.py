@@ -9,7 +9,7 @@ uv run examples/agno_integration.py
 You can find out more about Agno framework at https://docs.agno.com
 """
 
-from agno import Agent
+from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 from dotenv import load_dotenv
 

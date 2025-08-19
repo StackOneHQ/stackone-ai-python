@@ -111,3 +111,7 @@ warn_unreachable = true
 [[tool.mypy.overrides]]
 module = "bm25s"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "agno.tools"
+ignore_missing_imports = true

@@ -73,11 +73,11 @@ For more examples and documentation, visit:
 
 ## AI Framework Integration
 
-- [Agno Integration](docs/agno-integration.md)
-- [OpenAI Integration](docs/openai-integration.md)
-- [LangChain Integration](docs/langchain-integration.md)
-- [CrewAI Integration](docs/crewai-integration.md)
-- [LangGraph Tool Node](docs/langgraph-tool-node.md)
+- [Agno Integration](docs/agno_integration.md)
+- [OpenAI Integration](docs/openai_integration.md)
+- [LangChain Integration](docs/langchain_integration.md)
+- [CrewAI Integration](docs/crewai_integration.md)
+- [LangGraph Tool Node](docs/langgraph_tool_node.md)
 
 ## License
 

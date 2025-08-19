@@ -61,11 +61,11 @@ def test_run_example(example_file: str) -> None:
                         "id": "test-employee-1",
                         "first_name": "John",
                         "last_name": "Doe",
-                        "email": "john.doe@example.com"
+                        "email": "john.doe@example.com",
                     }
                 ]
             },
-            status=200
+            status=200,
         )
 
         # Mock document upload endpoint
@@ -73,7 +73,7 @@ def test_run_example(example_file: str) -> None:
             responses.POST,
             "https://api.stackone.com/unified/hris/employees/c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA/documents/upload",
             json={"success": True, "document_id": "test-doc-123"},
-            status=200
+            status=200,
         )
 
     example_path = Path(__file__).parent / example_file

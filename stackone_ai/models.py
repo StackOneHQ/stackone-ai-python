@@ -404,7 +404,7 @@ class StackOneTool(BaseModel):
             Tool in Agno format
         """
         try:
-            from agno.tools import Tool as AgnoBaseTool  # type: ignore[import-not-found]
+            from agno.tools import Tool as AgnoBaseTool
         except ImportError as e:
             raise ImportError(
                 "Agno is not installed. Please install it with 'pip install agno>=1.7.0' "
