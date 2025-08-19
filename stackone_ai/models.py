@@ -401,10 +401,10 @@ class StackOneTool(BaseModel):
         """Convert this tool to Agno format
 
         Returns:
-            Tool in Agno format
+            Function callable in Agno format
         """
         try:
-            from agno.tools import Tool as AgnoBaseTool
+            from agno.tools import tool
         except ImportError as e:
             raise ImportError(
                 "Agno is not installed. Please install it with 'pip install agno>=1.7.0' "
@@ -413,18 +413,17 @@ class StackOneTool(BaseModel):
 
         parent_tool = self
 
-        class StackOneAgnoTool(AgnoBaseTool):
-            def __init__(self) -> None:
-                super().__init__(
-                    name=parent_tool.name,
-                    description=parent_tool.description,
-                )
+        def agno_tool_function(**kwargs: Any) -> JsonDict:
+            """Execute the StackOne tool with the provided arguments"""
+            return parent_tool.execute(kwargs)
 
-            def run(self, **kwargs: Any) -> JsonDict:
-                """Run the tool with the provided arguments"""
-                return parent_tool.execute(kwargs)
+        # Apply Agno tool decorator with metadata
+        decorated_tool = tool(
+            name=parent_tool.name,
+            description=parent_tool.description,
+        )(agno_tool_function)
 
-        return StackOneAgnoTool()
+        return decorated_tool
 
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool

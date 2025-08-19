@@ -53,36 +53,46 @@ class TestAgnoIntegration:
             assert "pip install agno>=1.7.0" in str(exc_info.value)
 
     def test_to_agno_with_mocked_agno(self, mock_tool: StackOneTool) -> None:
-        """Test Agno conversion with mocked Agno classes"""
-        # Mock the Agno Tool class
-        mock_agno_base_tool = MagicMock()
+        """Test Agno conversion with mocked Agno decorator"""
+        # Mock the Agno tool decorator
+        mock_tool_decorator = MagicMock()
         mock_agno_module = MagicMock()
-        mock_agno_module.Tool = mock_agno_base_tool
+        mock_agno_module.tool = mock_tool_decorator
+
+        # Configure the decorator to return the decorated function
+        mock_tool_decorator.return_value = lambda func: func
 
         with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tool = mock_tool.to_agno()
 
-            # Verify an Agno tool instance was created
+            # Verify an Agno tool function was created
             assert agno_tool is not None
+            assert callable(agno_tool)
 
     def test_to_agno_tool_execution(self, mock_tool: StackOneTool) -> None:
         """Test that the Agno tool can execute the underlying StackOne tool"""
-        mock_agno_base_tool = MagicMock()
+        mock_tool_decorator = MagicMock()
         mock_agno_module = MagicMock()
-        mock_agno_module.Tool = mock_agno_base_tool
+        mock_agno_module.tool = mock_tool_decorator
+
+        # Configure the decorator to return the decorated function
+        mock_tool_decorator.return_value = lambda func: func
 
         with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tool = mock_tool.to_agno()
 
-            # Verify the tool was created (basic functionality test)
+            # Verify the tool was created and can be called
             assert agno_tool is not None
-            assert hasattr(agno_tool, "run")
+            assert callable(agno_tool)
 
     def test_tools_to_agno(self, tools_collection: Tools) -> None:
         """Test converting Tools collection to Agno format"""
-        mock_agno_base_tool = MagicMock()
+        mock_tool_decorator = MagicMock()
         mock_agno_module = MagicMock()
-        mock_agno_module.Tool = mock_agno_base_tool
+        mock_agno_module.tool = mock_tool_decorator
+
+        # Configure the decorator to return the decorated function
+        mock_tool_decorator.return_value = lambda func: func
 
         with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tools = tools_collection.to_agno()
@@ -90,6 +100,7 @@ class TestAgnoIntegration:
             # Verify we got the expected number of tools
             assert len(agno_tools) == 1
             assert agno_tools[0] is not None
+            assert callable(agno_tools[0])
 
     def test_tools_to_agno_multiple_tools(self) -> None:
         """Test converting multiple tools to Agno format"""
@@ -113,30 +124,40 @@ class TestAgnoIntegration:
 
         tools = Tools([tool1, tool2])
 
-        mock_agno_base_tool = MagicMock()
+        mock_tool_decorator = MagicMock()
         mock_agno_module = MagicMock()
-        mock_agno_module.Tool = mock_agno_base_tool
+        mock_agno_module.tool = mock_tool_decorator
+
+        # Configure the decorator to return the decorated function
+        mock_tool_decorator.return_value = lambda func: func
 
         with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tools = tools.to_agno()
 
             assert len(agno_tools) == 2
-            assert all(tool is not None for tool in agno_tools)
+            assert all(tool is not None and callable(tool) for tool in agno_tools)
 
     def test_agno_tool_preserves_metadata(self, mock_tool: StackOneTool) -> None:
         """Test that Agno tool conversion preserves important metadata"""
-        mock_agno_base_tool = MagicMock()
+        mock_tool_decorator = MagicMock()
         mock_agno_module = MagicMock()
-        mock_agno_module.Tool = mock_agno_base_tool
+        mock_agno_module.tool = mock_tool_decorator
+
+        # Configure the decorator to return the decorated function
+        mock_tool_decorator.return_value = lambda func: func
 
         with patch.dict("sys.modules", {"agno.tools": mock_agno_module}):
             agno_tool = mock_tool.to_agno()
 
-            # Verify the tool was created with expected attributes
+            # Verify the tool was created
             assert agno_tool is not None
-            # For real integration, name and description would be set by the Agno base class
-            assert hasattr(agno_tool, "name")
-            assert hasattr(agno_tool, "description")
+            assert callable(agno_tool)
+
+            # Verify the decorator was called with the correct metadata
+            mock_tool_decorator.assert_called_once_with(
+                name=mock_tool.name,
+                description=mock_tool.description,
+            )
 
 
 class TestAgnoIntegrationErrors:
