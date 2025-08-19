@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.0...stackone-ai-v0.3.1) (2025-08-19)
+
+
+### Documentation
+
+* add comprehensive LangChain integration section to README ([#20](https://github.com/StackOneHQ/stackone-ai-python/issues/20)) ([cbf7f68](https://github.com/StackOneHQ/stackone-ai-python/commit/cbf7f68e889839f9a501ad8f2cd47c468ffff47e))
+* rename meta tools ([#27](https://github.com/StackOneHQ/stackone-ai-python/issues/27)) ([a9ebc03](https://github.com/StackOneHQ/stackone-ai-python/commit/a9ebc032f784863913b28d4ad3850b80bafee5f4))
+
 ## [0.3.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.0.4...stackone-ai-v0.3.0) (2025-08-19)
 
 
