@@ -42,7 +42,7 @@ class StackOneToolSet:
 
         Args:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
-            account_id: Optional account ID. If not provided, will try to get from STACKONE_ACCOUNT_ID env var
+            account_id: Optional account ID
             base_url: Optional base URL override for API requests. If not provided, uses the URL from the OAS
 
         Raises:
@@ -55,7 +55,7 @@ class StackOneToolSet:
                 "STACKONE_API_KEY environment variable"
             )
         self.api_key: str = api_key_value
-        self.account_id = account_id or os.getenv("STACKONE_ACCOUNT_ID")
+        self.account_id = account_id
         self.base_url = base_url
 
     def _parse_parameters(self, parameters: list[dict[str, Any]]) -> dict[str, dict[str, str]]:

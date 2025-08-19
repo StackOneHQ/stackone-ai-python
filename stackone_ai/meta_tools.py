@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class MetaToolSearchResult(BaseModel):
-    """Result from meta_filter_relevant_tools"""
+    """Result from meta_search_tools"""
 
     name: str
     description: str
@@ -106,16 +106,16 @@ class ToolIndex:
         return search_results
 
 
-def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
-    """Create the meta_filter_relevant_tools tool
+def create_meta_search_tools(index: ToolIndex) -> StackOneTool:
+    """Create the meta_search_tools tool
 
     Args:
         index: Tool search index
 
     Returns:
-        Meta tool for filtering relevant tools
+        Meta tool for searching relevant tools
     """
-    name = "meta_filter_relevant_tools"
+    name = "meta_search_tools"
     description = (
         "Searches for relevant tools based on a natural language query. "
         "This tool should be called first to discover available tools before executing them."
@@ -180,8 +180,8 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
     )
 
     # Create a wrapper class that delegates execute to our custom function
-    class MetaFilterTool(StackOneTool):
-        """Meta tool for filtering relevant tools"""
+    class MetaSearchTool(StackOneTool):
+        """Meta tool for searching relevant tools"""
 
         def __init__(self) -> None:
             super().__init__(
@@ -195,7 +195,7 @@ def create_meta_filter_tool(index: ToolIndex) -> StackOneTool:
         def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
             return execute_filter(arguments)
 
-    return MetaFilterTool()
+    return MetaSearchTool()
 
 
 def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
@@ -210,7 +210,7 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
     name = "meta_execute_tool"
     description = (
         "Executes a tool by name with the provided parameters. "
-        "Use this after discovering tools with meta_filter_relevant_tools."
+        "Use this after discovering tools with meta_search_tools."
     )
 
     parameters = ToolParameters(

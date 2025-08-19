@@ -486,7 +486,7 @@ class Tools:
         Meta tools enable dynamic tool discovery and execution based on natural language queries.
 
         Returns:
-            Tools collection containing meta_filter_relevant_tools and meta_execute_tool
+            Tools collection containing meta_search_tools and meta_execute_tool
 
         Note:
             This feature is in beta and may change in future versions
@@ -494,14 +494,14 @@ class Tools:
         from stackone_ai.meta_tools import (
             ToolIndex,
             create_meta_execute_tool,
-            create_meta_filter_tool,
+            create_meta_search_tools,
         )
 
         # Create search index
         index = ToolIndex(self.tools)
 
         # Create meta tools
-        filter_tool = create_meta_filter_tool(index)
+        filter_tool = create_meta_search_tools(index)
         execute_tool = create_meta_execute_tool(self)
 
         return Tools([filter_tool, execute_tool])
