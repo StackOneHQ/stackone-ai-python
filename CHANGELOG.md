@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.1...stackone-ai-v0.3.2) (2025-08-26)
+
+
+### Features
+
+* support Python 3.9+ with optional MCP server support ([#28](https://github.com/StackOneHQ/stackone-ai-python/issues/28)) ([1a37776](https://github.com/StackOneHQ/stackone-ai-python/commit/1a377768c15223e25dbaf1e0bcd0c0e8bb0df2e8))
+
 ## [0.3.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.0...stackone-ai-v0.3.1) (2025-08-19)
 
 
