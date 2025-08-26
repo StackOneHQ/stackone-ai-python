@@ -24,7 +24,7 @@ try:  # type: ignore[unreachable]
     from mcp.shared.exceptions import McpError
     from mcp.types import EmbeddedResource, ErrorData, ImageContent, TextContent, Tool
 except ImportError as e:
-    raise ImportError("MCP dependencies not found. Install with: pip install 'stackone-ai[server]'") from e
+    raise ImportError("MCP dependencies not found. Install with: pip install 'stackone-ai[mcp]'") from e
 
 from pydantic import ValidationError
 

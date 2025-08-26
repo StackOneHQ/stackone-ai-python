@@ -46,7 +46,7 @@ packages = ["stackone_ai"]
 
 [project.optional-dependencies]
 # TODO: Remove python_version conditions when Python 3.9 support is dropped
-server = [
+mcp = [
     "mcp[cli]>=1.3.0; python_version>='3.10'",
 ]
 examples = [
