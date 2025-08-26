@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from enum import Enum
 from functools import partial
 from typing import Annotated, Any, cast
+from urllib.parse import quote
 
 import requests
 from langchain_core.tools import BaseTool
@@ -147,7 +148,9 @@ class StackOneTool(BaseModel):
             param_location = self._execute_config.parameter_locations.get(key)
 
             if param_location == ParameterLocation.PATH:
-                url = url.replace(f"{{{key}}}", str(value))
+                # Safely encode path parameters to prevent SSRF attacks
+                encoded_value = quote(str(value), safe="")
+                url = url.replace(f"{{{key}}}", encoded_value)
             elif param_location == ParameterLocation.QUERY:
                 query_params[key] = value
             elif param_location in (ParameterLocation.BODY, ParameterLocation.FILE):
@@ -155,7 +158,9 @@ class StackOneTool(BaseModel):
             else:
                 # Default behavior
                 if f"{{{key}}}" in url:
-                    url = url.replace(f"{{{key}}}", str(value))
+                    # Safely encode path parameters to prevent SSRF attacks
+                    encoded_value = quote(str(value), safe="")
+                    url = url.replace(f"{{{key}}}", encoded_value)
                 elif self._execute_config.method in {"GET", "DELETE"}:
                     query_params[key] = value
                 else:
