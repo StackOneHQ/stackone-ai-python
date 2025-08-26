@@ -18,10 +18,30 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - CrewAI Tools
   - LangGraph Tool Node
 
+## Requirements
+
+- Python 3.9+ (core SDK functionality)
+- Python 3.10+ (for MCP server and CrewAI examples)
+
 ## Installation
+
+### Basic Installation
 
 ```bash
 pip install stackone-ai
+```
+
+### Optional Features
+
+```bash
+# Install with MCP server support (requires Python 3.10+)
+pip install 'stackone-ai[mcp]'
+
+# Install with CrewAI examples (requires Python 3.10+)
+pip install 'stackone-ai[examples]'
+
+# Install everything
+pip install 'stackone-ai[mcp,examples]'
 ```
 
 ## Quick Start
@@ -82,9 +102,11 @@ for tool_call in response.tool_calls:
 </details>
 
 <details>
-<summary>CrewAI Integration</summary>
+<summary>CrewAI Integration (Python 3.10+)</summary>
 
 CrewAI uses LangChain tools natively, making integration seamless:
+
+> **Note**: CrewAI requires Python 3.10+. Install with `pip install 'stackone-ai[examples]'`
 
 ```python
 from crewai import Agent, Crew, Task

@@ -1,3 +1,6 @@
+# TODO: Remove when Python 3.9 support is dropped
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
@@ -73,7 +76,7 @@ class OpenAPIParser:
             visited = set()
 
         # Handle primitive types (str, int, etc)
-        if not isinstance(schema, dict | list):
+        if not isinstance(schema, (dict, list)):
             return schema
 
         if isinstance(schema, list):

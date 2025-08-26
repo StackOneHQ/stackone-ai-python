@@ -1,15 +1,22 @@
+# TODO: Remove when Python 3.9 support is dropped
+from __future__ import annotations
+
 import asyncio
 import base64
 import json
 from collections.abc import Sequence
 from enum import Enum
 from functools import partial
-from typing import Annotated, Any, TypeAlias, cast
+from typing import Annotated, Any, cast
+from urllib.parse import quote
 
 import requests
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
 from requests.exceptions import RequestException
+
+# TODO: Remove when Python 3.9 support is dropped
+from typing_extensions import TypeAlias
 
 # Type aliases for common types
 JsonDict: TypeAlias = dict[str, Any]
@@ -140,21 +147,24 @@ class StackOneTool(BaseModel):
         for key, value in kwargs.items():
             param_location = self._execute_config.parameter_locations.get(key)
 
-            match param_location:
-                case ParameterLocation.PATH:
-                    url = url.replace(f"{{{key}}}", str(value))
-                case ParameterLocation.QUERY:
+            if param_location == ParameterLocation.PATH:
+                # Safely encode path parameters to prevent SSRF attacks
+                encoded_value = quote(str(value), safe="")
+                url = url.replace(f"{{{key}}}", encoded_value)
+            elif param_location == ParameterLocation.QUERY:
+                query_params[key] = value
+            elif param_location in (ParameterLocation.BODY, ParameterLocation.FILE):
+                body_params[key] = value
+            else:
+                # Default behavior
+                if f"{{{key}}}" in url:
+                    # Safely encode path parameters to prevent SSRF attacks
+                    encoded_value = quote(str(value), safe="")
+                    url = url.replace(f"{{{key}}}", encoded_value)
+                elif self._execute_config.method in {"GET", "DELETE"}:
                     query_params[key] = value
-                case ParameterLocation.BODY | ParameterLocation.FILE:
+                else:
                     body_params[key] = value
-                case _:
-                    # Default behavior
-                    if f"{{{key}}}" in url:
-                        url = url.replace(f"{{{key}}}", str(value))
-                    elif self._execute_config.method in {"GET", "DELETE"}:
-                        query_params[key] = value
-                    else:
-                        body_params[key] = value
 
         return url, body_params, query_params
 
@@ -355,13 +365,12 @@ class StackOneTool(BaseModel):
             python_type: type = str  # Default to str
             if isinstance(details, dict):
                 type_str = details.get("type", "string")
-                match type_str:
-                    case "number":
-                        python_type = float
-                    case "integer":
-                        python_type = int
-                    case "boolean":
-                        python_type = bool
+                if type_str == "number":
+                    python_type = float
+                elif type_str == "integer":
+                    python_type = int
+                elif type_str == "boolean":
+                    python_type = bool
 
                 field = Field(description=details.get("description", ""))
             else:
@@ -480,7 +489,7 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def meta_tools(self) -> "Tools":
+    def meta_tools(self) -> Tools:
         """Return meta tools for tool discovery and execution
 
         Meta tools enable dynamic tool discovery and execution based on natural language queries.
