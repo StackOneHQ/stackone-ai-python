@@ -82,7 +82,7 @@ class ToolIndex:
 
         # Process results
         search_results = []
-        for idx, score in zip(results[0], scores[0], strict=False):
+        for idx, score in zip(results[0], scores[0]):
             if score < min_score:
                 continue
 

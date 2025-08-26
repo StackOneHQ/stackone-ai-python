@@ -1,3 +1,6 @@
+# TODO: Remove when Python 3.9 support is dropped
+from __future__ import annotations
+
 import fnmatch
 import os
 import warnings

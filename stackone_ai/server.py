@@ -1,3 +1,6 @@
+# TODO: Remove when Python 3.9 support is dropped
+from __future__ import annotations
+
 import argparse
 import asyncio
 import logging
@@ -5,12 +8,24 @@ import os
 import sys
 from typing import Any, TypeVar
 
-import mcp.types as types
-from mcp.server import NotificationOptions, Server
-from mcp.server.models import InitializationOptions
-from mcp.server.stdio import stdio_server
-from mcp.shared.exceptions import McpError
-from mcp.types import EmbeddedResource, ErrorData, ImageContent, TextContent, Tool
+# Check Python version for MCP server functionality
+if sys.version_info < (3, 10):
+    raise RuntimeError(
+        "MCP server functionality requires Python 3.10+. Current version: {}.{}.{}".format(
+            *sys.version_info[:3]
+        )
+    )
+
+try:  # type: ignore[unreachable]
+    import mcp.types as types
+    from mcp.server import NotificationOptions, Server
+    from mcp.server.models import InitializationOptions
+    from mcp.server.stdio import stdio_server
+    from mcp.shared.exceptions import McpError
+    from mcp.types import EmbeddedResource, ErrorData, ImageContent, TextContent, Tool
+except ImportError as e:
+    raise ImportError("MCP dependencies not found. Install with: pip install 'stackone-ai[server]'") from e
+
 from pydantic import ValidationError
 
 from stackone_ai import StackOneToolSet
@@ -41,7 +56,7 @@ def tool_needs_account_id(tool_name: str) -> bool:
     return True
 
 
-@app.list_tools()  # type: ignore[misc]
+@app.list_tools()
 async def list_tools() -> list[Tool]:
     """List all available StackOne tools as MCP tools."""
     if not toolset:
@@ -99,7 +114,7 @@ async def list_tools() -> list[Tool]:
         ) from e
 
 
-@app.call_tool()  # type: ignore[misc]
+@app.call_tool()
 async def call_tool(
     name: str, arguments: dict[str, Any]
 ) -> list[TextContent | ImageContent | EmbeddedResource]:
