@@ -26,6 +26,7 @@ dependencies = [
     "bm25s>=0.2.2",
     "numpy>=1.24.0",
     "typing-extensions>=4.0.0",
+    "eval-type-backport; python_version<'3.10'",
 ]
 
 [project.scripts]
