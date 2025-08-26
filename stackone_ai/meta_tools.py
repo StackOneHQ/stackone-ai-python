@@ -82,6 +82,7 @@ class ToolIndex:
 
         # Process results
         search_results = []
+        # TODO: Add strict=False when Python 3.9 support is dropped
         for idx, score in zip(results[0], scores[0]):
             if score < min_score:
                 continue
