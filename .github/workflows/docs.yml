@@ -21,7 +21,7 @@ jobs:
           enable-cache: true
 
       - name: Install all dependencies
-        run: uv sync --without mcp
+        run: uv sync --all-extras --no-extra mcp
 
       - name: Build documentation
         run: |
