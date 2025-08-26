@@ -35,13 +35,13 @@ pip install stackone-ai
 
 ```bash
 # Install with MCP server support (requires Python 3.10+)
-pip install stackone-ai[mcp]
+pip install 'stackone-ai[mcp]'
 
 # Install with CrewAI examples (requires Python 3.10+)
-pip install stackone-ai[examples]
+pip install 'stackone-ai[examples]'
 
 # Install everything
-pip install stackone-ai[mcp,examples]
+pip install 'stackone-ai[mcp,examples]'
 ```
 
 ## Quick Start
@@ -106,7 +106,7 @@ for tool_call in response.tool_calls:
 
 CrewAI uses LangChain tools natively, making integration seamless:
 
-> **Note**: CrewAI requires Python 3.10+. Install with `pip install stackone-ai[examples]`
+> **Note**: CrewAI requires Python 3.10+. Install with `pip install 'stackone-ai[examples]'`
 
 ```python
 from crewai import Agent, Crew, Task
