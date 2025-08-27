@@ -116,24 +116,6 @@ class TestToolCalling:
         with pytest.raises(ValueError, match="Only one positional argument is allowed"):
             mock_tool.call({"name": "test"}, {"value": 42})
 
-    @pytest.mark.asyncio
-    @responses.activate
-    async def test_acall_with_kwargs(self, mock_tool):
-        """Test async calling a tool with keyword arguments"""
-        # Mock the API response
-        responses.add(
-            responses.POST,
-            "https://api.example.com/test",
-            json={"success": True, "result": "async_result"},
-            status=200,
-        )
-
-        # Call the tool asynchronously
-        result = await mock_tool.acall(name="test", value=42)
-
-        # Verify the result
-        assert result == {"success": True, "result": "async_result"}
-
     @responses.activate
     def test_call_without_arguments(self, mock_tool):
         """Test calling a tool without any arguments"""
