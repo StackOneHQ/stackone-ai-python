@@ -111,6 +111,58 @@ for tool_call in response.tool_calls:
 </details>
 
 <details>
+<summary>LangGraph Integration</summary>
+
+StackOne tools convert to LangChain tools, which LangGraph consumes via its prebuilt nodes:
+
+Prerequisites:
+
+```bash
+pip install langgraph langchain-openai
+```
+
+```python
+from langchain_openai import ChatOpenAI
+from typing import Annotated
+from typing_extensions import TypedDict
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import tools_condition
+
+from stackone_ai import StackOneToolSet
+from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_tools
+
+# Prepare tools
+toolset = StackOneToolSet()
+tools = toolset.get_tools("hris_*", account_id="your-account-id")
+langchain_tools = tools.to_langchain()
+
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+# Build a small agent loop: LLM -> maybe tools -> back to LLM
+graph = StateGraph(State)
+graph.add_node("tools", to_tool_node(langchain_tools))
+
+def call_llm(state: dict):
+    llm = ChatOpenAI(model="gpt-4o-mini")
+    llm = bind_model_with_tools(llm, langchain_tools)
+    resp = llm.invoke(state["messages"])  # returns AIMessage with optional tool_calls
+    return {"messages": state["messages"] + [resp]}
+
+graph.add_node("llm", call_llm)
+graph.add_edge(START, "llm")
+graph.add_conditional_edges("llm", tools_condition)
+graph.add_edge("tools", "llm")
+app = graph.compile()
+
+_ = app.invoke({"messages": [("user", "Get employee with id emp123") ]})
+```
+
+</details>
+
+<details>
 <summary>CrewAI Integration (Python 3.10+)</summary>
 
 CrewAI uses LangChain tools natively, making integration seamless:

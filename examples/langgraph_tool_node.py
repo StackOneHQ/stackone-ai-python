@@ -1,39 +1,60 @@
 """
-TODO!!
+Minimal LangGraph example identical to the README snippet.
 
-This example demonstrates how to use StackOne tools with LangGraph.
+Run:
+    uv run examples/langgraph_tool_node.py
 
-```bash
-uv run examples/langgraph_tool_node.py
-```
+Prerequisites:
+- `pip install langgraph langchain-openai`
+- `STACKONE_API_KEY` and `OPENAI_API_KEY`
+- Optionally set `STACKONE_ACCOUNT_ID` (required by some tools)
 """
 
+import os
+from typing import Annotated
+
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from langgraph.graph import START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import tools_condition
+from typing_extensions import TypedDict
 
 from stackone_ai import StackOneToolSet
-
-load_dotenv()
-
-account_id = "45072196112816593343"
-employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
+from stackone_ai.integrations.langgraph import bind_model_with_tools, to_tool_node
 
 
-def langgraph_tool_node() -> None:
-    """Demonstrate basic LangGraph integration with StackOne tools."""
+def main() -> None:
+    load_dotenv()
+
+    # Prepare tools
+    account_id = os.getenv("STACKONE_ACCOUNT_ID")  # Set if your tools require it
     toolset = StackOneToolSet()
     tools = toolset.get_tools("hris_*", account_id=account_id)
-
-    # Verify we have the tools we need
-    assert len(tools) > 0, "Expected at least one HRIS tool"
-    employee_tool = tools.get_tool("hris_get_employee")
-    assert employee_tool is not None, "Expected hris_get_employee tool"
-
-    # TODO: Add LangGraph specific integration
-    # For now, just verify the tools are properly configured
     langchain_tools = tools.to_langchain()
-    assert len(langchain_tools) > 0, "Expected LangChain tools"
-    assert all(hasattr(tool, "_run") for tool in langchain_tools), "Expected all tools to have _run method"
+
+    class State(TypedDict):
+        messages: Annotated[list, add_messages]
+
+    # Build a small agent loop: LLM -> maybe tools -> back to LLM
+    graph = StateGraph(State)
+    graph.add_node("tools", to_tool_node(langchain_tools))
+
+    def call_llm(state: dict):
+        llm = ChatOpenAI(model="gpt-4o-mini")
+        llm = bind_model_with_tools(llm, langchain_tools)
+        resp = llm.invoke(state["messages"])  # returns AIMessage with optional tool_calls
+        return {"messages": state["messages"] + [resp]}
+
+    graph.add_node("llm", call_llm)
+    graph.add_edge(START, "llm")
+    graph.add_conditional_edges("llm", tools_condition)
+    graph.add_edge("tools", "llm")
+    app = graph.compile()
+
+    # Kick off with a simple instruction; replace IDs as needed
+    _ = app.invoke({"messages": [("user", "Get employee with id emp123")]})
 
 
 if __name__ == "__main__":
-    langgraph_tool_node()
+    main()
