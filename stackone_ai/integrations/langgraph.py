@@ -22,9 +22,8 @@ from stackone_ai.models import Tools
 
 if TYPE_CHECKING:  # pragma: no cover - only for typing
     try:
-        from langgraph.prebuilt import ToolExecutor, ToolNode
+        from langgraph.prebuilt import ToolNode
     except Exception:  # pragma: no cover
-        ToolExecutor = Any
         ToolNode = Any
 
 
@@ -59,12 +58,16 @@ def to_tool_node(tools: Tools | Sequence[BaseTool], **kwargs: Any) -> Any:
 
 
 def to_tool_executor(tools: Tools | Sequence[BaseTool], **kwargs: Any) -> Any:
-    """Create a LangGraph `ToolExecutor` from StackOne tools or LangChain tools."""
+    """Create a LangGraph `ToolNode` from StackOne tools or LangChain tools.
+
+    Note: ToolExecutor has been deprecated in favor of ToolNode.
+    This function now returns a ToolNode for compatibility.
+    """
     _ensure_langgraph()
-    from langgraph.prebuilt import ToolExecutor  # local import with helpful error
+    from langgraph.prebuilt import ToolNode  # local import with helpful error
 
     langchain_tools = _to_langchain_tools(tools)
-    return ToolExecutor(langchain_tools, **kwargs)
+    return ToolNode(langchain_tools, **kwargs)
 
 
 def bind_model_with_tools(model: Any, tools: Tools | Sequence[BaseTool]) -> Any:
