@@ -116,6 +116,9 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_return_any = true
 warn_unreachable = true
+exclude = [
+    "^.venv/",
+]
 
 [[tool.mypy.overrides]]
 module = "bm25s"
@@ -124,3 +127,8 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "langgraph.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mcp.*"
+ignore_missing_imports = true
+ignore_errors = true
