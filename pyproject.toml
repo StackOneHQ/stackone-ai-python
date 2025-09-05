@@ -124,3 +124,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "langgraph.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mcp.*"
+ignore_missing_imports = true
