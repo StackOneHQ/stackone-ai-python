@@ -24,7 +24,9 @@ if TYPE_CHECKING:  # pragma: no cover - only for typing
     try:
         from langgraph.prebuilt import ToolNode
     except Exception:  # pragma: no cover
-        ToolNode = Any
+
+        class ToolNode:  # type: ignore[no-redef]
+            pass
 
 
 def _ensure_langgraph() -> None:
