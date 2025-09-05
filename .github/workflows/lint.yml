@@ -34,4 +34,9 @@ jobs:
           args: check .
 
       - name: Run Mypy
-        run: uv run mypy stackone_ai --exclude stackone_ai/server.py
+        run: |
+          if [[ "${{ matrix.python-version }}" == "3.9" ]]; then
+            uv run mypy stackone_ai --exclude stackone_ai/server.py
+          else
+            uv run mypy stackone_ai
+          fi
