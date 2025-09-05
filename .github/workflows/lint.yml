@@ -36,7 +36,7 @@ jobs:
       - name: Run Mypy
         run: |
           if [[ "${{ matrix.python-version }}" == "3.9" ]]; then
-            uv run mypy stackone_ai --exclude stackone_ai/server.py --install-types --non-interactive
+            uv run mypy stackone_ai --exclude stackone_ai/server.py
           else
-            uv run mypy stackone_ai --install-types --non-interactive
+            uv run mypy stackone_ai
           fi
