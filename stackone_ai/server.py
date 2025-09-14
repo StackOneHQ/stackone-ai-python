@@ -16,7 +16,7 @@ if sys.version_info < (3, 10):
         )
     )
 
-try:  # type: ignore[unreachable]
+try:
     import mcp.types as types
     from mcp.server import NotificationOptions, Server
     from mcp.server.models import InitializationOptions
@@ -56,7 +56,7 @@ def tool_needs_account_id(tool_name: str) -> bool:
     return True
 
 
-@app.list_tools()
+@app.list_tools()  # type: ignore[misc]
 async def list_tools() -> list[Tool]:
     """List all available StackOne tools as MCP tools."""
     if not toolset:
@@ -114,7 +114,7 @@ async def list_tools() -> list[Tool]:
         ) from e
 
 
-@app.call_tool()
+@app.call_tool()  # type: ignore[misc]
 async def call_tool(
     name: str, arguments: dict[str, Any]
 ) -> list[TextContent | ImageContent | EmbeddedResource]:
