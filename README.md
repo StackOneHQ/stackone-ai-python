@@ -29,18 +29,27 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ```bash
 pip install stackone-ai
+
+# Or with uv
+uv add stackone-ai
 ```
 
 ### Optional Features
 
 ```bash
 # Install with MCP server support (requires Python 3.10+)
+uv add 'stackone-ai[mcp]'
+# or 
 pip install 'stackone-ai[mcp]'
 
 # Install with CrewAI examples (requires Python 3.10+)
+uv add 'stackone-ai[examples]'
+# or
 pip install 'stackone-ai[examples]'
 
 # Install everything
+uv add 'stackone-ai[mcp,examples]'
+# or
 pip install 'stackone-ai[mcp,examples]'
 ```
 
