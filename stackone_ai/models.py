@@ -1,12 +1,10 @@
 # TODO: Remove when Python 3.9 support is dropped
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 from collections.abc import Sequence
 from enum import Enum
-from functools import partial
 from typing import Annotated, Any, cast
 from urllib.parse import quote
 
@@ -255,36 +253,6 @@ class StackOneTool(BaseModel):
             return self.execute(args[0])
 
         return self.execute(kwargs if kwargs else None)
-
-    async def acall(self, *args: Any, **kwargs: Any) -> JsonDict:
-        """Async version of call method
-
-        Args:
-            *args: If a single argument is provided, it's treated as the full arguments dict/string
-            **kwargs: Keyword arguments to pass to the tool
-
-        Returns:
-            API response as dict
-
-        Raises:
-            StackOneAPIError: If the API request fails
-            ValueError: If the arguments are invalid
-        """
-        # For now, we'll use asyncio to run the sync version
-        # In the future, this should use aiohttp for true async
-
-        # Create a partial function with the arguments
-        if args and kwargs:
-            raise ValueError("Cannot provide both positional and keyword arguments")
-
-        if args:
-            if len(args) > 1:
-                raise ValueError("Only one positional argument is allowed")
-            func = partial(self.execute, args[0])
-        else:
-            func = partial(self.execute, kwargs if kwargs else None)
-
-        return await asyncio.get_event_loop().run_in_executor(None, func)
 
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format
