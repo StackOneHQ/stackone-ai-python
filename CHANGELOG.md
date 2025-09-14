@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.2...stackone-ai-v0.3.3) (2025-09-14)
+
+
+### Bug Fixes
+
+* remove async method ([#31](https://github.com/StackOneHQ/stackone-ai-python/issues/31)) ([370699e](https://github.com/StackOneHQ/stackone-ai-python/commit/370699e390e4a46d8b4ae664fed8f5de6395eb9d))
+
+
+### Documentation
+
+* use uv for installing ([#30](https://github.com/StackOneHQ/stackone-ai-python/issues/30)) ([3c5d8fb](https://github.com/StackOneHQ/stackone-ai-python/commit/3c5d8fb54e61f8f730098e97f8bf2dfc78cf3bec))
+
 ## [0.3.2](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.1...stackone-ai-v0.3.2) (2025-08-26)
 
 
