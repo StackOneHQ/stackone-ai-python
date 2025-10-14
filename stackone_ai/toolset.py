@@ -7,6 +7,7 @@ import warnings
 from typing import Any
 
 from stackone_ai.constants import OAS_DIR
+from stackone_ai.feedback import create_feedback_tool
 from stackone_ai.models import (
     StackOneTool,
     Tools,
@@ -169,6 +170,16 @@ class StackOneToolSet:
                             _account_id=effective_account_id,
                         )
                         all_tools.append(tool)
+
+            # Add feedback collection meta tool
+            feedback_tool_name = "meta_collect_tool_feedback"
+            if filter_pattern is None or self._matches_filter(feedback_tool_name, filter_pattern):
+                feedback_tool = create_feedback_tool(
+                    api_key=self.api_key,
+                    account_id=effective_account_id,
+                    base_url=self.base_url or "https://api.stackone.com",
+                )
+                all_tools.append(feedback_tool)
 
             return Tools(all_tools)
 

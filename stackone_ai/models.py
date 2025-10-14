@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, ClassVar, cast
 from urllib.parse import quote
 
 import requests
@@ -19,6 +21,9 @@ from typing_extensions import TypeAlias
 # Type aliases for common types
 JsonDict: TypeAlias = dict[str, Any]
 Headers: TypeAlias = dict[str, str]
+
+
+logger = logging.getLogger("stackone.tools")
 
 
 class StackOneError(Exception):
@@ -92,6 +97,11 @@ class StackOneTool(BaseModel):
     _execute_config: ExecuteConfig = PrivateAttr()
     _api_key: str = PrivateAttr()
     _account_id: str | None = PrivateAttr(default=None)
+    _FEEDBACK_OPTION_KEYS: ClassVar[set[str]] = {
+        "feedback_session_id",
+        "feedback_user_id",
+        "feedback_metadata",
+    }
 
     def __init__(
         self,
@@ -109,6 +119,15 @@ class StackOneTool(BaseModel):
         self._execute_config = _execute_config
         self._api_key = _api_key
         self._account_id = _account_id
+
+    @classmethod
+    def _split_feedback_options(cls, params: JsonDict, options: JsonDict | None) -> tuple[JsonDict, JsonDict]:
+        merged_params = dict(params)
+        feedback_options = dict(options or {})
+        for key in cls._FEEDBACK_OPTION_KEYS:
+            if key in merged_params and key not in feedback_options:
+                feedback_options[key] = merged_params.pop(key)
+        return merged_params, feedback_options
 
     def _prepare_headers(self) -> Headers:
         """Prepare headers for the API request
@@ -166,11 +185,14 @@ class StackOneTool(BaseModel):
 
         return url, body_params, query_params
 
-    def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
+    def execute(
+        self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+    ) -> JsonDict:
         """Execute the tool with the given parameters
 
         Args:
             arguments: Tool arguments as string or dict
+            options: Execution options (e.g. feedback metadata)
 
         Returns:
             API response as dict
@@ -179,20 +201,40 @@ class StackOneTool(BaseModel):
             StackOneAPIError: If the API request fails
             ValueError: If the arguments are invalid
         """
-        try:
-            # Parse arguments
-            if isinstance(arguments, str):
-                kwargs = json.loads(arguments)
-            else:
-                kwargs = arguments or {}
+        start_time = datetime.now(timezone.utc)
+        feedback_options: JsonDict = {}
+        call_params: JsonDict = {}
+        result_payload: JsonDict | None = None
+        response_status: int | None = None
+        error_message: str | None = None
+        status = "success"
+        url_used = self._execute_config.url
 
-            # Prepare request
+        try:
+            if isinstance(arguments, str):
+                parsed_arguments = json.loads(arguments)
+            else:
+                parsed_arguments = arguments or {}
+
+            if not isinstance(parsed_arguments, dict):
+                status = "error"
+                error_message = "Tool arguments must be a JSON object"
+                raise ValueError(error_message)
+
+            if options is not None and not isinstance(options, dict):
+                status = "error"
+                error_message = "options must be a dictionary if provided"
+                raise ValueError(error_message)
+
+            kwargs, feedback_options = self._split_feedback_options(parsed_arguments, options)
+            call_params = dict(kwargs)
+
             headers = self._prepare_headers()
-            url, body_params, query_params = self._prepare_request_params(kwargs)
+            url_used, body_params, query_params = self._prepare_request_params(kwargs)
 
             request_kwargs: dict[str, Any] = {
                 "method": self._execute_config.method,
-                "url": url,
+                "url": url_used,
                 "headers": headers,
             }
 
@@ -207,24 +249,68 @@ class StackOneTool(BaseModel):
                 request_kwargs["params"] = query_params
 
             response = requests.request(**request_kwargs)
+            response_status = response.status_code
             response.raise_for_status()
 
-            # Ensure we return a dict
             result = response.json()
-            return cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
+            result_payload = cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
+            return result_payload
 
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in arguments: {e}") from e
-        except RequestException as e:
-            if hasattr(e, "response") and e.response is not None:
+        except json.JSONDecodeError as exc:
+            status = "error"
+            error_message = f"Invalid JSON in arguments: {exc}"
+            raise ValueError(error_message) from exc
+        except RequestException as exc:
+            status = "error"
+            error_message = str(exc)
+            if hasattr(exc, "response") and exc.response is not None:
                 raise StackOneAPIError(
-                    str(e),
-                    e.response.status_code,
-                    e.response.json() if e.response.text else None,
-                ) from e
-            raise StackOneError(f"Request failed: {e}") from e
+                    str(exc),
+                    exc.response.status_code,
+                    exc.response.json() if exc.response.text else None,
+                ) from exc
+            raise StackOneError(f"Request failed: {exc}") from exc
+        finally:
+            end_time = datetime.now(timezone.utc)
+            metadata: JsonDict = {
+                "http_method": self._execute_config.method,
+                "url": url_used,
+                "status_code": response_status,
+                "status": status,
+            }
 
-    def call(self, *args: Any, **kwargs: Any) -> JsonDict:
+            feedback_metadata = feedback_options.get("feedback_metadata")
+            if isinstance(feedback_metadata, dict):
+                metadata["feedback_metadata"] = feedback_metadata
+
+            if feedback_options:
+                metadata["feedback_options"] = {
+                    key: value
+                    for key, value in feedback_options.items()
+                    if key in {"feedback_session_id", "feedback_user_id"} and value is not None
+                }
+
+            try:
+                from .implicit_feedback import get_implicit_feedback_manager
+
+                manager = get_implicit_feedback_manager()
+                manager.record_tool_call(
+                    tool_name=self.name,
+                    start_time=start_time,
+                    end_time=end_time,
+                    status=status,
+                    params=call_params,
+                    result=result_payload,
+                    error=error_message,
+                    session_id=feedback_options.get("feedback_session_id"),
+                    user_id=feedback_options.get("feedback_user_id"),
+                    metadata=metadata,
+                    fire_and_forget=True,
+                )
+            except Exception as logging_exc:  # pragma: no cover - defensive logging
+                logger.warning("Failed to dispatch implicit feedback: %s", logging_exc, exc_info=True)
+
+    def call(self, *args: Any, options: JsonDict | None = None, **kwargs: Any) -> JsonDict:
         """Call the tool with the given arguments
 
         This method provides a more intuitive way to execute tools directly.
@@ -232,6 +318,7 @@ class StackOneTool(BaseModel):
         Args:
             *args: If a single argument is provided, it's treated as the full arguments dict/string
             **kwargs: Keyword arguments to pass to the tool
+            options: Optional execution options
 
         Returns:
             API response as dict
@@ -250,9 +337,9 @@ class StackOneTool(BaseModel):
         if args:
             if len(args) > 1:
                 raise ValueError("Only one positional argument is allowed")
-            return self.execute(args[0])
+            return self.execute(args[0], options=options)
 
-        return self.execute(kwargs if kwargs else None)
+        return self.execute(kwargs if kwargs else None, options=options)
 
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format

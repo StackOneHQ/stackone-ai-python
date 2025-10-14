@@ -75,6 +75,51 @@ employee = employee_tool.call(id="employee-id")
 employee = employee_tool.execute({"id": "employee-id"})
 ```
 
+## Implicit Feedback (Beta)
+
+The Python SDK can emit implicit behavioural feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
+
+### Automatic configuration
+
+Set `LANGSMITH_API_KEY` in your environment and the SDK will initialise the implicit feedback manager on first tool execution. You can optionally fine-tune behaviour with:
+
+- `STACKONE_IMPLICIT_FEEDBACK_ENABLED` (`true`/`false`, defaults to `true` when an API key is present)
+- `STACKONE_IMPLICIT_FEEDBACK_PROJECT` to pin a LangSmith project name
+- `STACKONE_IMPLICIT_FEEDBACK_TAGS` with a comma-separated list of tags applied to every run
+
+### Manual configuration
+
+If you want custom session or user resolvers, call `configure_implicit_feedback` during start-up:
+
+```python
+from stackone_ai import configure_implicit_feedback
+
+configure_implicit_feedback(
+    api_key="/path/to/langsmith.key",
+    project_name="stackone-agents",
+    default_tags=["python-sdk"],
+)
+```
+
+Providing your own `session_resolver`/`user_resolver` callbacks lets you derive identifiers from the request context before events are sent to LangSmith.
+
+### Attaching session context to tool calls
+
+Both `tool.execute` and `tool.call` accept an `options` keyword that is excluded from the API request but forwarded to the feedback manager:
+
+```python
+tool.execute(
+    {"id": "employee-id"},
+    options={
+        "feedback_session_id": "chat-42",
+        "feedback_user_id": "user-123",
+        "feedback_metadata": {"conversation_id": "abc"},
+    },
+)
+```
+
+When two calls for the same session happen within a few seconds, the SDK emits a `refinement_needed` event, and you can inspect suitability scores directly in LangSmith.
+
 ## Integration Examples
 
 <details>
@@ -147,6 +192,31 @@ result = crew.kickoff()
 ```
 
 </details>
+
+## Feedback Collection
+
+The SDK includes a feedback collection tool (`meta_collect_tool_feedback`) that allows users to submit feedback about their experience with StackOne tools. This tool is automatically included in the toolset and is designed to be invoked by AI agents after user permission.
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Get the feedback tool (included with "meta_*" pattern or all tools)
+tools = toolset.get_tools("meta_*")
+feedback_tool = tools.get_tool("meta_collect_tool_feedback")
+
+# Submit feedback (typically invoked by AI after user consent)
+result = feedback_tool.call(
+    feedback="The HRIS tools are working great! Very fast response times.",
+    account_id="acc_123456",
+    tool_names=["hris_list_employees", "hris_get_employee"]
+)
+```
+
+**Important**: The AI agent should always ask for user permission before submitting feedback:
+- "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
+- Only call the tool after the user explicitly agrees.
 
 ## Meta Tools (Beta)
 
