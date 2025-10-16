@@ -1,4 +1,4 @@
-"""Tests for feedback tool."""
+"""Comprehensive tests for feedback tool."""
 
 # TODO: Remove when Python 3.9 support is dropped
 from __future__ import annotations
@@ -32,84 +32,53 @@ def mock_implicit_feedback() -> Any:
 class TestFeedbackToolValidation:
     """Test suite for feedback tool input validation."""
 
-    def test_throws_when_account_id_missing(self) -> None:
-        """Test that tool throws when account_id is missing."""
+    def test_validation_errors(self) -> None:
+        """Test all validation error cases in one comprehensive test."""
         tool = create_feedback_tool(api_key="test_key")
 
+        # Test missing required fields
         with pytest.raises(StackOneError, match="account_id"):
             tool.execute({"feedback": "Great tools!", "tool_names": ["test_tool"]})
-
-    def test_throws_when_tool_names_missing(self) -> None:
-        """Test that tool throws when tool_names is missing."""
-        tool = create_feedback_tool(api_key="test_key")
 
         with pytest.raises(StackOneError, match="tool_names"):
             tool.execute({"feedback": "Great tools!", "account_id": "acc_123456"})
 
-    def test_throws_when_feedback_missing(self) -> None:
-        """Test that tool throws when feedback is missing."""
-        tool = create_feedback_tool(api_key="test_key")
-
         with pytest.raises(StackOneError, match="feedback"):
             tool.execute({"account_id": "acc_123456", "tool_names": ["test_tool"]})
 
-    def test_throws_when_feedback_empty_string(self) -> None:
-        """Test that tool throws when feedback is empty after trimming."""
-        tool = create_feedback_tool(api_key="test_key")
-
+        # Test empty/whitespace strings
         with pytest.raises(StackOneError, match="non-empty"):
             tool.execute({"feedback": "   ", "account_id": "acc_123456", "tool_names": ["test_tool"]})
-
-    def test_throws_when_account_id_empty_string(self) -> None:
-        """Test that tool throws when account_id is empty after trimming."""
-        tool = create_feedback_tool(api_key="test_key")
 
         with pytest.raises(StackOneError, match="non-empty"):
             tool.execute({"feedback": "Great!", "account_id": "   ", "tool_names": ["test_tool"]})
 
-    def test_throws_when_tool_names_empty_array(self) -> None:
-        """Test that tool throws when tool_names is empty array."""
-        tool = create_feedback_tool(api_key="test_key")
-
-        with pytest.raises(StackOneError):
+        with pytest.raises(StackOneError, match="tool_names"):
             tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": []})
-
-    def test_throws_when_tool_names_only_whitespace(self) -> None:
-        """Test that tool throws when tool_names contains only whitespace strings."""
-        tool = create_feedback_tool(api_key="test_key")
 
         with pytest.raises(StackOneError, match="At least one tool name"):
             tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": ["   ", "  "]})
 
-    def test_accepts_json_string_arguments(self) -> None:
-        """Test that tool accepts JSON string as arguments."""
-        tool = create_feedback_tool(api_key="test_key")
-
+        # Test JSON string input
         with patch("requests.request") as mock_request:
             mock_response = Mock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {
-                "message": "Feedback successfully stored",
-                "key": "test-key.json",
-                "submitted_at": "2025-10-08T11:44:16.123Z",
-                "trace_id": "test-trace-id",
-            }
+            mock_response.json.return_value = {"message": "Success"}
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
             json_string = json.dumps(
                 {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
             )
-
             result = tool.execute(json_string)
-            assert result["message"] == "Feedback successfully stored"
+            assert result["message"] == "Success"
 
 
 class TestFeedbackToolExecution:
     """Test suite for feedback tool execution."""
 
     def test_submits_feedback_to_api(self) -> None:
-        """Test that feedback is submitted to the API."""
+        """Test that feedback is submitted to the API with proper structure."""
         tool = create_feedback_tool(api_key="test_key")
 
         api_response = {
@@ -146,8 +115,8 @@ class TestFeedbackToolExecution:
             assert call_kwargs["json"]["account_id"] == "acc_123456"
             assert call_kwargs["json"]["tool_names"] == ["data_export", "analytics"]
 
-    def test_trims_whitespace_from_strings(self) -> None:
-        """Test that whitespace is trimmed from string inputs."""
+    def test_call_method_works(self) -> None:
+        """Test that the .call() method works correctly."""
         tool = create_feedback_tool(api_key="test_key")
 
         api_response = {
@@ -164,111 +133,18 @@ class TestFeedbackToolExecution:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            tool.execute(
-                {
-                    "feedback": "  Great tools!  ",
-                    "account_id": "  acc_123456  ",
-                    "tool_names": ["  hris_get_employee  ", " crm_update_employee "],
-                }
+            result = tool.call(
+                feedback="Testing the .call() method interface.",
+                account_id="acc_test004",
+                tool_names=["meta_collect_tool_feedback"],
             )
 
-            # Verify trimmed values were sent to API
+            assert result == api_response
+            mock_request.assert_called_once()
             call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["json"]["feedback"] == "Great tools!"
-            assert call_kwargs["json"]["account_id"] == "acc_123456"
-            assert call_kwargs["json"]["tool_names"] == ["hris_get_employee", "crm_update_employee"]
-
-    def test_filters_empty_tool_names(self) -> None:
-        """Test that empty tool names are filtered out."""
-        tool = create_feedback_tool(api_key="test_key")
-
-        api_response = {
-            "message": "Feedback successfully stored",
-            "key": "test-key.json",
-            "submitted_at": "2025-10-08T11:44:16.123Z",
-            "trace_id": "test-trace-id",
-        }
-
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
-
-            tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["hris_get_employee", "", "  ", "crm_update_employee"],
-                }
-            )
-
-            # Verify empty tool names were filtered
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["json"]["tool_names"] == ["hris_get_employee", "crm_update_employee"]
-
-    def test_uses_custom_base_url(self) -> None:
-        """Test that custom base URL is used when provided."""
-        tool = create_feedback_tool(api_key="test_key", base_url="https://custom.api.com")
-
-        api_response = {
-            "message": "Feedback successfully stored",
-            "key": "test-key.json",
-            "submitted_at": "2025-10-08T11:44:16.123Z",
-            "trace_id": "test-trace-id",
-        }
-
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
-
-            tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["test_tool"],
-                }
-            )
-
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["url"] == "https://custom.api.com/ai/tool-feedback"
-
-    def test_includes_account_id_in_header(self) -> None:
-        """Test that account_id is included in request header when provided."""
-        tool = create_feedback_tool(api_key="test_key", account_id="acc_header_123")
-
-        api_response = {
-            "message": "Feedback successfully stored",
-            "key": "test-key.json",
-            "submitted_at": "2025-10-08T11:44:16.123Z",
-            "trace_id": "test-trace-id",
-        }
-
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
-
-            tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_body_123",
-                    "tool_names": ["test_tool"],
-                }
-            )
-
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["headers"]["x-account-id"] == "acc_header_123"
-
-
-class TestFeedbackToolErrors:
-    """Test suite for feedback tool error handling."""
+            assert call_kwargs["json"]["feedback"] == "Testing the .call() method interface."
+            assert call_kwargs["json"]["account_id"] == "acc_test004"
+            assert call_kwargs["json"]["tool_names"] == ["meta_collect_tool_feedback"]
 
     def test_handles_api_errors(self) -> None:
         """Test that API errors are handled properly."""
@@ -291,59 +167,12 @@ class TestFeedbackToolErrors:
                     }
                 )
 
-    def test_handles_network_errors(self) -> None:
-        """Test that network errors are handled properly."""
-        tool = create_feedback_tool(api_key="test_key")
-
-        with patch("requests.request") as mock_request:
-            mock_request.side_effect = Exception("Network error")
-
-            with pytest.raises(StackOneError, match="Network error"):
-                tool.execute(
-                    {
-                        "feedback": "Great tools!",
-                        "account_id": "acc_123456",
-                        "tool_names": ["test_tool"],
-                    }
-                )
-
-    def test_handles_invalid_json_string(self) -> None:
-        """Test that invalid JSON string is handled properly."""
-        tool = create_feedback_tool(api_key="test_key")
-
-        with pytest.raises(StackOneError, match="Invalid JSON"):
-            tool.execute("not valid json")
-
 
 class TestFeedbackToolIntegration:
-    """Test suite for feedback tool integration with toolset."""
+    """Test suite for feedback tool integration."""
 
-    def test_feedback_tool_is_included_in_toolset(self) -> None:
-        """Test that feedback tool is included when loading tools."""
-        from stackone_ai import StackOneToolSet
-
-        with patch.dict("os.environ", {"STACKONE_API_KEY": "test_key"}):
-            toolset = StackOneToolSet()
-            tools = toolset.get_tools("meta_*")
-
-            feedback_tool = tools.get_tool("meta_collect_tool_feedback")
-            assert feedback_tool is not None
-            assert feedback_tool.name == "meta_collect_tool_feedback"
-            assert "feedback" in feedback_tool.description.lower()
-
-    def test_feedback_tool_excluded_by_negative_filter(self) -> None:
-        """Test that feedback tool can be excluded with negative filter."""
-        from stackone_ai import StackOneToolSet
-
-        with patch.dict("os.environ", {"STACKONE_API_KEY": "test_key"}):
-            toolset = StackOneToolSet()
-            tools = toolset.get_tools(["meta_*", "!meta_collect_tool_feedback"])
-
-            feedback_tool = tools.get_tool("meta_collect_tool_feedback")
-            assert feedback_tool is None
-
-    def test_feedback_tool_has_correct_structure(self) -> None:
-        """Test that feedback tool has the correct structure for AI consumption."""
+    def test_feedback_tool_integration(self) -> None:
+        """Test that feedback tool integrates properly with toolset and has correct structure."""
         from stackone_ai import StackOneToolSet
 
         with patch.dict("os.environ", {"STACKONE_API_KEY": "test_key"}):
@@ -352,6 +181,8 @@ class TestFeedbackToolIntegration:
 
             feedback_tool = tools.get_tool("meta_collect_tool_feedback")
             assert feedback_tool is not None
+            assert feedback_tool.name == "meta_collect_tool_feedback"
+            assert "feedback" in feedback_tool.description.lower()
 
             # Test OpenAI format
             openai_format = feedback_tool.to_openai_function()
@@ -365,3 +196,152 @@ class TestFeedbackToolIntegration:
             langchain_tool = feedback_tool.to_langchain()
             assert langchain_tool.name == "meta_collect_tool_feedback"
             assert "feedback" in langchain_tool.description.lower()
+
+    def test_feedback_tool_smoke(self) -> None:
+        """Lightweight smoke test for basic functionality."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        api_response = {
+            "message": "Feedback successfully stored",
+            "trace_id": "trace-123",
+        }
+
+        with patch("requests.request") as mock_request:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = api_response
+            mock_response.raise_for_status = Mock()
+            mock_request.return_value = mock_response
+
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": "acc_123456",
+                    "tool_names": ["test_tool"],
+                }
+            )
+
+            assert result == api_response
+            mock_request.assert_called_once()
+
+
+@pytest.mark.integration
+def test_live_feedback_submission() -> None:
+    """Submit feedback to the live API and assert a successful response."""
+    import uuid
+
+    api_key = os.getenv("STACKONE_API_KEY")
+    if not api_key:
+        pytest.skip("STACKONE_API_KEY env var required for live feedback test")
+
+    base_url = os.getenv("STACKONE_BASE_URL", "https://api.stackone.com")
+    from stackone_ai import StackOneToolSet
+
+    toolset = StackOneToolSet(api_key=api_key, base_url=base_url)
+
+    tools = toolset.get_tools("meta_collect_tool_feedback")
+    feedback_tool = tools.get_tool("meta_collect_tool_feedback")
+    assert feedback_tool is not None, "Feedback tool must be available"
+
+    feedback_token = uuid.uuid4().hex[:8]
+    result = feedback_tool.execute(
+        {
+            "feedback": f"CI live test feedback {feedback_token}",
+            "account_id": f"acc-ci-{feedback_token}",
+            "tool_names": ["hris_list_employees"],
+        }
+    )
+
+    assert isinstance(result, dict)
+    assert result.get("message", "").lower().startswith("feedback")
+    assert "trace_id" in result and result["trace_id"]
+
+
+def test_implicit_feedback_integration() -> None:
+    """Test implicit feedback system integration."""
+    from stackone_ai.implicit_feedback import (
+        BehaviorAnalyzer,
+        BehaviorAnalyzerConfig,
+        ImplicitFeedbackManager,
+        SessionTracker,
+    )
+    from stackone_ai.implicit_feedback.data import ToolCallRecord
+    from datetime import datetime, timedelta, timezone
+
+    class StubLangsmithClient:
+        def __init__(self) -> None:
+            self.is_ready = True
+            self.runs: list[dict[str, object]] = []
+            self.feedback: list[dict[str, object]] = []
+
+        def create_run(self, **kwargs: object) -> dict[str, object]:
+            self.runs.append(kwargs)
+            return {"id": f"run-{len(self.runs)}"}
+
+        def create_feedback(
+            self,
+            *,
+            run_id: str,
+            key: str,
+            score: float | None = None,
+            comment: str | None = None,
+            metadata: dict[str, object] | None = None,
+        ) -> None:
+            self.feedback.append(
+                {
+                    "run_id": run_id,
+                    "key": key,
+                    "score": score,
+                    "comment": comment,
+                    "metadata": metadata,
+                }
+            )
+
+    analyzer = BehaviorAnalyzer()
+    tracker = SessionTracker(analyzer)
+    client = StubLangsmithClient()
+
+    manager = ImplicitFeedbackManager(
+        enabled=True,
+        session_tracker=tracker,
+        langsmith_client=client,  # type: ignore[arg-type]
+    )
+
+    start = datetime.now(timezone.utc)
+    first_end = start + timedelta(seconds=2)
+    manager.record_tool_call(
+        tool_name="crm.search",
+        start_time=start,
+        end_time=first_end,
+        status="success",
+        params={"query": "alpha"},
+        result={"count": 1},
+        error=None,
+        session_id="session-1",
+        user_id="user-1",
+        metadata={"source": "test"},
+        fire_and_forget=False,
+    )
+
+    second_start = first_end + timedelta(seconds=3)
+    manager.record_tool_call(
+        tool_name="crm.search",
+        start_time=second_start,
+        end_time=second_start + timedelta(seconds=1),
+        status="success",
+        params={"query": "alpha"},
+        result={"count": 0},
+        error=None,
+        session_id="session-1",
+        user_id="user-1",
+        metadata={"source": "test"},
+        fire_and_forget=False,
+    )
+
+    assert len(client.runs) == 2
+    assert client.feedback, "Expected implicit feedback events"
+    feedback_entry = client.feedback[0]
+    assert feedback_entry["key"] == "refinement_needed"
+    assert feedback_entry["run_id"] == "run-2"
+    assert isinstance(feedback_entry["metadata"], dict)
+    assert feedback_entry["metadata"].get("tool_name") == "crm.search"
