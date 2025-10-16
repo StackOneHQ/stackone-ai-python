@@ -337,9 +337,9 @@ class StackOneTool(BaseModel):
         if args:
             if len(args) > 1:
                 raise ValueError("Only one positional argument is allowed")
-            return self.execute(args[0], options=options)
+            return self.execute(args[0])
 
-        return self.execute(kwargs if kwargs else None, options=options)
+        return self.execute(kwargs if kwargs else None)
 
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format
