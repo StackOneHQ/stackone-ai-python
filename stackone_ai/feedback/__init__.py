@@ -1,4 +1,4 @@
-"""Feedback collection tool for StackOne."""
+"""Feedback collection tools for StackOne."""
 
 from .tool import create_feedback_tool
 

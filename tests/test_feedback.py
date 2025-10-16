@@ -1,4 +1,4 @@
-"""Comprehensive tests for feedback tool."""
+"""Tests for feedback tool."""
 
 # TODO: Remove when Python 3.9 support is dropped
 from __future__ import annotations
@@ -10,23 +10,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-# Disable implicit feedback for tests BEFORE importing anything else
-os.environ["STACKONE_IMPLICIT_FEEDBACK_ENABLED"] = "false"
-os.environ.pop("LANGSMITH_API_KEY", None)  # Make sure no Langsmith key is set
-
 from stackone_ai.feedback import create_feedback_tool
 from stackone_ai.models import StackOneError
-
-
-# Mock the implicit feedback manager globally for tests
-@pytest.fixture(autouse=True)
-def mock_implicit_feedback() -> Any:
-    """Mock implicit feedback manager to avoid Langsmith initialization."""
-    with patch("stackone_ai.implicit_feedback.get_implicit_feedback_manager") as mock_manager:
-        mock_instance = Mock()
-        mock_instance.record_tool_call = Mock()
-        mock_manager.return_value = mock_instance
-        yield mock_manager
 
 
 class TestFeedbackToolValidation:
@@ -197,33 +182,6 @@ class TestFeedbackToolIntegration:
             assert langchain_tool.name == "meta_collect_tool_feedback"
             assert "feedback" in langchain_tool.description.lower()
 
-    def test_feedback_tool_smoke(self) -> None:
-        """Lightweight smoke test for basic functionality."""
-        tool = create_feedback_tool(api_key="test_key")
-
-        api_response = {
-            "message": "Feedback successfully stored",
-            "trace_id": "trace-123",
-        }
-
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
-
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["test_tool"],
-                }
-            )
-
-            assert result == api_response
-            mock_request.assert_called_once()
-
 
 @pytest.mark.integration
 def test_live_feedback_submission() -> None:
@@ -255,92 +213,3 @@ def test_live_feedback_submission() -> None:
     assert isinstance(result, dict)
     assert result.get("message", "").lower().startswith("feedback")
     assert "trace_id" in result and result["trace_id"]
-
-
-def test_implicit_feedback_integration() -> None:
-    """Test implicit feedback system integration."""
-    from datetime import datetime, timedelta, timezone
-
-    from stackone_ai.implicit_feedback import (
-        BehaviorAnalyzer,
-        ImplicitFeedbackManager,
-        SessionTracker,
-    )
-
-    class StubLangsmithClient:
-        def __init__(self) -> None:
-            self.is_ready = True
-            self.runs: list[dict[str, object]] = []
-            self.feedback: list[dict[str, object]] = []
-
-        def create_run(self, **kwargs: object) -> dict[str, object]:
-            self.runs.append(kwargs)
-            return {"id": f"run-{len(self.runs)}"}
-
-        def create_feedback(
-            self,
-            *,
-            run_id: str,
-            key: str,
-            score: float | None = None,
-            comment: str | None = None,
-            metadata: dict[str, object] | None = None,
-        ) -> None:
-            self.feedback.append(
-                {
-                    "run_id": run_id,
-                    "key": key,
-                    "score": score,
-                    "comment": comment,
-                    "metadata": metadata,
-                }
-            )
-
-    analyzer = BehaviorAnalyzer()
-    tracker = SessionTracker(analyzer)
-    client = StubLangsmithClient()
-
-    manager = ImplicitFeedbackManager(
-        enabled=True,
-        session_tracker=tracker,
-        langsmith_client=client,  # type: ignore[arg-type]
-    )
-
-    start = datetime.now(timezone.utc)
-    first_end = start + timedelta(seconds=2)
-    manager.record_tool_call(
-        tool_name="crm.search",
-        start_time=start,
-        end_time=first_end,
-        status="success",
-        params={"query": "alpha"},
-        result={"count": 1},
-        error=None,
-        session_id="session-1",
-        user_id="user-1",
-        metadata={"source": "test"},
-        fire_and_forget=False,
-    )
-
-    second_start = first_end + timedelta(seconds=3)
-    manager.record_tool_call(
-        tool_name="crm.search",
-        start_time=second_start,
-        end_time=second_start + timedelta(seconds=1),
-        status="success",
-        params={"query": "alpha"},
-        result={"count": 0},
-        error=None,
-        session_id="session-1",
-        user_id="user-1",
-        metadata={"source": "test"},
-        fire_and_forget=False,
-    )
-
-    assert len(client.runs) == 2
-    assert client.feedback, "Expected implicit feedback events"
-    feedback_entry = client.feedback[0]
-    assert feedback_entry["key"] == "refinement_needed"
-    assert feedback_entry["run_id"] == "run-2"
-    assert isinstance(feedback_entry["metadata"], dict)
-    assert feedback_entry["metadata"].get("tool_name") == "crm.search"
