@@ -170,6 +170,17 @@ class StackOneToolSet:
                         )
                         all_tools.append(tool)
 
+            # Add feedback collection meta tool
+            from .feedback import create_feedback_tool
+            feedback_tool_name = "meta_collect_tool_feedback"
+            if filter_pattern is None or self._matches_filter(feedback_tool_name, filter_pattern):
+                feedback_tool = create_feedback_tool(
+                    api_key=self.api_key,
+                    account_id=effective_account_id,
+                    base_url=self.base_url or "https://api.stackone.com",
+                )
+                all_tools.append(feedback_tool)
+
             return Tools(all_tools)
 
         except Exception as e:
