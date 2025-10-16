@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from .data import ToolCallQualitySignals, ToolCallRecord
 
@@ -24,7 +24,10 @@ class BehaviorAnalyzer:
     def analyze(self, history: Sequence[ToolCallRecord], current: ToolCallRecord) -> ToolCallQualitySignals:
         """Compute quality signals for a tool call."""
 
-        session_history = [call for call in history if call.session_id == current.session_id and call.call_id != current.call_id]
+        session_history = [
+            call for call in history
+            if call.session_id == current.session_id and call.call_id != current.call_id
+        ]
 
         quick_refinement, refinement_window = self._detect_quick_refinement(session_history, current)
         task_switch = self._detect_task_switch(session_history, current)

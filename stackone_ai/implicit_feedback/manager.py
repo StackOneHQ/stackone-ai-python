@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from threading import Lock, Thread
-from typing import Any, Callable, ClassVar, Optional, Sequence
+from typing import Any, Callable, ClassVar, Optional
 from uuid import uuid4
 
 from .analyzer import BehaviorAnalyzer
@@ -146,7 +146,11 @@ class ImplicitFeedbackManager:
             status=status,
             params=sanitized_params,
             result=sanitized_result,
-            error=sanitized_error if isinstance(sanitized_error, str) else str(sanitized_error) if sanitized_error else None,
+            error=(
+                sanitized_error if isinstance(sanitized_error, str)
+                else str(sanitized_error) if sanitized_error
+                else None
+            ),
             metadata=safe_metadata if isinstance(safe_metadata, Mapping) else {},
         )
 

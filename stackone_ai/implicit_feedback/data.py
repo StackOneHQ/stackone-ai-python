@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Mapping, MutableMapping
+from typing import Any
 
 JsonDict = dict[str, Any]
 
@@ -35,7 +36,7 @@ class ToolCallRecord:
     quality: ToolCallQualitySignals | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
-    def with_quality(self, quality: ToolCallQualitySignals) -> "ToolCallRecord":
+    def with_quality(self, quality: ToolCallQualitySignals) -> ToolCallRecord:
         """Return a new instance with computed quality signals."""
 
         data: MutableMapping[str, Any] = {

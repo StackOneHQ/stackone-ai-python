@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict, deque
-from typing import Deque, Dict, Iterable
+from collections.abc import Iterable
 
 from .analyzer import BehaviorAnalyzer
 from .data import ImplicitFeedbackEvent, ToolCallRecord
@@ -22,7 +22,7 @@ class SessionTracker:
         self._analyzer = analyzer
         self._max_history = max_history
         self._suitability_alert_threshold = suitability_alert_threshold
-        self._history: Dict[str, Deque[ToolCallRecord]] = defaultdict(deque)
+        self._history: dict[str, deque[ToolCallRecord]] = defaultdict(deque)
 
     def record_tool_call(self, record: ToolCallRecord) -> tuple[ToolCallRecord, list[ImplicitFeedbackEvent]]:
         """Record a tool execution and return derived events."""

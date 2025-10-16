@@ -259,14 +259,13 @@ def test_live_feedback_submission() -> None:
 
 def test_implicit_feedback_integration() -> None:
     """Test implicit feedback system integration."""
+    from datetime import datetime, timedelta, timezone
+
     from stackone_ai.implicit_feedback import (
         BehaviorAnalyzer,
-        BehaviorAnalyzerConfig,
         ImplicitFeedbackManager,
         SessionTracker,
     )
-    from stackone_ai.implicit_feedback.data import ToolCallRecord
-    from datetime import datetime, timedelta, timezone
 
     class StubLangsmithClient:
         def __init__(self) -> None:
