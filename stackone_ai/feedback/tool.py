@@ -46,12 +46,15 @@ class FeedbackInput(BaseModel):
 class FeedbackTool(StackOneTool):
     """Extended tool for collecting feedback with enhanced validation."""
 
-    def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
+    def execute(
+        self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+    ) -> JsonDict:
         """
         Execute the feedback tool with enhanced validation.
 
         Args:
             arguments: Tool arguments as string or dict
+            options: Execution options
 
         Returns:
             Response from the API
@@ -77,7 +80,7 @@ class FeedbackTool(StackOneTool):
             }
 
             # Use the parent execute method with validated arguments
-            return super().execute(validated_arguments)
+            return super().execute(validated_arguments, options=options)
 
         except json.JSONDecodeError as exc:
             raise StackOneError(f"Invalid JSON in arguments: {exc}") from exc

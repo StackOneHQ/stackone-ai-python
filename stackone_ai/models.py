@@ -221,12 +221,7 @@ class StackOneTool(BaseModel):
                 error_message = "Tool arguments must be a JSON object"
                 raise ValueError(error_message)
 
-            if options is not None and not isinstance(options, dict):
-                status = "error"
-                error_message = "options must be a dictionary if provided"
-                raise ValueError(error_message)
-
-            kwargs, feedback_options = self._split_feedback_options(parsed_arguments, options)
+            kwargs = parsed_arguments
             call_params = dict(kwargs)
 
             headers = self._prepare_headers()
@@ -290,25 +285,7 @@ class StackOneTool(BaseModel):
                     if key in {"feedback_session_id", "feedback_user_id"} and value is not None
                 }
 
-            try:
-                from .implicit_feedback import get_implicit_feedback_manager
-
-                manager = get_implicit_feedback_manager()
-                manager.record_tool_call(
-                    tool_name=self.name,
-                    start_time=start_time,
-                    end_time=end_time,
-                    status=status,
-                    params=call_params,
-                    result=result_payload,
-                    error=error_message,
-                    session_id=feedback_options.get("feedback_session_id"),
-                    user_id=feedback_options.get("feedback_user_id"),
-                    metadata=metadata,
-                    fire_and_forget=True,
-                )
-            except Exception as logging_exc:  # pragma: no cover - defensive logging
-                logger.warning("Failed to dispatch implicit feedback: %s", logging_exc, exc_info=True)
+            # Implicit feedback removed - just API calls
 
     def call(self, *args: Any, options: JsonDict | None = None, **kwargs: Any) -> JsonDict:
         """Call the tool with the given arguments
