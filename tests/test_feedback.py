@@ -77,11 +77,13 @@ class TestFeedbackToolValidation:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute({
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_789012"],
-                "tool_names": ["test_tool"]
-            })
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": ["acc_123456", "acc_789012"],
+                    "tool_names": ["test_tool"],
+                }
+            )
             assert "total_accounts" in result
             assert result["total_accounts"] == 2
 
@@ -197,11 +199,13 @@ class TestFeedbackToolExecution:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute({
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_789012", "acc_345678"],
-                "tool_names": ["test_tool"]
-            })
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": ["acc_123456", "acc_789012", "acc_345678"],
+                    "tool_names": ["test_tool"],
+                }
+            )
 
             # Check combined result structure
             assert result["message"] == "Feedback sent to 3 account(s)"
@@ -246,11 +250,13 @@ class TestFeedbackToolExecution:
         with patch("requests.request") as mock_request:
             mock_request.side_effect = mock_request_side_effect
 
-            result = tool.execute({
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_unauthorized"],
-                "tool_names": ["test_tool"]
-            })
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": ["acc_123456", "acc_unauthorized"],
+                    "tool_names": ["test_tool"],
+                }
+            )
 
             # Check combined result structure
             assert result["total_accounts"] == 2
