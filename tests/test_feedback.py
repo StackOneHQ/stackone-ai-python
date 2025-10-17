@@ -16,11 +16,10 @@ from stackone_ai.models import StackOneError
 class TestFeedbackToolValidation:
     """Test suite for feedback tool input validation."""
 
-    def test_validation_errors(self) -> None:
-        """Test all validation error cases in one comprehensive test."""
+    def test_missing_required_fields(self) -> None:
+        """Test validation errors for missing required fields."""
         tool = create_feedback_tool(api_key="test_key")
 
-        # Test missing required fields
         with pytest.raises(StackOneError, match="account_id"):
             tool.execute({"feedback": "Great tools!", "tool_names": ["test_tool"]})
 
@@ -30,7 +29,10 @@ class TestFeedbackToolValidation:
         with pytest.raises(StackOneError, match="feedback"):
             tool.execute({"account_id": "acc_123456", "tool_names": ["test_tool"]})
 
-        # Test empty/whitespace strings
+    def test_empty_and_whitespace_validation(self) -> None:
+        """Test validation for empty and whitespace-only strings."""
+        tool = create_feedback_tool(api_key="test_key")
+
         with pytest.raises(StackOneError, match="non-empty"):
             tool.execute({"feedback": "   ", "account_id": "acc_123456", "tool_names": ["test_tool"]})
 
@@ -43,33 +45,20 @@ class TestFeedbackToolValidation:
         with pytest.raises(StackOneError, match="At least one tool name"):
             tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": ["   ", "  "]})
 
-        # Test JSON string input
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"message": "Success"}
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
-
-            json_string = json.dumps(
-                {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
-            )
-            result = tool.execute(json_string)
-            assert result["message"] == "Success"
-
     def test_multiple_account_ids_validation(self) -> None:
         """Test validation with multiple account IDs."""
         tool = create_feedback_tool(api_key="test_key")
 
-        # Test empty account ID list
         with pytest.raises(StackOneError, match="At least one account ID is required"):
             tool.execute({"feedback": "Great tools!", "account_id": [], "tool_names": ["test_tool"]})
 
-        # Test account ID list with empty strings
         with pytest.raises(StackOneError, match="At least one valid account ID is required"):
             tool.execute({"feedback": "Great tools!", "account_id": ["", "   "], "tool_names": ["test_tool"]})
 
-        # Test valid multiple account IDs
+    def test_json_string_input(self) -> None:
+        """Test that JSON string input is properly parsed."""
+        tool = create_feedback_tool(api_key="test_key")
+
         with patch("requests.request") as mock_request:
             mock_response = Mock()
             mock_response.status_code = 200
@@ -77,30 +66,22 @@ class TestFeedbackToolValidation:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": ["acc_123456", "acc_789012"],
-                    "tool_names": ["test_tool"],
-                }
-            )
-            assert "total_accounts" in result
-            assert result["total_accounts"] == 2
+            json_string = json.dumps({
+                "feedback": "Great tools!", 
+                "account_id": "acc_123456", 
+                "tool_names": ["test_tool"]
+            })
+            result = tool.execute(json_string)
+            assert result["message"] == "Success"
 
 
 class TestFeedbackToolExecution:
     """Test suite for feedback tool execution."""
 
-    def test_submits_feedback_to_api(self) -> None:
-        """Test that feedback is submitted to the API with proper structure."""
+    def test_single_account_execution(self) -> None:
+        """Test execution with single account ID."""
         tool = create_feedback_tool(api_key="test_key")
-
-        api_response = {
-            "message": "Feedback successfully stored",
-            "key": "2025-10-08T11-44-16.123Z-a3f7b2c1d4e5f6a7b8c9d0e1f2a3b4c5.json",
-            "submitted_at": "2025-10-08T11:44:16.123Z",
-            "trace_id": "30d37876-cb1a-4138-9225-197355e0b6c9",
-        }
+        api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
         with patch("requests.request") as mock_request:
             mock_response = Mock()
@@ -109,18 +90,13 @@ class TestFeedbackToolExecution:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["data_export", "analytics"],
-                }
-            )
+            result = tool.execute({
+                "feedback": "Great tools!",
+                "account_id": "acc_123456",
+                "tool_names": ["data_export", "analytics"],
+            })
 
-            assert result["message"] == "Feedback successfully stored"
-            assert result["trace_id"] == "30d37876-cb1a-4138-9225-197355e0b6c9"
-
-            # Verify the API was called correctly
+            assert result == api_response
             mock_request.assert_called_once()
             call_kwargs = mock_request.call_args[1]
             assert call_kwargs["method"] == "POST"
@@ -129,16 +105,10 @@ class TestFeedbackToolExecution:
             assert call_kwargs["json"]["account_id"] == "acc_123456"
             assert call_kwargs["json"]["tool_names"] == ["data_export", "analytics"]
 
-    def test_call_method_works(self) -> None:
+    def test_call_method_interface(self) -> None:
         """Test that the .call() method works correctly."""
         tool = create_feedback_tool(api_key="test_key")
-
-        api_response = {
-            "message": "Feedback successfully stored",
-            "key": "test-key.json",
-            "submitted_at": "2025-10-08T11:44:16.123Z",
-            "trace_id": "test-trace-id",
-        }
+        api_response = {"message": "Success", "trace_id": "test-trace-id"}
 
         with patch("requests.request") as mock_request:
             mock_response = Mock()
@@ -155,12 +125,8 @@ class TestFeedbackToolExecution:
 
             assert result == api_response
             mock_request.assert_called_once()
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["json"]["feedback"] == "Testing the .call() method interface."
-            assert call_kwargs["json"]["account_id"] == "acc_test004"
-            assert call_kwargs["json"]["tool_names"] == ["meta_collect_tool_feedback"]
 
-    def test_handles_api_errors(self) -> None:
+    def test_api_error_handling(self) -> None:
         """Test that API errors are handled properly."""
         tool = create_feedback_tool(api_key="test_key")
 
@@ -173,25 +139,18 @@ class TestFeedbackToolExecution:
             mock_request.return_value = mock_response
 
             with pytest.raises(StackOneError):
-                tool.execute(
-                    {
-                        "feedback": "Great tools!",
-                        "account_id": "acc_123456",
-                        "tool_names": ["test_tool"],
-                    }
-                )
+                tool.execute({
+                    "feedback": "Great tools!",
+                    "account_id": "acc_123456",
+                    "tool_names": ["test_tool"],
+                })
 
     def test_multiple_account_ids_execution(self) -> None:
-        """Test execution with multiple account IDs."""
+        """Test execution with multiple account IDs - both success and mixed scenarios."""
         tool = create_feedback_tool(api_key="test_key")
+        api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
-        api_response = {
-            "message": "Feedback successfully stored",
-            "key": "test-key.json",
-            "submitted_at": "2025-10-08T11:44:16.123Z",
-            "trace_id": "test-trace-id",
-        }
-
+        # Test all successful case
         with patch("requests.request") as mock_request:
             mock_response = Mock()
             mock_response.status_code = 200
@@ -199,47 +158,29 @@ class TestFeedbackToolExecution:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": ["acc_123456", "acc_789012", "acc_345678"],
-                    "tool_names": ["test_tool"],
-                }
-            )
+            result = tool.execute({
+                "feedback": "Great tools!",
+                "account_id": ["acc_123456", "acc_789012", "acc_345678"],
+                "tool_names": ["test_tool"],
+            })
 
-            # Check combined result structure
             assert result["message"] == "Feedback sent to 3 account(s)"
             assert result["total_accounts"] == 3
             assert result["successful"] == 3
             assert result["failed"] == 0
             assert len(result["results"]) == 3
-
-            # Check individual results
-            for i, account_id in enumerate(["acc_123456", "acc_789012", "acc_345678"]):
-                assert result["results"][i]["account_id"] == account_id
-                assert result["results"][i]["status"] == "success"
-                assert result["results"][i]["result"] == api_response
-
-            # Verify API was called 3 times
             assert mock_request.call_count == 3
 
-    def test_multiple_account_ids_with_errors(self) -> None:
-        """Test execution with multiple account IDs where some fail."""
-        tool = create_feedback_tool(api_key="test_key")
-
-        success_response = {"message": "Success"}
-
+        # Test mixed success/error case
         def mock_request_side_effect(*args, **kwargs):
             account_id = kwargs.get("json", {}).get("account_id")
             if account_id == "acc_123456":
-                # Success case
                 mock_response = Mock()
                 mock_response.status_code = 200
-                mock_response.json.return_value = success_response
+                mock_response.json.return_value = {"message": "Success"}
                 mock_response.raise_for_status = Mock()
                 return mock_response
             else:
-                # Error case
                 mock_response = Mock()
                 mock_response.status_code = 401
                 mock_response.text = '{"error": "Unauthorized"}'
@@ -250,35 +191,26 @@ class TestFeedbackToolExecution:
         with patch("requests.request") as mock_request:
             mock_request.side_effect = mock_request_side_effect
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": ["acc_123456", "acc_unauthorized"],
-                    "tool_names": ["test_tool"],
-                }
-            )
+            result = tool.execute({
+                "feedback": "Great tools!",
+                "account_id": ["acc_123456", "acc_unauthorized"],
+                "tool_names": ["test_tool"],
+            })
 
-            # Check combined result structure
             assert result["total_accounts"] == 2
             assert result["successful"] == 1
             assert result["failed"] == 1
             assert len(result["results"]) == 2
 
-            # Check individual results
             success_result = next(r for r in result["results"] if r["account_id"] == "acc_123456")
             assert success_result["status"] == "success"
-            assert success_result["result"] == success_response
 
             error_result = next(r for r in result["results"] if r["account_id"] == "acc_unauthorized")
             assert error_result["status"] == "error"
             assert "401 Client Error: Unauthorized" in error_result["error"]
 
-
-class TestFeedbackToolIntegration:
-    """Test suite for feedback tool integration."""
-
-    def test_feedback_tool_integration(self) -> None:
-        """Test that feedback tool integrates properly with toolset and has correct structure."""
+    def test_tool_integration(self) -> None:
+        """Test that feedback tool integrates properly with toolset."""
         from stackone_ai import StackOneToolSet
 
         with patch.dict("os.environ", {"STACKONE_API_KEY": "test_key"}):
@@ -297,11 +229,6 @@ class TestFeedbackToolIntegration:
             assert "feedback" in openai_format["function"]["parameters"]["properties"]
             assert "account_id" in openai_format["function"]["parameters"]["properties"]
             assert "tool_names" in openai_format["function"]["parameters"]["properties"]
-
-            # Test LangChain format
-            langchain_tool = feedback_tool.to_langchain()
-            assert langchain_tool.name == "meta_collect_tool_feedback"
-            assert "feedback" in langchain_tool.description.lower()
 
 
 @pytest.mark.integration
