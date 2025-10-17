@@ -21,17 +21,37 @@ class FeedbackInput(BaseModel):
     """Input schema for feedback tool."""
 
     feedback: str = Field(..., min_length=1, description="User feedback text")
-    account_id: str = Field(..., min_length=1, description="Account identifier")
+    account_id: str | list[str] = Field(..., description="Account identifier(s) - single ID or list of IDs")
     tool_names: list[str] = Field(..., min_length=1, description="List of tool names")
 
-    @field_validator("feedback", "account_id")
+    @field_validator("feedback")
     @classmethod
-    def validate_non_empty_trimmed(cls, v: str) -> str:
-        """Validate that string is non-empty after trimming."""
+    def validate_feedback(cls, v: str) -> str:
+        """Validate that feedback is non-empty after trimming."""
         trimmed = v.strip()
         if not trimmed:
-            raise ValueError("Field must be a non-empty string")
+            raise ValueError("Feedback must be a non-empty string")
         return trimmed
+
+    @field_validator("account_id")
+    @classmethod
+    def validate_account_id(cls, v: str | list[str]) -> list[str]:
+        """Validate and normalize account ID(s) to a list."""
+        if isinstance(v, str):
+            trimmed = v.strip()
+            if not trimmed:
+                raise ValueError("Account ID must be a non-empty string")
+            return [trimmed]
+
+        if isinstance(v, list):
+            if not v:
+                raise ValueError("At least one account ID is required")
+            cleaned = [str(item).strip() for item in v if str(item).strip()]
+            if not cleaned:
+                raise ValueError("At least one valid account ID is required")
+            return cleaned
+
+        raise ValueError("Account ID must be a string or list of strings")
 
     @field_validator("tool_names")
     @classmethod
@@ -52,12 +72,14 @@ class FeedbackTool(StackOneTool):
         """
         Execute the feedback tool with enhanced validation.
 
+        If multiple account IDs are provided, sends the same feedback to each account individually.
+
         Args:
             arguments: Tool arguments as string or dict
             options: Execution options
 
         Returns:
-            Response from the API
+            Combined response from all API calls
 
         Raises:
             StackOneError: If validation or API call fails
@@ -72,15 +94,58 @@ class FeedbackTool(StackOneTool):
             # Validate with Pydantic
             parsed_params = FeedbackInput(**raw_params)
 
-            # Build validated request body
-            validated_arguments = {
-                "feedback": parsed_params.feedback,
-                "account_id": parsed_params.account_id,
-                "tool_names": parsed_params.tool_names,
-            }
+            # Get list of account IDs (already normalized by validator)
+            account_ids = parsed_params.account_id
+            feedback = parsed_params.feedback
+            tool_names = parsed_params.tool_names
 
-            # Use the parent execute method with validated arguments
-            return super().execute(validated_arguments, options=options)
+            # If only one account ID, use the parent execute method
+            if len(account_ids) == 1:
+                validated_arguments = {
+                    "feedback": feedback,
+                    "account_id": account_ids[0],
+                    "tool_names": tool_names,
+                }
+                return super().execute(validated_arguments, options=options)
+
+            # Multiple account IDs - send to each individually
+            results = []
+            errors = []
+
+            for account_id in account_ids:
+                try:
+                    validated_arguments = {
+                        "feedback": feedback,
+                        "account_id": account_id,
+                        "tool_names": tool_names,
+                    }
+                    result = super().execute(validated_arguments, options=options)
+                    results.append({
+                        "account_id": account_id,
+                        "status": "success",
+                        "result": result
+                    })
+                except Exception as exc:
+                    error_msg = str(exc)
+                    errors.append({
+                        "account_id": account_id,
+                        "status": "error",
+                        "error": error_msg
+                    })
+                    results.append({
+                        "account_id": account_id,
+                        "status": "error",
+                        "error": error_msg
+                    })
+
+            # Return combined results
+            return {
+                "message": f"Feedback sent to {len(account_ids)} account(s)",
+                "total_accounts": len(account_ids),
+                "successful": len([r for r in results if r["status"] == "success"]),
+                "failed": len(errors),
+                "results": results
+            }
 
         except json.JSONDecodeError as exc:
             raise StackOneError(f"Invalid JSON in arguments: {exc}") from exc
@@ -120,8 +185,18 @@ def create_feedback_tool(
         type="object",
         properties={
             "account_id": {
-                "type": "string",
-                "description": 'Account identifier (e.g., "acc_123456")',
+                "oneOf": [
+                    {
+                        "type": "string",
+                        "description": 'Single account identifier (e.g., "acc_123456")',
+                    },
+                    {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of account identifiers for multiple accounts",
+                    },
+                ],
+                "description": "Account identifier(s) - single ID or list of IDs",
             },
             "feedback": {
                 "type": "string",
