@@ -193,7 +193,9 @@ def create_meta_search_tools(index: ToolIndex) -> StackOneTool:
                 _account_id=None,
             )
 
-        def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
+        def execute(
+            self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+        ) -> JsonDict:
             return execute_filter(arguments)
 
     return MetaSearchTool()
@@ -272,7 +274,9 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
                 _account_id=None,
             )
 
-        def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
+        def execute(
+            self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+        ) -> JsonDict:
             return execute_tool(arguments)
 
     return MetaExecuteTool()
