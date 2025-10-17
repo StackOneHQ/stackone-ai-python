@@ -201,9 +201,8 @@ class StackOneTool(BaseModel):
             StackOneAPIError: If the API request fails
             ValueError: If the arguments are invalid
         """
-        start_time = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
         feedback_options: JsonDict = {}
-        call_params: JsonDict = {}
         result_payload: JsonDict | None = None
         response_status: int | None = None
         error_message: str | None = None
@@ -222,7 +221,7 @@ class StackOneTool(BaseModel):
                 raise ValueError(error_message)
 
             kwargs = parsed_arguments
-            call_params = dict(kwargs)
+            dict(kwargs)
 
             headers = self._prepare_headers()
             url_used, body_params, query_params = self._prepare_request_params(kwargs)
@@ -266,7 +265,7 @@ class StackOneTool(BaseModel):
                 ) from exc
             raise StackOneError(f"Request failed: {exc}") from exc
         finally:
-            end_time = datetime.now(timezone.utc)
+            datetime.now(timezone.utc)
             metadata: JsonDict = {
                 "http_method": self._execute_config.method,
                 "url": url_used,
