@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.3](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.2...stackone-ai-v0.3.3) (2025-10-17)
+
+
+### Features
+
+* feedback tool ([#36](https://github.com/StackOneHQ/stackone-ai-python/issues/36)) ([9179918](https://github.com/StackOneHQ/stackone-ai-python/commit/9179918104c0ec4cfe0488713ca325f0e8e7c6f1))
+* LangGraph integration helpers and example ([#33](https://github.com/StackOneHQ/stackone-ai-python/issues/33)) ([983e2f7](https://github.com/StackOneHQ/stackone-ai-python/commit/983e2f7e6551e3722f235ea534ae61f24644350e))
+
+
+### Bug Fixes
+
+* remove async method ([#31](https://github.com/StackOneHQ/stackone-ai-python/issues/31)) ([370699e](https://github.com/StackOneHQ/stackone-ai-python/commit/370699e390e4a46d8b4ae664fed8f5de6395eb9d))
+
+
+### Documentation
+
+* use uv for installing ([#30](https://github.com/StackOneHQ/stackone-ai-python/issues/30)) ([3c5d8fb](https://github.com/StackOneHQ/stackone-ai-python/commit/3c5d8fb54e61f8f730098e97f8bf2dfc78cf3bec))
+
 ## [0.3.2](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.1...stackone-ai-v0.3.2) (2025-08-26)
 
 
