@@ -66,11 +66,9 @@ class TestFeedbackToolValidation:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            json_string = json.dumps({
-                "feedback": "Great tools!", 
-                "account_id": "acc_123456", 
-                "tool_names": ["test_tool"]
-            })
+            json_string = json.dumps(
+                {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
+            )
             result = tool.execute(json_string)
             assert result["message"] == "Success"
 
@@ -90,11 +88,13 @@ class TestFeedbackToolExecution:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute({
-                "feedback": "Great tools!",
-                "account_id": "acc_123456",
-                "tool_names": ["data_export", "analytics"],
-            })
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": "acc_123456",
+                    "tool_names": ["data_export", "analytics"],
+                }
+            )
 
             assert result == api_response
             mock_request.assert_called_once()
@@ -139,11 +139,13 @@ class TestFeedbackToolExecution:
             mock_request.return_value = mock_response
 
             with pytest.raises(StackOneError):
-                tool.execute({
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["test_tool"],
-                })
+                tool.execute(
+                    {
+                        "feedback": "Great tools!",
+                        "account_id": "acc_123456",
+                        "tool_names": ["test_tool"],
+                    }
+                )
 
     def test_multiple_account_ids_execution(self) -> None:
         """Test execution with multiple account IDs - both success and mixed scenarios."""
@@ -158,11 +160,13 @@ class TestFeedbackToolExecution:
             mock_response.raise_for_status = Mock()
             mock_request.return_value = mock_response
 
-            result = tool.execute({
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_789012", "acc_345678"],
-                "tool_names": ["test_tool"],
-            })
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": ["acc_123456", "acc_789012", "acc_345678"],
+                    "tool_names": ["test_tool"],
+                }
+            )
 
             assert result["message"] == "Feedback sent to 3 account(s)"
             assert result["total_accounts"] == 3
@@ -191,11 +195,13 @@ class TestFeedbackToolExecution:
         with patch("requests.request") as mock_request:
             mock_request.side_effect = mock_request_side_effect
 
-            result = tool.execute({
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_unauthorized"],
-                "tool_names": ["test_tool"],
-            })
+            result = tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": ["acc_123456", "acc_unauthorized"],
+                    "tool_names": ["test_tool"],
+                }
+            )
 
             assert result["total_accounts"] == 2
             assert result["successful"] == 1
