@@ -10,7 +10,10 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 - Unified interface for multiple SaaS tools
 - AI-friendly tool descriptions and parameters
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
-- **Glob Pattern Filtering**: Advanced tool filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
+- **Advanced Tool Filtering**:
+  - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
+  - Provider and action filtering with `fetch_tools()`
+  - Multi-account support
 - **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
@@ -74,6 +77,68 @@ employee = employee_tool.call(id="employee-id")
 # Or with traditional execute method
 employee = employee_tool.execute({"id": "employee-id"})
 ```
+
+## Tool Filtering
+
+StackOne AI SDK provides powerful filtering capabilities to help you select the exact tools you need.
+
+### Filtering with `get_tools()`
+
+Use glob patterns to filter tools by name:
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Get all HRIS tools
+tools = toolset.get_tools("hris_*", account_id="your-account-id")
+
+# Get multiple categories
+tools = toolset.get_tools(["hris_*", "ats_*"])
+
+# Exclude specific tools with negative patterns
+tools = toolset.get_tools(["hris_*", "!hris_delete_*"])
+```
+
+### Advanced Filtering with `fetch_tools()`
+
+The `fetch_tools()` method provides advanced filtering by providers, actions, and account IDs:
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Filter by account IDs
+tools = toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
+
+# Filter by providers (case-insensitive)
+tools = toolset.fetch_tools(providers=["hibob", "bamboohr"])
+
+# Filter by action patterns with glob support
+tools = toolset.fetch_tools(actions=["*_list_employees"])
+
+# Combine multiple filters
+tools = toolset.fetch_tools(
+    account_ids=["acc-123"],
+    providers=["hibob"],
+    actions=["*_list_*"]
+)
+
+# Use set_accounts() for chaining
+toolset.set_accounts(["acc-123", "acc-456"])
+tools = toolset.fetch_tools(providers=["hibob"])
+```
+
+**Filtering Options:**
+
+- **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
+- **`providers`**: Filter by provider names (e.g., `["hibob", "bamboohr"]`). Case-insensitive matching.
+- **`actions`**: Filter by action patterns with glob support:
+  - Exact match: `["hris_list_employees"]`
+  - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
+  - Provider prefix: `["hris_*"]` matches all HRIS tools
 
 ## Implicit Feedback (Beta)
 

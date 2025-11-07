@@ -60,6 +60,7 @@ class StackOneToolSet:
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url
+        self._account_ids: list[str] = []
 
     def _parse_parameters(self, parameters: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
         """Parse OpenAPI parameters into tool properties
@@ -108,6 +109,119 @@ class StackOneToolSet:
         matches_negative = any(fnmatch.fnmatch(tool_name, p) for p in negative_patterns)
 
         return matches_positive and not matches_negative
+
+    def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
+        """Set account IDs for filtering tools
+
+        Args:
+            account_ids: List of account IDs to filter tools by
+
+        Returns:
+            This toolset instance for chaining
+        """
+        self._account_ids = account_ids
+        return self
+
+    def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
+        """Check if a tool name matches any of the provider filters
+
+        Args:
+            tool_name: Name of the tool to check
+            providers: List of provider names (case-insensitive)
+
+        Returns:
+            True if the tool matches any provider, False otherwise
+        """
+        # Extract provider from tool name (assuming format: provider_action)
+        provider = tool_name.split("_")[0].lower()
+        provider_set = {p.lower() for p in providers}
+        return provider in provider_set
+
+    def _filter_by_action(self, tool_name: str, actions: list[str]) -> bool:
+        """Check if a tool name matches any of the action patterns
+
+        Args:
+            tool_name: Name of the tool to check
+            actions: List of action patterns (supports glob patterns)
+
+        Returns:
+            True if the tool matches any action pattern, False otherwise
+        """
+        return any(fnmatch.fnmatch(tool_name, pattern) for pattern in actions)
+
+    def fetch_tools(
+        self,
+        *,
+        account_ids: list[str] | None = None,
+        providers: list[str] | None = None,
+        actions: list[str] | None = None,
+    ) -> Tools:
+        """Fetch tools with optional filtering by account IDs, providers, and actions
+
+        Args:
+            account_ids: Optional list of account IDs to filter by.
+                If not provided, uses accounts set via set_accounts()
+            providers: Optional list of provider names (e.g., ['hibob', 'bamboohr']).
+                Case-insensitive matching.
+            actions: Optional list of action patterns with glob support
+                (e.g., ['*_list_employees', 'hibob_create_employees'])
+
+        Returns:
+            Collection of tools matching the filter criteria
+
+        Raises:
+            ToolsetLoadError: If there is an error loading the tools
+
+        Examples:
+            # Filter by account IDs
+            tools = toolset.fetch_tools(account_ids=['123', '456'])
+
+            # Filter by providers
+            tools = toolset.fetch_tools(providers=['hibob', 'bamboohr'])
+
+            # Filter by actions with glob patterns
+            tools = toolset.fetch_tools(actions=['*_list_employees'])
+
+            # Combine filters
+            tools = toolset.fetch_tools(
+                account_ids=['123'],
+                providers=['hibob'],
+                actions=['*_list_*']
+            )
+
+            # Use set_accounts() for account filtering
+            toolset.set_accounts(['123', '456'])
+            tools = toolset.fetch_tools()
+        """
+        try:
+            # Use account IDs from options, or fall back to instance state
+            effective_account_ids = account_ids or self._account_ids
+
+            all_tools: list[StackOneTool] = []
+
+            # Load tools for each account ID or once if no account filtering
+            if effective_account_ids:
+                for acc_id in effective_account_ids:
+                    tools = self.get_tools(account_id=acc_id)
+                    all_tools.extend(tools.to_list())
+            else:
+                tools = self.get_tools()
+                all_tools.extend(tools.to_list())
+
+            # Apply provider filtering
+            if providers:
+                all_tools = [t for t in all_tools if self._filter_by_provider(t.name, providers)]
+
+            # Apply action filtering
+            if actions:
+                all_tools = [t for t in all_tools if self._filter_by_action(t.name, actions)]
+
+            return Tools(all_tools)
+
+        except Exception as e:
+            if isinstance(e, ToolsetError):
+                raise
+            raise ToolsetLoadError(f"Error fetching tools: {e}") from e
 
     def get_tool(self, name: str, *, account_id: str | None = None) -> StackOneTool | None:
         """Get a specific tool by name

@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from stackone_ai.models import ExecuteConfig, ToolDefinition, ToolParameters
 from stackone_ai.toolset import StackOneToolSet
 
@@ -227,3 +229,171 @@ def test_toolset_with_base_url():
         tool_exp = tools_exp.get_tool("hris_get_employee")
         assert tool_exp is not None
         assert tool_exp._execute_config.url == "https://api.example-exp.com/employee/{id}"
+
+
+def test_set_accounts():
+    """Test setting account IDs for filtering"""
+    toolset = StackOneToolSet(api_key="test_key")
+    result = toolset.set_accounts(["acc1", "acc2"])
+
+    # Should return self for chaining
+    assert result is toolset
+    assert toolset._account_ids == ["acc1", "acc2"]
+
+
+def test_filter_by_provider():
+    """Test provider filtering"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Test matching providers
+    assert toolset._filter_by_provider("hris_list_employees", ["hris", "ats"])
+    assert toolset._filter_by_provider("ats_create_job", ["hris", "ats"])
+
+    # Test non-matching providers
+    assert not toolset._filter_by_provider("crm_list_contacts", ["hris", "ats"])
+
+    # Test case-insensitive matching
+    assert toolset._filter_by_provider("HRIS_list_employees", ["hris"])
+    assert toolset._filter_by_provider("hris_list_employees", ["HRIS"])
+
+
+def test_filter_by_action():
+    """Test action filtering with glob patterns"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Test exact match
+    assert toolset._filter_by_action("hris_list_employees", ["hris_list_employees"])
+
+    # Test glob pattern
+    assert toolset._filter_by_action("hris_list_employees", ["*_list_employees"])
+    assert toolset._filter_by_action("ats_list_employees", ["*_list_employees"])
+    assert toolset._filter_by_action("hris_list_employees", ["hris_*"])
+    assert toolset._filter_by_action("hris_create_employee", ["hris_*"])
+
+    # Test non-matching patterns
+    assert not toolset._filter_by_action("crm_list_contacts", ["*_list_employees"])
+    assert not toolset._filter_by_action("ats_create_job", ["hris_*"])
+
+
+@pytest.fixture
+def mock_tools_setup():
+    """Setup mocked tools for filtering tests"""
+    # Create mock tool definitions
+    tools_defs = {
+        "hris_list_employees": ToolDefinition(
+            description="List employees",
+            parameters=ToolParameters(type="object", properties={}),
+            execute=ExecuteConfig(
+                method="GET",
+                url="https://api.stackone.com/hris/employees",
+                name="hris_list_employees",
+                headers={},
+            ),
+        ),
+        "hris_create_employee": ToolDefinition(
+            description="Create employee",
+            parameters=ToolParameters(type="object", properties={}),
+            execute=ExecuteConfig(
+                method="POST",
+                url="https://api.stackone.com/hris/employees",
+                name="hris_create_employee",
+                headers={},
+            ),
+        ),
+        "ats_list_employees": ToolDefinition(
+            description="List ATS employees",
+            parameters=ToolParameters(type="object", properties={}),
+            execute=ExecuteConfig(
+                method="GET",
+                url="https://api.stackone.com/ats/employees",
+                name="ats_list_employees",
+                headers={},
+            ),
+        ),
+        "crm_list_contacts": ToolDefinition(
+            description="List contacts",
+            parameters=ToolParameters(type="object", properties={}),
+            execute=ExecuteConfig(
+                method="GET",
+                url="https://api.stackone.com/crm/contacts",
+                name="crm_list_contacts",
+                headers={},
+            ),
+        ),
+    }
+
+    with (
+        patch("stackone_ai.toolset.OAS_DIR") as mock_dir,
+        patch("stackone_ai.toolset.OpenAPIParser") as mock_parser_class,
+    ):
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_dir.glob.return_value = [mock_path]
+
+        mock_parser = MagicMock()
+        mock_parser.parse_tools.return_value = tools_defs
+        mock_parser_class.return_value = mock_parser
+
+        yield
+
+
+def test_fetch_tools_no_filters(mock_tools_setup):
+    """Test fetch_tools without any filters"""
+    toolset = StackOneToolSet(api_key="test_key")
+    tools = toolset.fetch_tools()
+
+    # Should include all tools (4 regular + 1 feedback tool)
+    assert len(tools) == 5
+
+
+def test_fetch_tools_provider_filter(mock_tools_setup):
+    """Test fetch_tools with provider filtering"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Filter by single provider
+    tools = toolset.fetch_tools(providers=["hris"])
+    assert len(tools) == 2
+    assert tools.get_tool("hris_list_employees") is not None
+    assert tools.get_tool("hris_create_employee") is not None
+
+    # Filter by multiple providers
+    tools = toolset.fetch_tools(providers=["hris", "ats"])
+    assert len(tools) == 3
+    assert tools.get_tool("hris_list_employees") is not None
+    assert tools.get_tool("ats_list_employees") is not None
+
+
+def test_fetch_tools_action_filter(mock_tools_setup):
+    """Test fetch_tools with action filtering"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Exact action match
+    tools = toolset.fetch_tools(actions=["hris_list_employees"])
+    assert len(tools) == 1
+    assert tools.get_tool("hris_list_employees") is not None
+
+    # Glob pattern match
+    tools = toolset.fetch_tools(actions=["*_list_employees"])
+    assert len(tools) == 2
+    assert tools.get_tool("hris_list_employees") is not None
+    assert tools.get_tool("ats_list_employees") is not None
+
+
+def test_fetch_tools_combined_filters(mock_tools_setup):
+    """Test fetch_tools with combined filters"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Combine provider and action filters
+    tools = toolset.fetch_tools(providers=["hris"], actions=["*_list_*"])
+    assert len(tools) == 1
+    assert tools.get_tool("hris_list_employees") is not None
+    assert tools.get_tool("hris_create_employee") is None
+
+
+def test_fetch_tools_with_set_accounts(mock_tools_setup):
+    """Test fetch_tools using set_accounts"""
+    toolset = StackOneToolSet(api_key="test_key")
+    toolset.set_accounts(["acc1"])
+
+    tools = toolset.fetch_tools(providers=["hris"])
+    assert len(tools) == 2

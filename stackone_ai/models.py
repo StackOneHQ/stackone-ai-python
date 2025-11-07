@@ -472,6 +472,18 @@ class Tools:
     def __len__(self) -> int:
         return len(self.tools)
 
+    def __iter__(self) -> Any:
+        """Make Tools iterable"""
+        return iter(self.tools)
+
+    def to_list(self) -> list[StackOneTool]:
+        """Convert to list of tools
+
+        Returns:
+            List of StackOneTool instances
+        """
+        return list(self.tools)
+
     def get_tool(self, name: str) -> StackOneTool | None:
         """Get a tool by its name
 
