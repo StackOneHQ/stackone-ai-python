@@ -14,7 +14,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
   - Provider and action filtering with `fetch_tools()`
   - Multi-account support
-- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries using hybrid BM25 + TF-IDF search
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
@@ -337,7 +337,9 @@ result = feedback_tool.call(
 
 ## Meta Tools (Beta)
 
-Meta tools enable dynamic tool discovery and execution without hardcoding tool names:
+Meta tools enable dynamic tool discovery and execution without hardcoding tool names. The search functionality uses **hybrid BM25 + TF-IDF search** for improved accuracy (10.8% improvement over BM25 alone).
+
+### Basic Usage
 
 ```python
 # Get meta tools for dynamic discovery
@@ -352,6 +354,30 @@ results = filter_tool.call(query="manage employees", limit=5)
 execute_tool = meta_tools.get_tool("meta_execute_tool")
 result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 ```
+
+### Hybrid Search Configuration
+
+The hybrid search combines BM25 and TF-IDF algorithms. You can customize the weighting:
+
+```python
+# Default: hybrid_alpha=0.2 (more weight to BM25, proven optimal in testing)
+meta_tools = tools.meta_tools()
+
+# Custom alpha: 0.5 = equal weight to both algorithms
+meta_tools = tools.meta_tools(hybrid_alpha=0.5)
+
+# More BM25: higher alpha (0.8 = 80% BM25, 20% TF-IDF)
+meta_tools = tools.meta_tools(hybrid_alpha=0.8)
+
+# More TF-IDF: lower alpha (0.2 = 20% BM25, 80% TF-IDF)
+meta_tools = tools.meta_tools(hybrid_alpha=0.2)
+```
+
+**How it works:**
+- **BM25**: Excellent at keyword matching and term frequency
+- **TF-IDF**: Better at understanding semantic relationships
+- **Hybrid**: Combines strengths of both for superior accuracy
+- **Default alpha=0.2**: Optimized through validation testing for best tool discovery
 
 ## Examples
 
