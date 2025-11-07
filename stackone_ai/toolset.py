@@ -286,6 +286,7 @@ class StackOneToolSet:
 
             # Add feedback collection meta tool
             from .feedback import create_feedback_tool
+
             feedback_tool_name = "meta_collect_tool_feedback"
             if filter_pattern is None or self._matches_filter(feedback_tool_name, filter_pattern):
                 feedback_tool = create_feedback_tool(
