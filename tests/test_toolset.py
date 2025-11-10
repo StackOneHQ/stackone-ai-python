@@ -397,3 +397,82 @@ def test_fetch_tools_with_set_accounts(mock_tools_setup):
 
     tools = toolset.fetch_tools(providers=["hris"])
     assert len(tools) == 2
+
+
+def test_fetch_tools_account_id_override(mock_tools_setup) -> None:
+    """Test that fetch_tools account_ids parameter overrides set_accounts"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Set accounts via set_accounts
+    toolset.set_accounts(["acc1", "acc2"])
+
+    # Override with different account IDs in fetch_tools
+    # This should use acc3, not acc1/acc2
+    tools = toolset.fetch_tools(account_ids=["acc3"], providers=["hris"])
+
+    # Should fetch tools for acc3 only
+    # With 2 HRIS tools per account
+    assert len(tools) == 2
+
+    # Verify that set_accounts state is not modified
+    assert toolset._account_ids == ["acc1", "acc2"]
+
+
+def test_fetch_tools_uses_set_accounts_when_no_override(mock_tools_setup) -> None:
+    """Test that fetch_tools uses set_accounts when account_ids not provided"""
+    toolset = StackOneToolSet(api_key="test_key")
+    toolset.set_accounts(["acc1", "acc2"])
+
+    # Should use accounts from set_accounts
+    tools = toolset.fetch_tools(providers=["hris"])
+
+    # Should fetch tools for both accounts
+    # 2 HRIS tools × 2 accounts = 4 tools
+    assert len(tools) == 4
+
+
+def test_fetch_tools_multiple_account_ids(mock_tools_setup) -> None:
+    """Test fetching tools for multiple account IDs"""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    # Fetch tools for multiple accounts
+    tools = toolset.fetch_tools(account_ids=["acc1", "acc2", "acc3"])
+
+    # Should fetch all tools for all 3 accounts
+    # (4 regular tools + 1 feedback tool) × 3 accounts = 15 tools
+    assert len(tools) == 15
+
+
+def test_fetch_tools_preserves_account_context() -> None:
+    """Test that tools fetched with account_id maintain their account context"""
+    with (
+        patch("stackone_ai.toolset.OAS_DIR") as mock_dir,
+        patch("stackone_ai.toolset.OpenAPIParser") as mock_parser_class,
+    ):
+        # Create a simple tool definition
+        tool_def = ToolDefinition(
+            description="Test tool",
+            parameters=ToolParameters(type="object", properties={}),
+            execute=ExecuteConfig(
+                method="GET",
+                url="https://api.stackone.com/test",
+                name="test_tool",
+                headers={},
+            ),
+        )
+
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_dir.glob.return_value = [mock_path]
+
+        mock_parser = MagicMock()
+        mock_parser.parse_tools.return_value = {"test_tool": tool_def}
+        mock_parser_class.return_value = mock_parser
+
+        toolset = StackOneToolSet(api_key="test_key")
+        tools = toolset.fetch_tools(account_ids=["specific-account"])
+
+        # Get a tool and verify it has the account ID
+        tool = tools.get_tool("test_tool")
+        assert tool is not None
+        assert tool.get_account_id() == "specific-account"
