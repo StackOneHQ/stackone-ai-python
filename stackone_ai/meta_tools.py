@@ -9,6 +9,7 @@ import bm25s
 import numpy as np
 from pydantic import BaseModel
 
+from stackone_ai.constants import DEFAULT_HYBRID_ALPHA
 from stackone_ai.models import ExecuteConfig, JsonDict, StackOneTool, ToolParameters
 from stackone_ai.utils.tfidf_index import TfidfDocument, TfidfIndex
 
@@ -27,20 +28,23 @@ class MetaToolSearchResult(BaseModel):
 class ToolIndex:
     """Hybrid BM25 + TF-IDF tool search index"""
 
-    DEFAULT_HYBRID_ALPHA: float = 0.2
-
-    def __init__(self, tools: list[StackOneTool], hybrid_alpha: float = DEFAULT_HYBRID_ALPHA) -> None:
+    def __init__(
+        self, tools: list[StackOneTool], hybrid_alpha: float | None = None
+    ) -> None:
         """Initialize tool index with hybrid search
 
         Args:
             tools: List of tools to index
-            hybrid_alpha: Weight for BM25 in hybrid search (0-1). Default 0.2 gives
-                more weight to BM25 scoring, which has been shown to provide better
-                tool discovery accuracy (10.8% improvement in validation testing).
+            hybrid_alpha: Weight for BM25 in hybrid search (0-1). If not provided,
+                uses DEFAULT_HYBRID_ALPHA (0.2), which gives more weight to BM25 scoring
+                and has been shown to provide better tool discovery accuracy
+                (10.8% improvement in validation testing).
         """
         self.tools = tools
         self.tool_map = {tool.name: tool for tool in tools}
-        self.hybrid_alpha = max(0.0, min(1.0, hybrid_alpha))
+        # Use default if not provided, then clamp to [0, 1]
+        alpha = hybrid_alpha if hybrid_alpha is not None else DEFAULT_HYBRID_ALPHA
+        self.hybrid_alpha = max(0.0, min(1.0, alpha))
 
         # Prepare corpus for both BM25 and TF-IDF
         corpus = []

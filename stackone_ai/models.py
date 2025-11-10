@@ -532,15 +532,16 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def meta_tools(self, hybrid_alpha: float = 0.2) -> Tools:
+    def meta_tools(self, hybrid_alpha: float | None = None) -> Tools:
         """Return meta tools for tool discovery and execution
 
         Meta tools enable dynamic tool discovery and execution based on natural language queries
         using hybrid BM25 + TF-IDF search.
 
         Args:
-            hybrid_alpha: Weight for BM25 in hybrid search (0-1). Default 0.2 gives more weight
-                to BM25 scoring, which has been shown to provide better tool discovery accuracy
+            hybrid_alpha: Weight for BM25 in hybrid search (0-1). If not provided, uses
+                ToolIndex.DEFAULT_HYBRID_ALPHA (0.2), which gives more weight to BM25 scoring
+                and has been shown to provide better tool discovery accuracy
                 (10.8% improvement in validation testing).
 
         Returns:
