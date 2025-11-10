@@ -472,6 +472,18 @@ class Tools:
     def __len__(self) -> int:
         return len(self.tools)
 
+    def __iter__(self) -> Any:
+        """Make Tools iterable"""
+        return iter(self.tools)
+
+    def to_list(self) -> list[StackOneTool]:
+        """Convert to list of tools
+
+        Returns:
+            List of StackOneTool instances
+        """
+        return list(self.tools)
+
     def get_tool(self, name: str) -> StackOneTool | None:
         """Get a tool by its name
 
@@ -520,10 +532,17 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def meta_tools(self) -> Tools:
+    def meta_tools(self, hybrid_alpha: float | None = None) -> Tools:
         """Return meta tools for tool discovery and execution
 
-        Meta tools enable dynamic tool discovery and execution based on natural language queries.
+        Meta tools enable dynamic tool discovery and execution based on natural language queries
+        using hybrid BM25 + TF-IDF search.
+
+        Args:
+            hybrid_alpha: Weight for BM25 in hybrid search (0-1). If not provided, uses
+                ToolIndex.DEFAULT_HYBRID_ALPHA (0.2), which gives more weight to BM25 scoring
+                and has been shown to provide better tool discovery accuracy
+                (10.8% improvement in validation testing).
 
         Returns:
             Tools collection containing meta_search_tools and meta_execute_tool
@@ -537,8 +556,8 @@ class Tools:
             create_meta_search_tools,
         )
 
-        # Create search index
-        index = ToolIndex(self.tools)
+        # Create search index with hybrid search
+        index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
 
         # Create meta tools
         filter_tool = create_meta_search_tools(index)

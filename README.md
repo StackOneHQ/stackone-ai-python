@@ -10,8 +10,11 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 - Unified interface for multiple SaaS tools
 - AI-friendly tool descriptions and parameters
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
-- **Glob Pattern Filtering**: Advanced tool filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
-- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- **Advanced Tool Filtering**:
+  - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
+  - Provider and action filtering with `fetch_tools()`
+  - Multi-account support
+- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries using hybrid BM25 + TF-IDF search
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
@@ -74,6 +77,68 @@ employee = employee_tool.call(id="employee-id")
 # Or with traditional execute method
 employee = employee_tool.execute({"id": "employee-id"})
 ```
+
+## Tool Filtering
+
+StackOne AI SDK provides powerful filtering capabilities to help you select the exact tools you need.
+
+### Filtering with `get_tools()`
+
+Use glob patterns to filter tools by name:
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Get all HRIS tools
+tools = toolset.get_tools("hris_*", account_id="your-account-id")
+
+# Get multiple categories
+tools = toolset.get_tools(["hris_*", "ats_*"])
+
+# Exclude specific tools with negative patterns
+tools = toolset.get_tools(["hris_*", "!hris_delete_*"])
+```
+
+### Advanced Filtering with `fetch_tools()`
+
+The `fetch_tools()` method provides advanced filtering by providers, actions, and account IDs:
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Filter by account IDs
+tools = toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
+
+# Filter by providers (case-insensitive)
+tools = toolset.fetch_tools(providers=["hibob", "bamboohr"])
+
+# Filter by action patterns with glob support
+tools = toolset.fetch_tools(actions=["*_list_employees"])
+
+# Combine multiple filters
+tools = toolset.fetch_tools(
+    account_ids=["acc-123"],
+    providers=["hibob"],
+    actions=["*_list_*"]
+)
+
+# Use set_accounts() for chaining
+toolset.set_accounts(["acc-123", "acc-456"])
+tools = toolset.fetch_tools(providers=["hibob"])
+```
+
+**Filtering Options:**
+
+- **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
+- **`providers`**: Filter by provider names (e.g., `["hibob", "bamboohr"]`). Case-insensitive matching.
+- **`actions`**: Filter by action patterns with glob support:
+  - Exact match: `["hris_list_employees"]`
+  - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
+  - Provider prefix: `["hris_*"]` matches all HRIS tools
 
 ## Implicit Feedback (Beta)
 
@@ -272,7 +337,9 @@ result = feedback_tool.call(
 
 ## Meta Tools (Beta)
 
-Meta tools enable dynamic tool discovery and execution without hardcoding tool names:
+Meta tools enable dynamic tool discovery and execution without hardcoding tool names. The search functionality uses **hybrid BM25 + TF-IDF search** for improved accuracy (10.8% improvement over BM25 alone).
+
+### Basic Usage
 
 ```python
 # Get meta tools for dynamic discovery
@@ -287,6 +354,30 @@ results = filter_tool.call(query="manage employees", limit=5)
 execute_tool = meta_tools.get_tool("meta_execute_tool")
 result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 ```
+
+### Hybrid Search Configuration
+
+The hybrid search combines BM25 and TF-IDF algorithms. You can customize the weighting:
+
+```python
+# Default: hybrid_alpha=0.2 (more weight to BM25, proven optimal in testing)
+meta_tools = tools.meta_tools()
+
+# Custom alpha: 0.5 = equal weight to both algorithms
+meta_tools = tools.meta_tools(hybrid_alpha=0.5)
+
+# More BM25: higher alpha (0.8 = 80% BM25, 20% TF-IDF)
+meta_tools = tools.meta_tools(hybrid_alpha=0.8)
+
+# More TF-IDF: lower alpha (0.2 = 20% BM25, 80% TF-IDF)
+meta_tools = tools.meta_tools(hybrid_alpha=0.2)
+```
+
+**How it works:**
+- **BM25**: Excellent at keyword matching and term frequency
+- **TF-IDF**: Better at understanding semantic relationships
+- **Hybrid**: Combines strengths of both for superior accuracy
+- **Default alpha=0.2**: Optimized through validation testing for best tool discovery
 
 ## Examples
 

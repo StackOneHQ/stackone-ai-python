@@ -266,3 +266,82 @@ class TestToolsMetaTools:
         # The top result should be related to creating employees
         top_tool = result["tools"][0]
         assert "employee" in top_tool["name"].lower() or "create" in top_tool["name"].lower()
+
+
+class TestHybridSearch:
+    """Test hybrid search functionality"""
+
+    def test_hybrid_alpha_parameter(self, sample_tools):
+        """Test that hybrid_alpha parameter is properly set"""
+        # Create index with custom alpha
+        index = ToolIndex(sample_tools, hybrid_alpha=0.5)
+        assert index.hybrid_alpha == 0.5
+
+        # Test boundary values
+        index_min = ToolIndex(sample_tools, hybrid_alpha=-0.1)
+        assert index_min.hybrid_alpha == 0.0
+
+        index_max = ToolIndex(sample_tools, hybrid_alpha=1.5)
+        assert index_max.hybrid_alpha == 1.0
+
+    def test_hybrid_search_returns_results(self, sample_tools):
+        """Test that hybrid search returns meaningful results"""
+        index = ToolIndex(sample_tools, hybrid_alpha=0.2)
+        # Use more specific query to ensure we get employee tools
+        results = index.search("employee hris", limit=10)
+
+        assert len(results) > 0
+        # Should find HRIS employee tools - check in broader result set
+        result_names = [r.name for r in results]
+        # At least one result should contain "employee" or "hris"
+        assert any("employee" in name or "hris" in name for name in result_names), (
+            f"Expected 'employee' or 'hris' in results: {result_names}"
+        )
+
+    def test_hybrid_search_with_different_alphas(self, sample_tools):
+        """Test that different alpha values affect ranking"""
+        # Create indexes with different alphas
+        index_bm25_heavy = ToolIndex(sample_tools, hybrid_alpha=0.9)  # More BM25
+        index_tfidf_heavy = ToolIndex(sample_tools, hybrid_alpha=0.1)  # More TF-IDF
+        index_balanced = ToolIndex(sample_tools, hybrid_alpha=0.5)  # Balanced
+
+        query = "create new employee record"
+
+        # Get results from each - use larger limit for better coverage
+        results_bm25 = index_bm25_heavy.search(query, limit=10)
+        results_tfidf = index_tfidf_heavy.search(query, limit=10)
+        results_balanced = index_balanced.search(query, limit=10)
+
+        # All should return results
+        assert len(results_bm25) > 0
+        assert len(results_tfidf) > 0
+        assert len(results_balanced) > 0
+
+        # All should have "employee" and "create" tools in results
+        assert any("employee" in r.name and "create" in r.name for r in results_bm25), (
+            f"BM25 results: {[r.name for r in results_bm25]}"
+        )
+        assert any("employee" in r.name and "create" in r.name for r in results_tfidf), (
+            f"TF-IDF results: {[r.name for r in results_tfidf]}"
+        )
+        assert any("employee" in r.name and "create" in r.name for r in results_balanced), (
+            f"Balanced results: {[r.name for r in results_balanced]}"
+        )
+
+    def test_meta_tools_with_custom_alpha(self, sample_tools):
+        """Test that meta_tools() accepts hybrid_alpha parameter"""
+        tools_collection = Tools(sample_tools)
+
+        # Create meta tools with custom alpha
+        meta_tools = tools_collection.meta_tools(hybrid_alpha=0.3)
+
+        filter_tool = meta_tools.get_tool("meta_search_tools")
+        assert filter_tool is not None
+
+        # Check that description mentions the alpha value
+        assert "alpha=0.3" in filter_tool.description
+
+        # Test it works
+        result = filter_tool.execute({"query": "list employees", "limit": 3})
+        assert "tools" in result
+        assert len(result["tools"]) > 0
