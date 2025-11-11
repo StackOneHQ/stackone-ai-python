@@ -41,7 +41,7 @@ _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
 T = TypeVar("T")
 
 
-@dataclass(slots=True)
+@dataclass
 class _McpToolDefinition:
     name: str
     description: str | None
