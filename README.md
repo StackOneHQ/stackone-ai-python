@@ -14,6 +14,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
   - Provider and action filtering with `fetch_tools()`
   - Multi-account support
+- Dynamic MCP-backed discovery via `fetch_tools()` so you can pull the latest tools at runtime (accounts, providers, or globbed actions)
 - **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries using hybrid BM25 + TF-IDF search
 - Integration with popular AI frameworks:
   - OpenAI Functions
@@ -104,6 +105,8 @@ tools = toolset.get_tools(["hris_*", "!hris_delete_*"])
 ### Advanced Filtering with `fetch_tools()`
 
 The `fetch_tools()` method provides advanced filtering by providers, actions, and account IDs:
+
+> `fetch_tools()` uses the StackOne MCP server under the hood. Install the optional extra (`pip install 'stackone-ai[mcp]'`) on Python 3.10+ to enable dynamic discovery.
 
 ```python
 from stackone_ai import StackOneToolSet
