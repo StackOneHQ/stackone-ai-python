@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.3...stackone-ai-v0.3.4) (2025-11-12)
+
+
+### Features
+
+* Add MCP-backed dynamic tool fetching to Python SDK ([#39](https://github.com/StackOneHQ/stackone-ai-python/issues/39)) ([d72ca80](https://github.com/StackOneHQ/stackone-ai-python/commit/d72ca808233600bd32374c7e2028232eb54167de))
+* add provider/action filtering and hybrid BM25 + TF-IDF search ([#37](https://github.com/StackOneHQ/stackone-ai-python/issues/37)) ([a1c688b](https://github.com/StackOneHQ/stackone-ai-python/commit/a1c688b4efaef9257ecec9827baa7ef90529b9f7))
+
 ## [0.3.3](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.2...stackone-ai-v0.3.3) (2025-10-17)
 
 
