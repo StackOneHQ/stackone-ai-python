@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.4...stackone-ai-v0.3.5) (2025-11-18)
+
+
+### Documentation
+
+* remove meta tools implementation details from README ([#40](https://github.com/StackOneHQ/stackone-ai-python/issues/40)) ([10510d4](https://github.com/StackOneHQ/stackone-ai-python/commit/10510d4b93fc4e20aa51a706541a649115900e6d))
+
 ## [0.3.4](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.3...stackone-ai-v0.3.4) (2025-11-12)
 
 
