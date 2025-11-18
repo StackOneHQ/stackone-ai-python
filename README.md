@@ -14,7 +14,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
   - Provider and action filtering with `fetch_tools()`
   - Multi-account support
-- Dynamic MCP-backed discovery via `fetch_tools()` so you can pull the latest tools at runtime (accounts, providers, or globbed actions)
+- Dynamic discovery via `fetch_tools()` so you can pull the latest tools at runtime (accounts, providers, or globbed actions)
 - **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
@@ -25,7 +25,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 ## Requirements
 
 - Python 3.9+ (core SDK functionality)
-- Python 3.10+ (for MCP server and CrewAI examples)
+- Python 3.10+ (for dynamic discovery and CrewAI examples)
 
 ## Installation
 
@@ -41,7 +41,7 @@ uv add stackone-ai
 ### Optional Features
 
 ```bash
-# Install with MCP server support (requires Python 3.10+)
+# Install with dynamic discovery support (requires Python 3.10+)
 uv add 'stackone-ai[mcp]'
 # or 
 pip install 'stackone-ai[mcp]'
@@ -106,7 +106,7 @@ tools = toolset.get_tools(["hris_*", "!hris_delete_*"])
 
 The `fetch_tools()` method provides advanced filtering by providers, actions, and account IDs:
 
-> `fetch_tools()` uses the StackOne MCP server under the hood. Install the optional extra (`pip install 'stackone-ai[mcp]'`) on Python 3.10+ to enable dynamic discovery.
+> Install the optional extra (`pip install 'stackone-ai[mcp]'`) on Python 3.10+ to enable dynamic discovery.
 
 ```python
 from stackone_ai import StackOneToolSet
