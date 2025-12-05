@@ -17,12 +17,12 @@ def stackone_account_ids():
     toolset = StackOneToolSet()
 
     """
-    Set the account ID whilst getting tools.
+    Set the account ID whilst getting tools using fetch_tools().
     """
-    tools = toolset.get_tools("hris_*", account_id="test_id")
+    tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["test_id"])
 
     """
-    You can over write the account ID on fetched tools.
+    You can override the account ID on fetched tools.
     """
     tools.set_account_id("a_different_id")
 

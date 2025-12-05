@@ -57,7 +57,7 @@ def upload_employee_document() -> None:
         resume_file.write_text(resume_content)
 
         toolset = StackOneToolSet()
-        tools = toolset.get_tools("hris_*", account_id=account_id)
+        tools = toolset.fetch_tools(actions=["hris_*"], account_ids=[account_id])
 
         upload_tool = tools.get_tool("hris_upload_employee_document")
         assert upload_tool is not None

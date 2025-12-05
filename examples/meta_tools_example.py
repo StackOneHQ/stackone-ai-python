@@ -18,13 +18,13 @@ load_dotenv()
 
 def example_meta_tools_basic():
     """Basic example of using meta tools for tool discovery"""
-    print("🔍 Example 1: Dynamic tool discovery\n")
+    print("Example 1: Dynamic tool discovery\n")
 
     # Initialize StackOne toolset
     toolset = StackOneToolSet()
 
-    # Get all available tools (you can also use pattern like "hris_*")
-    all_tools = toolset.get_tools("hris_*")
+    # Get all available tools using MCP-backed fetch_tools()
+    all_tools = toolset.fetch_tools(actions=["hris_*"])
     print(f"Total HRIS tools available: {len(all_tools)}")
 
     # Get meta tools for dynamic discovery
@@ -45,13 +45,13 @@ def example_meta_tools_basic():
 
 def example_meta_tools_with_execution():
     """Example of discovering and executing tools dynamically"""
-    print("🚀 Example 2: Dynamic tool execution\n")
+    print("Example 2: Dynamic tool execution\n")
 
     # Initialize toolset
     toolset = StackOneToolSet()
 
-    # Get all tools
-    all_tools = toolset.get_tools()
+    # Get all tools using MCP-backed fetch_tools()
+    all_tools = toolset.fetch_tools()
     meta_tools = all_tools.meta_tools()
 
     # Step 1: Search for relevant tools
@@ -80,41 +80,9 @@ def example_meta_tools_with_execution():
     print()
 
 
-def example_tool_calling():
-    """Example of the new tool calling functionality"""
-    print("📞 Example 3: Tool calling functionality\n")
-
-    # Initialize toolset
-    toolset = StackOneToolSet()
-
-    # Get a specific tool
-    tool = toolset.get_tool("hris_list_employees")
-
-    if tool:
-        print(f"Tool: {tool.name}")
-        print(f"Description: {tool.description}")
-
-        # New calling methods
-        try:
-            # Method 1: Call with keyword arguments
-            result = tool.call(limit=10, page=1)
-            print(f"Called with kwargs: {result}")
-        except Exception as e:
-            print(f"Call with kwargs (expected to fail in example): {e}")
-
-        try:
-            # Method 2: Call with dictionary
-            result = tool.call({"limit": 10, "page": 1})
-            print(f"Called with dict: {result}")
-        except Exception as e:
-            print(f"Call with dict (expected to fail in example): {e}")
-
-    print()
-
-
 def example_with_openai():
     """Example of using meta tools with OpenAI"""
-    print("🤖 Example 4: Using meta tools with OpenAI\n")
+    print("Example 3: Using meta tools with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -125,8 +93,8 @@ def example_with_openai():
         # Initialize StackOne toolset
         toolset = StackOneToolSet()
 
-        # Get HRIS tools and their meta tools
-        hris_tools = toolset.get_tools("hris_*")
+        # Get HRIS tools and their meta tools using MCP-backed fetch_tools()
+        hris_tools = toolset.fetch_tools(actions=["hris_*"])
         meta_tools = hris_tools.meta_tools()
 
         # Convert to OpenAI format
@@ -163,7 +131,7 @@ def example_with_openai():
 
 def example_with_langchain():
     """Example of using tools with LangChain"""
-    print("🔗 Example 5: Using tools with LangChain\n")
+    print("Example 4: Using tools with LangChain\n")
 
     try:
         from langchain.agents import AgentExecutor, create_tool_calling_agent
@@ -173,8 +141,8 @@ def example_with_langchain():
         # Initialize StackOne toolset
         toolset = StackOneToolSet()
 
-        # Get tools and convert to LangChain format
-        tools = toolset.get_tools("hris_list_*")
+        # Get tools and convert to LangChain format using MCP-backed fetch_tools()
+        tools = toolset.fetch_tools(actions=["hris_list_*"])
         langchain_tools = tools.to_langchain()
 
         # Get meta tools as well
@@ -222,21 +190,20 @@ def example_with_langchain():
 def main():
     """Run all examples"""
     print("=" * 60)
-    print("StackOne AI SDK - Meta Tools & Tool Calling Examples")
+    print("StackOne AI SDK - Meta Tools Examples")
     print("=" * 60)
     print()
 
     # Basic examples that work without external APIs
     example_meta_tools_basic()
     example_meta_tools_with_execution()
-    example_tool_calling()
 
     # Examples that require OpenAI API
     if os.getenv("OPENAI_API_KEY"):
         example_with_openai()
         example_with_langchain()
     else:
-        print("ℹ️  Set OPENAI_API_KEY to run OpenAI and LangChain examples\n")
+        print("Set OPENAI_API_KEY to run OpenAI and LangChain examples\n")
 
     print("=" * 60)
     print("Examples completed!")
