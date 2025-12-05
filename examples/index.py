@@ -72,8 +72,8 @@ from stackone_ai import StackOneToolSet
 def quickstart():
     toolset = StackOneToolSet()
 
-    # Get all HRIS-related tools
-    tools = toolset.get_tools("hris_*", account_id=account_id)
+    # Get all HRIS-related tools using MCP-backed fetch_tools()
+    tools = toolset.fetch_tools(actions=["hris_*"], account_ids=[account_id])
 
     # Use a specific tool
     employee_tool = tools.get_tool("hris_list_employees")
