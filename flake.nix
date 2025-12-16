@@ -67,6 +67,7 @@
           devShells.default = pkgs.mkShell {
             buildInputs = with pkgs; [
               uv
+              just
               nixfmt-rfc-style
             ];
 
