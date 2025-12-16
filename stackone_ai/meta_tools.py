@@ -28,9 +28,7 @@ class MetaToolSearchResult(BaseModel):
 class ToolIndex:
     """Hybrid BM25 + TF-IDF tool search index"""
 
-    def __init__(
-        self, tools: list[StackOneTool], hybrid_alpha: float | None = None
-    ) -> None:
+    def __init__(self, tools: list[StackOneTool], hybrid_alpha: float | None = None) -> None:
         """Initialize tool index with hybrid search
 
         Args:

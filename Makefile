@@ -1,6 +1,5 @@
 install:
 	uv sync --all-extras
-	uv run pre-commit install
 
 lint:
 	uv run ruff check .

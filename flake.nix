@@ -4,10 +4,17 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    git-hooks.url = "github:cachix/git-hooks.nix";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
   };
 
   outputs =
-    inputs@{ flake-parts, ... }:
+    inputs@{
+      flake-parts,
+      git-hooks,
+      treefmt-nix,
+      ...
+    }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -15,9 +22,45 @@
         "aarch64-darwin"
       ];
 
+      imports = [
+        git-hooks.flakeModule
+        treefmt-nix.flakeModule
+      ];
+
       perSystem =
-        { pkgs, ... }:
         {
+          config,
+          pkgs,
+          ...
+        }:
+        {
+          # Treefmt configuration for formatting
+          treefmt = {
+            projectRootFile = "flake.nix";
+            programs = {
+              nixfmt.enable = true;
+              nixfmt.package = pkgs.nixfmt-rfc-style;
+              ruff-check.enable = true;
+              ruff-format.enable = true;
+            };
+          };
+
+          # Git hooks configuration
+          pre-commit.settings.hooks = {
+            treefmt = {
+              enable = true;
+              package = config.treefmt.build.wrapper;
+            };
+            mypy = {
+              enable = true;
+              name = "mypy";
+              entry = "${pkgs.uv}/bin/uv run mypy";
+              files = "^stackone_ai/";
+              language = "system";
+              types = [ "python" ];
+            };
+          };
+
           devShells.default = pkgs.mkShell {
             buildInputs = with pkgs; [
               uv
@@ -32,6 +75,9 @@
                 echo "📦 Installing dependencies..."
                 uv sync --all-extras
               fi
+
+              # Install git hooks
+              ${config.pre-commit.installationScript}
             '';
           };
         };
