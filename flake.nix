@@ -26,6 +26,12 @@
 
             shellHook = ''
               echo "StackOne AI Python SDK development environment"
+
+              # Install dependencies only if .venv is missing or uv.lock is newer
+              if [ ! -d .venv ] || [ uv.lock -nt .venv ]; then
+                echo "📦 Installing dependencies..."
+                uv sync --all-extras
+              fi
             '';
           };
         };
