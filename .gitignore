@@ -15,3 +15,6 @@ site/
 *.egg-info
 dist/
 build/
+
+# Git hooks (managed by Nix)
+.pre-commit-config.yaml
