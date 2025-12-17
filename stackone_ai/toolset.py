@@ -7,13 +7,11 @@ import fnmatch
 import json
 import os
 import threading
-import warnings
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, TypeVar
 
-from stackone_ai.constants import OAS_DIR
 from stackone_ai.models import (
     ExecuteConfig,
     ParameterLocation,
@@ -21,7 +19,6 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
 )
-from stackone_ai.specs.parser import OpenAPIParser
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
@@ -240,7 +237,7 @@ class StackOneToolSet:
         Args:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
-            base_url: Optional base URL override for API requests. If not provided, uses the URL from the OAS
+            base_url: Optional base URL override for API requests
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -255,26 +252,6 @@ class StackOneToolSet:
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
-
-    def _parse_parameters(self, parameters: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
-        """Parse OpenAPI parameters into tool properties
-
-        Args:
-            parameters: List of OpenAPI parameter objects
-
-        Returns:
-            Dict of parameter properties with name as key and schema details as value
-        """
-        properties: dict[str, dict[str, str]] = {}
-        for param in parameters:
-            if param["in"] == "path":
-                # Ensure we only include string values in the nested dict
-                param_schema = param["schema"]
-                properties[param["name"]] = {
-                    "type": str(param_schema["type"]),
-                    "description": str(param.get("description", "")),
-                }
-        return properties
 
     def _matches_filter(self, tool_name: str, filter_pattern: str | list[str]) -> bool:
         """Check if a tool name matches the filter pattern
@@ -465,83 +442,3 @@ class StackOneToolSet:
             normalized[str(name)] = prop
 
         return normalized
-
-    def get_tool(self, name: str, *, account_id: str | None = None) -> StackOneTool | None:
-        """Get a specific tool by name
-
-        Args:
-            name: Name of the tool to retrieve
-            account_id: Optional account ID override. If not provided, uses the one from initialization
-
-        Returns:
-            The tool if found, None otherwise
-
-        Raises:
-            ToolsetLoadError: If there is an error loading the tools
-        """
-        tools = self.get_tools(name, account_id=account_id)
-        return tools.get_tool(name)
-
-    def get_tools(
-        self, filter_pattern: str | list[str] | None = None, *, account_id: str | None = None
-    ) -> Tools:
-        """Get tools matching the specified filter pattern
-
-        Args:
-            filter_pattern: Optional glob pattern or list of patterns to filter tools
-                (e.g. "hris_*", ["crm_*", "ats_*"])
-            account_id: Optional account ID override. If not provided, uses the one from initialization
-
-        Returns:
-            Collection of tools matching the filter pattern
-
-        Raises:
-            ToolsetLoadError: If there is an error loading the tools
-        """
-        if filter_pattern is None:
-            warnings.warn(
-                "No filter pattern provided. Loading all tools may exceed context windows in "
-                "AI applications.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-        try:
-            all_tools: list[StackOneTool] = []
-            effective_account_id = account_id or self.account_id
-
-            # Load all available specs
-            for spec_file in OAS_DIR.glob("*.json"):
-                parser = OpenAPIParser(spec_file, base_url=self.base_url)
-                tool_definitions = parser.parse_tools()
-
-                # Create tools and filter if pattern is provided
-                for _, tool_def in tool_definitions.items():
-                    if filter_pattern is None or self._matches_filter(tool_def.execute.name, filter_pattern):
-                        tool = StackOneTool(
-                            description=tool_def.description,
-                            parameters=tool_def.parameters,
-                            _execute_config=tool_def.execute,
-                            _api_key=self.api_key,
-                            _account_id=effective_account_id,
-                        )
-                        all_tools.append(tool)
-
-            # Add feedback collection meta tool
-            from .feedback import create_feedback_tool
-
-            feedback_tool_name = "meta_collect_tool_feedback"
-            if filter_pattern is None or self._matches_filter(feedback_tool_name, filter_pattern):
-                feedback_tool = create_feedback_tool(
-                    api_key=self.api_key,
-                    account_id=effective_account_id,
-                    base_url=self.base_url or "https://api.stackone.com",
-                )
-                all_tools.append(feedback_tool)
-
-            return Tools(all_tools)
-
-        except Exception as e:
-            if isinstance(e, ToolsetError):
-                raise
-            raise ToolsetLoadError(f"Error loading tools: {e}") from e
