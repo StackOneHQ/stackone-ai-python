@@ -1,18 +1,18 @@
-name: 'CI: Flake check'
+name: "CI: Flake check"
 
 on:
   push:
     paths:
-      - 'flake.nix'
-      - 'flake.lock'
-      - '.github/workflows/nix-flake.yml'
-      - '.github/actions/setup-nix/**'
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/nix-flake.yml"
+      - ".github/actions/setup-nix/**"
   pull_request:
     paths:
-      - 'flake.nix'
-      - 'flake.lock'
-      - '.github/workflows/nix-flake.yml'
-      - '.github/actions/setup-nix/**'
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/nix-flake.yml"
+      - ".github/actions/setup-nix/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

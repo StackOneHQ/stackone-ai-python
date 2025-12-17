@@ -22,7 +22,7 @@ make install           # Install dependencies and pre-commit hooks
 
 # Code quality
 make lint             # Run ruff linting
-make lint-fix         # Auto-fix linting issues  
+make lint-fix         # Auto-fix linting issues
 make mypy             # Run type checking
 
 # Testing
@@ -64,17 +64,20 @@ make mcp-inspector    # Run MCP server inspector for debugging
 ### OpenAPI Specifications
 
 All tool definitions are generated from OpenAPI specs in `stackone_ai/oas/`:
+
 - `core.json`, `ats.json`, `crm.json`, `documents.json`, `hris.json`, `iam.json`, `lms.json`, `marketing.json`
 
 ## Key Development Patterns
 
 ### Tool Filtering
+
 ```python
 # Use glob patterns for tool selection
 tools = StackOneToolSet(include_tools=["hris_*", "!hris_create_*"])
 ```
 
 ### Authentication
+
 ```python
 # Uses environment variables or direct configuration
 toolset = StackOneToolSet(
@@ -84,11 +87,13 @@ toolset = StackOneToolSet(
 ```
 
 ### Type Safety
+
 - Full type annotations required (Python 3.11+)
 - Strict mypy configuration
 - Use generics for better IDE support
 
 ### Testing
+
 - Snapshot testing for tool parsing (`tests/snapshots/`)
 - Async tests use `pytest-asyncio`
 - Example validation: See @./.cursor/rules/examples-standards
@@ -105,16 +110,19 @@ toolset = StackOneToolSet(
 ## Common Tasks
 
 ### Adding New SaaS Integration
+
 1. Add OpenAPI spec to `stackone_ai/oas/`
 2. Parser automatically converts to tool definitions
 3. Test with `make test-tools`
 
 ### Modifying Tool Behavior
+
 - Core execution logic in `StackOneTool.execute()` method
 - HTTP configuration via `ExecuteConfig` class
 - Response handling in `_process_response()`
 
 ### Updating Documentation
+
 - Examples requirements: See @./.cursor/rules/examples-standards
 - Run `make docs-serve` to preview changes
 - MkDocs config in `mkdocs.yml`
