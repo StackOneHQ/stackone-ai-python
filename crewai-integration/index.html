@@ -215,7 +215,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="../error-handling/">Error Handling</a>
+    terminal-mkdocs-side-nav-item" href="../error-handling.md">Error Handling</a>
         
     
     </li>
@@ -234,7 +234,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="../available-tools/">Available Tools</a>
+    terminal-mkdocs-side-nav-item" href="../available-tools.md">Available Tools</a>
         
     
     </li>
@@ -376,7 +376,7 @@ employee_id <span style="color: #666">=</span> <span style="color: #B83838">&quo
 
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">crewai_integration</span><span style="color: #888">():</span>
     toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
-    tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">,</span> account_id<span style="color: #666">=</span>account_id<span style="color: #888">)</span>
+    tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">(</span>actions<span style="color: #666">=</span><span style="color: #888">[</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">],</span> account_ids<span style="color: #666">=</span><span style="color: #888">[</span>account_id<span style="color: #888">])</span>
 
     <span style="color: #888; font-style: italic"># CrewAI uses LangChain tools natively</span>
     langchain_tools <span style="color: #666">=</span> tools<span style="color: #666">.</span>to_langchain<span style="color: #888">()</span>

@@ -215,7 +215,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="../error-handling/">Error Handling</a>
+    terminal-mkdocs-side-nav-item" href="../error-handling.md">Error Handling</a>
         
     
     </li>
@@ -234,7 +234,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="../available-tools/">Available Tools</a>
+    terminal-mkdocs-side-nav-item" href="../available-tools.md">Available Tools</a>
         
     
     </li>
@@ -386,13 +386,13 @@ load_dotenv<span style="color: #888">()</span>
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_meta_tools_basic</span><span style="color: #888">():</span>
 </code></pre></div>
 <p>Basic example of using meta tools for tool discovery</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🔍 Example 1: Dynamic tool discovery</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Example 1: Dynamic tool discovery</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #888; font-style: italic"># Initialize StackOne toolset</span>
     toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
 
-    <span style="color: #888; font-style: italic"># Get all available tools (you can also use pattern like &quot;hris_*&quot;)</span>
-    all_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">)</span>
+    <span style="color: #888; font-style: italic"># Get all available tools using MCP-backed fetch_tools()</span>
+    all_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">(</span>actions<span style="color: #666">=</span><span style="color: #888">[</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">])</span>
     <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Total HRIS tools available: </span><span style="color: #B83838; text-decoration: underline">{</span><span style="color: #388038">len</span><span style="color: #888">(</span>all_tools<span style="color: #888">)</span><span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #888; font-style: italic"># Get meta tools for dynamic discovery</span>
@@ -414,13 +414,13 @@ load_dotenv<span style="color: #888">()</span>
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_meta_tools_with_execution</span><span style="color: #888">():</span>
 </code></pre></div>
 <p>Example of discovering and executing tools dynamically</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🚀 Example 2: Dynamic tool execution</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Example 2: Dynamic tool execution</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #888; font-style: italic"># Initialize toolset</span>
     toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
 
-    <span style="color: #888; font-style: italic"># Get all tools</span>
-    all_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">()</span>
+    <span style="color: #888; font-style: italic"># Get all tools using MCP-backed fetch_tools()</span>
+    all_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">()</span>
     meta_tools <span style="color: #666">=</span> all_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
 
     <span style="color: #888; font-style: italic"># Step 1: Search for relevant tools</span>
@@ -449,43 +449,10 @@ load_dotenv<span style="color: #888">()</span>
     <span style="color: #388038">print</span><span style="color: #888">()</span>
 
 
-<span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_tool_calling</span><span style="color: #888">():</span>
-</code></pre></div>
-<p>Example of the new tool calling functionality</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;📞 Example 3: Tool calling functionality</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-
-    <span style="color: #888; font-style: italic"># Initialize toolset</span>
-    toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
-
-    <span style="color: #888; font-style: italic"># Get a specific tool</span>
-    tool <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_list_employees&quot;</span><span style="color: #888">)</span>
-
-    <span style="color: #2838B0">if</span> tool<span style="color: #888">:</span>
-        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Tool: </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #666">.</span>name<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Description: </span><span style="color: #B83838; text-decoration: underline">{</span>tool<span style="color: #666">.</span>description<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-
-        <span style="color: #888; font-style: italic"># New calling methods</span>
-        <span style="color: #2838B0">try</span><span style="color: #888">:</span>
-            <span style="color: #888; font-style: italic"># Method 1: Call with keyword arguments</span>
-            result <span style="color: #666">=</span> tool<span style="color: #666">.</span>call<span style="color: #888">(</span>limit<span style="color: #666">=</span><span style="color: #444">10</span><span style="color: #888">,</span> page<span style="color: #666">=</span><span style="color: #444">1</span><span style="color: #888">)</span>
-            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Called with kwargs: </span><span style="color: #B83838; text-decoration: underline">{</span>result<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-        <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
-            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Call with kwargs (expected to fail in example): </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-
-        <span style="color: #2838B0">try</span><span style="color: #888">:</span>
-            <span style="color: #888; font-style: italic"># Method 2: Call with dictionary</span>
-            result <span style="color: #666">=</span> tool<span style="color: #666">.</span>call<span style="color: #888">({</span><span style="color: #B83838">&quot;limit&quot;</span><span style="color: #888">:</span> <span style="color: #444">10</span><span style="color: #888">,</span> <span style="color: #B83838">&quot;page&quot;</span><span style="color: #888">:</span> <span style="color: #444">1</span><span style="color: #888">})</span>
-            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Called with dict: </span><span style="color: #B83838; text-decoration: underline">{</span>result<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-        <span style="color: #2838B0">except</span> <span style="color: #908828">Exception</span> <span style="color: #2838B0">as</span> e<span style="color: #888">:</span>
-            <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #444">f</span><span style="color: #B83838">&quot;Call with dict (expected to fail in example): </span><span style="color: #B83838; text-decoration: underline">{</span>e<span style="color: #B83838; text-decoration: underline">}</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
-
-    <span style="color: #388038">print</span><span style="color: #888">()</span>
-
-
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_with_openai</span><span style="color: #888">():</span>
 </code></pre></div>
 <p>Example of using meta tools with OpenAI</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🤖 Example 4: Using meta tools with OpenAI</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Example 3: Using meta tools with OpenAI</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #2838B0">try</span><span style="color: #888">:</span>
         <span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">openai</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> OpenAI
@@ -496,8 +463,8 @@ load_dotenv<span style="color: #888">()</span>
         <span style="color: #888; font-style: italic"># Initialize StackOne toolset</span>
         toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
 
-        <span style="color: #888; font-style: italic"># Get HRIS tools and their meta tools</span>
-        hris_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">)</span>
+        <span style="color: #888; font-style: italic"># Get HRIS tools and their meta tools using MCP-backed fetch_tools()</span>
+        hris_tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">(</span>actions<span style="color: #666">=</span><span style="color: #888">[</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">])</span>
         meta_tools <span style="color: #666">=</span> hris_tools<span style="color: #666">.</span>meta_tools<span style="color: #888">()</span>
 
         <span style="color: #888; font-style: italic"># Convert to OpenAI format</span>
@@ -535,7 +502,7 @@ load_dotenv<span style="color: #888">()</span>
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">example_with_langchain</span><span style="color: #888">():</span>
 </code></pre></div>
 <p>Example of using tools with LangChain</p>
-<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;🔗 Example 5: Using tools with LangChain</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+<div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Example 4: Using tools with LangChain</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #2838B0">try</span><span style="color: #888">:</span>
         <span style="color: #2838B0">from</span><span style="color: #A89028"> </span><span style="color: #289870">langchain.agents</span><span style="color: #A89028"> </span><span style="color: #2838B0">import</span> AgentExecutor<span style="color: #888">,</span> create_tool_calling_agent
@@ -545,8 +512,8 @@ load_dotenv<span style="color: #888">()</span>
         <span style="color: #888; font-style: italic"># Initialize StackOne toolset</span>
         toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
 
-        <span style="color: #888; font-style: italic"># Get tools and convert to LangChain format</span>
-        tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_list_*&quot;</span><span style="color: #888">)</span>
+        <span style="color: #888; font-style: italic"># Get tools and convert to LangChain format using MCP-backed fetch_tools()</span>
+        tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">(</span>actions<span style="color: #666">=</span><span style="color: #888">[</span><span style="color: #B83838">&quot;hris_list_*&quot;</span><span style="color: #888">])</span>
         langchain_tools <span style="color: #666">=</span> tools<span style="color: #666">.</span>to_langchain<span style="color: #888">()</span>
 
         <span style="color: #888; font-style: italic"># Get meta tools as well</span>
@@ -595,21 +562,20 @@ load_dotenv<span style="color: #888">()</span>
 </code></pre></div>
 <p>Run all examples</p>
 <div class="highlight" style="background: #ffffff"><pre style="line-height: 125%;"><span></span><code><span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
-    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;StackOne AI SDK - Meta Tools &amp; Tool Calling Examples&quot;</span><span style="color: #888">)</span>
+    <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;StackOne AI SDK - Meta Tools Examples&quot;</span><span style="color: #888">)</span>
     <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
     <span style="color: #388038">print</span><span style="color: #888">()</span>
 
     <span style="color: #888; font-style: italic"># Basic examples that work without external APIs</span>
     example_meta_tools_basic<span style="color: #888">()</span>
     example_meta_tools_with_execution<span style="color: #888">()</span>
-    example_tool_calling<span style="color: #888">()</span>
 
     <span style="color: #888; font-style: italic"># Examples that require OpenAI API</span>
     <span style="color: #2838B0">if</span> os<span style="color: #666">.</span>getenv<span style="color: #888">(</span><span style="color: #B83838">&quot;OPENAI_API_KEY&quot;</span><span style="color: #888">):</span>
         example_with_openai<span style="color: #888">()</span>
         example_with_langchain<span style="color: #888">()</span>
     <span style="color: #2838B0">else</span><span style="color: #888">:</span>
-        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;ℹ️  Set OPENAI_API_KEY to run OpenAI and LangChain examples</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
+        <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Set OPENAI_API_KEY to run OpenAI and LangChain examples</span><span style="color: #709030">\n</span><span style="color: #B83838">&quot;</span><span style="color: #888">)</span>
 
     <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;=&quot;</span> <span style="color: #666">*</span> <span style="color: #444">60</span><span style="color: #888">)</span>
     <span style="color: #388038">print</span><span style="color: #888">(</span><span style="color: #B83838">&quot;Examples completed!&quot;</span><span style="color: #888">)</span>

@@ -213,7 +213,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="error-handling/">Error Handling</a>
+    terminal-mkdocs-side-nav-item" href="error-handling.md">Error Handling</a>
         
     
     </li>
@@ -232,7 +232,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="available-tools/">Available Tools</a>
+    terminal-mkdocs-side-nav-item" href="available-tools.md">Available Tools</a>
         
     
     </li>
@@ -413,8 +413,8 @@ See the example <a href="stackone-account-ids/">stackone-account-ids.md</a> for 
 <span style="color: #2838B0">def</span><span style="color: #A89028"> </span><span style="color: #785840">quickstart</span><span style="color: #888">():</span>
     toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
 
-    <span style="color: #888; font-style: italic"># Get all HRIS-related tools</span>
-    tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">,</span> account_id<span style="color: #666">=</span>account_id<span style="color: #888">)</span>
+    <span style="color: #888; font-style: italic"># Get all HRIS-related tools using MCP-backed fetch_tools()</span>
+    tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">(</span>actions<span style="color: #666">=</span><span style="color: #888">[</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">],</span> account_ids<span style="color: #666">=</span><span style="color: #888">[</span>account_id<span style="color: #888">])</span>
 
     <span style="color: #888; font-style: italic"># Use a specific tool</span>
     employee_tool <span style="color: #666">=</span> tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_list_employees&quot;</span><span style="color: #888">)</span>
@@ -431,8 +431,8 @@ See the example <a href="stackone-account-ids/">stackone-account-ids.md</a> for 
 <p>Check out some more documentation:</p>
 <ul>
 <li><a href="stackone-account-ids/">StackOne Account IDs</a></li>
-<li><a href="error-handling/">Error Handling</a></li>
-<li><a href="available-tools/">Available Tools</a></li>
+<li><a href="error-handling.md">Error Handling</a></li>
+<li><a href="available-tools.md">Available Tools</a></li>
 <li><a href="file-uploads/">File Uploads</a></li>
 </ul>
 <p>Or get started with an integration:</p>

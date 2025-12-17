@@ -211,7 +211,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="../error-handling/">Error Handling</a>
+    terminal-mkdocs-side-nav-item" href="../error-handling.md">Error Handling</a>
         
     
     </li>
@@ -230,7 +230,7 @@
         
             <a class="
 
-    terminal-mkdocs-side-nav-item" href="../available-tools/">Available Tools</a>
+    terminal-mkdocs-side-nav-item" href="../available-tools.md">Available Tools</a>
         
     
     </li>
@@ -405,7 +405,7 @@ employee_id <span style="color: #666">=</span> <span style="color: #B83838">&quo
         resume_file<span style="color: #666">.</span>write_text<span style="color: #888">(</span>resume_content<span style="color: #888">)</span>
 
         toolset <span style="color: #666">=</span> StackOneToolSet<span style="color: #888">()</span>
-        tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>get_tools<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">,</span> account_id<span style="color: #666">=</span>account_id<span style="color: #888">)</span>
+        tools <span style="color: #666">=</span> toolset<span style="color: #666">.</span>fetch_tools<span style="color: #888">(</span>actions<span style="color: #666">=</span><span style="color: #888">[</span><span style="color: #B83838">&quot;hris_*&quot;</span><span style="color: #888">],</span> account_ids<span style="color: #666">=</span><span style="color: #888">[</span>account_id<span style="color: #888">])</span>
 
         upload_tool <span style="color: #666">=</span> tools<span style="color: #666">.</span>get_tool<span style="color: #888">(</span><span style="color: #B83838">&quot;hris_upload_employee_document&quot;</span><span style="color: #888">)</span>
         <span style="color: #2838B0">assert</span> upload_tool <span style="color: #A848A8">is</span> <span style="color: #A848A8">not</span> <span style="color: #444; font-style: italic">None</span>
@@ -441,7 +441,7 @@ employee_id <span style="color: #666">=</span> <span style="color: #B83838">&quo
         </div>
         <div id="terminal-mkdocs-footer-prev-next">
             <nav class="btn-group">
-                <a href="../available-tools/" title="Available Tools">Previous</a>
+                <a href="../stackone-account-ids/" title="StackOne Account IDs">Previous</a>
                 |
                 <a href="../openai-integration/" title="OpenAI">Next</a>
             </nav>
