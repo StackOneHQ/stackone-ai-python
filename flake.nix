@@ -42,6 +42,18 @@
               nixfmt.package = pkgs.nixfmt-rfc-style;
               ruff-check.enable = true;
               ruff-format.enable = true;
+              prettier = {
+                enable = true;
+                includes = [
+                  "*.md"
+                  "*.yml"
+                  "*.yaml"
+                  "*.json"
+                ];
+                excludes = [
+                  "CHANGELOG.md"
+                ];
+              };
             };
           };
 
