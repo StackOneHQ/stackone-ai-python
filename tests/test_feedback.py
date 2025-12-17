@@ -217,13 +217,10 @@ class TestFeedbackToolExecution:
 
     def test_tool_integration(self) -> None:
         """Test that feedback tool integrates properly with toolset."""
-        from stackone_ai import StackOneToolSet
+        from stackone_ai.feedback import create_feedback_tool
 
         with patch.dict("os.environ", {"STACKONE_API_KEY": "test_key"}):
-            toolset = StackOneToolSet()
-            tools = toolset.get_tools("meta_collect_tool_feedback")
-
-            feedback_tool = tools.get_tool("meta_collect_tool_feedback")
+            feedback_tool = create_feedback_tool(api_key="test_key")
             assert feedback_tool is not None
             assert feedback_tool.name == "meta_collect_tool_feedback"
             assert "feedback" in feedback_tool.description.lower()
@@ -242,17 +239,15 @@ def test_live_feedback_submission() -> None:
     """Submit feedback to the live API and assert a successful response."""
     import uuid
 
+    from stackone_ai.feedback import create_feedback_tool
+
     api_key = os.getenv("STACKONE_API_KEY")
     if not api_key:
         pytest.skip("STACKONE_API_KEY env var required for live feedback test")
 
     base_url = os.getenv("STACKONE_BASE_URL", "https://api.stackone.com")
-    from stackone_ai import StackOneToolSet
 
-    toolset = StackOneToolSet(api_key=api_key, base_url=base_url)
-
-    tools = toolset.get_tools("meta_collect_tool_feedback")
-    feedback_tool = tools.get_tool("meta_collect_tool_feedback")
+    feedback_tool = create_feedback_tool(api_key=api_key, base_url=base_url)
     assert feedback_tool is not None, "Feedback tool must be available"
 
     feedback_token = uuid.uuid4().hex[:8]
