@@ -70,7 +70,7 @@ async def list_tools() -> list[Tool]:
 
     try:
         mcp_tools: list[Tool] = []
-        tools = toolset.get_tools()
+        tools = toolset.fetch_tools()
         # Convert to a list if it's not already iterable in the expected way
         tool_list = list(tools.tools) if hasattr(tools, "tools") else []
 
@@ -129,7 +129,16 @@ async def call_tool(
         )
 
     try:
-        tool = toolset.get_tool(name)
+        # Get account_id from arguments if provided
+        account_id = arguments.pop("account_id", None)
+
+        # Fetch tools with the specific action filter to get the right tool
+        tools = toolset.fetch_tools(
+            account_ids=[account_id] if account_id else None,
+            actions=[name],
+        )
+        tool = tools.get_tool(name)
+
         if not tool:
             logger.warning(f"Tool not found: {name}")
             raise McpError(
@@ -138,9 +147,6 @@ async def call_tool(
                     message=f"Tool not found: {name}",
                 )
             )
-
-        if "account_id" in arguments:
-            tool.set_account_id(arguments.pop("account_id"))
 
         if tool_needs_account_id(name) and tool.get_account_id() is None:
             logger.warning(f"Tool {name} needs account_id but none provided")
