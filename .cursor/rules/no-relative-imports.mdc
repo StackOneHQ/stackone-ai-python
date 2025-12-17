@@ -24,12 +24,12 @@ actions:
       1. Always use absolute imports:
          ```python
          # Good
-         from stackone_ai.tools import ToolDefinition
-         from stackone_ai.constants import OAS_DIR
-         
+         from stackone_ai.models import ToolDefinition
+         from stackone_ai.constants import DEFAULT_HYBRID_ALPHA
+
          # Bad
-         from .tools import ToolDefinition
-         from ..constants import OAS_DIR
+         from .models import ToolDefinition
+         from ..constants import DEFAULT_HYBRID_ALPHA
          ```
 
       2. Guidelines:
@@ -40,12 +40,12 @@ actions:
 examples:
   - input: |
       # Bad: Using relative imports
-      from .tools import ToolDefinition
-      from ..constants import OAS_DIR
+      from .models import ToolDefinition
+      from ..constants import DEFAULT_HYBRID_ALPHA
 
       # Good: Using absolute imports
-      from stackone_ai.tools import ToolDefinition
-      from stackone_ai.constants import OAS_DIR
+      from stackone_ai.models import ToolDefinition
+      from stackone_ai.constants import DEFAULT_HYBRID_ALPHA
     output: "Correctly formatted absolute imports"
 
 metadata:

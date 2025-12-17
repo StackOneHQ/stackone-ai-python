@@ -44,7 +44,7 @@ make mcp-inspector    # Run MCP server inspector for debugging
 
 1. **StackOneToolSet** (`stackone_ai/toolset.py`): Main entry point
    - Handles authentication (API key + optional account ID)
-   - Manages tool loading with glob pattern filtering
+   - Fetches tools dynamically via MCP endpoint
    - Provides format converters for OpenAI/LangChain
 
 2. **Models** (`stackone_ai/models.py`): Data structures
@@ -52,26 +52,21 @@ make mcp-inspector    # Run MCP server inspector for debugging
    - `Tools`: Container for managing multiple tools
    - Format converters for different AI frameworks
 
-3. **OpenAPI Parser** (`stackone_ai/specs/parser.py`): Spec conversion
-   - Converts OpenAPI specs to tool definitions
-   - Handles file upload detection (`format: binary` → `type: file`)
-   - Resolves schema references
-
-4. **MCP Server** (`stackone_ai/server.py`): Protocol implementation
+3. **MCP Server** (`stackone_ai/server.py`): Protocol implementation
    - Async tool execution
    - CLI interface via `stackmcp` command
 
-### OpenAPI Specifications
-
-All tool definitions are generated from OpenAPI specs in `stackone_ai/oas/`:
-- `core.json`, `ats.json`, `crm.json`, `documents.json`, `hris.json`, `iam.json`, `lms.json`, `marketing.json`
-
 ## Key Development Patterns
 
-### Tool Filtering
+### Tool Fetching
 ```python
-# Use glob patterns for tool selection
-tools = StackOneToolSet(include_tools=["hris_*", "!hris_create_*"])
+# Fetch tools dynamically from MCP endpoint
+toolset = StackOneToolSet(api_key="your-api-key")
+tools = toolset.fetch_tools(
+    account_ids=["account-1"],
+    providers=["hibob"],
+    actions=["*_list_*"]
+)
 ```
 
 ### Authentication
@@ -89,7 +84,6 @@ toolset = StackOneToolSet(
 - Use generics for better IDE support
 
 ### Testing
-- Snapshot testing for tool parsing (`tests/snapshots/`)
 - Async tests use `pytest-asyncio`
 - Example validation: See @./.cursor/rules/examples-standards
 
@@ -99,20 +93,13 @@ toolset = StackOneToolSet(
 2. **Pre-commit**: Hooks configured for ruff and mypy - run on all commits
 3. **Python Version**: Requires Python >=3.11
 4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
-5. **File Uploads**: Binary parameters auto-detected from OpenAPI specs
-6. **Context Window**: Tool loading warns when loading all tools (large context)
 
 ## Common Tasks
-
-### Adding New SaaS Integration
-1. Add OpenAPI spec to `stackone_ai/oas/`
-2. Parser automatically converts to tool definitions
-3. Test with `make test-tools`
 
 ### Modifying Tool Behavior
 - Core execution logic in `StackOneTool.execute()` method
 - HTTP configuration via `ExecuteConfig` class
-- Response handling in `_process_response()`
+- RPC tool execution via `_StackOneRpcTool` class
 
 ### Updating Documentation
 - Examples requirements: See @./.cursor/rules/examples-standards
