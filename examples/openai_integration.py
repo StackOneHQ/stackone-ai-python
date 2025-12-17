@@ -34,13 +34,13 @@ def openai_integration() -> None:
     toolset = StackOneToolSet()
 
     # Filter tools to only the ones we need to avoid context window limits
-    tools = toolset.get_tools(
-        [
+    tools = toolset.fetch_tools(
+        actions=[
             "hris_get_employee",
             "hris_list_employee_employments",
             "hris_get_employee_employment",
         ],
-        account_id=account_id,
+        account_ids=[account_id],
     )
     openai_tools = tools.to_openai()
 

@@ -70,7 +70,7 @@ async def list_tools() -> list[Tool]:
 
     try:
         mcp_tools: list[Tool] = []
-        tools = toolset.get_tools()
+        tools = toolset.fetch_tools()
         # Convert to a list if it's not already iterable in the expected way
         tool_list = list(tools.tools) if hasattr(tools, "tools") else []
 
@@ -129,7 +129,8 @@ async def call_tool(
         )
 
     try:
-        tool = toolset.get_tool(name)
+        tools = toolset.fetch_tools(actions=[name])
+        tool = tools.get_tool(name)
         if not tool:
             logger.warning(f"Tool not found: {name}")
             raise McpError(

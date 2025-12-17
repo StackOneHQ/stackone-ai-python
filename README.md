@@ -10,11 +10,11 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 - Unified interface for multiple SaaS tools
 - AI-friendly tool descriptions and parameters
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
+- **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
 - **Advanced Tool Filtering**:
   - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
-  - Provider and action filtering with `fetch_tools()`
+  - Provider and action filtering
   - Multi-account support
-- Dynamic discovery via `fetch_tools()` so you can pull the latest tools at runtime (accounts, providers, or globbed actions)
 - **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
@@ -24,37 +24,24 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Requirements
 
-- Python 3.9+ (core SDK functionality)
-- Python 3.10+ (for dynamic discovery and CrewAI examples)
+- Python 3.10+ (MCP extra required for `fetch_tools()`)
 
 ## Installation
 
-### Basic Installation
-
 ```bash
-pip install stackone-ai
+pip install 'stackone-ai[mcp]'
 
 # Or with uv
-uv add stackone-ai
+uv add 'stackone-ai[mcp]'
 ```
 
 ### Optional Features
 
 ```bash
-# Install with dynamic discovery support (requires Python 3.10+)
-uv add 'stackone-ai[mcp]'
-# or 
-pip install 'stackone-ai[mcp]'
-
-# Install with CrewAI examples (requires Python 3.10+)
-uv add 'stackone-ai[examples]'
-# or
-pip install 'stackone-ai[examples]'
-
-# Install everything
-uv add 'stackone-ai[mcp,examples]'
-# or
+# Install with CrewAI examples
 pip install 'stackone-ai[mcp,examples]'
+# or
+uv add 'stackone-ai[mcp,examples]'
 ```
 
 ## Quick Start
@@ -62,16 +49,14 @@ pip install 'stackone-ai[mcp,examples]'
 ```python
 from stackone_ai import StackOneToolSet
 
-# Initialize with API key
+# Initialise with API key
 toolset = StackOneToolSet()  # Uses STACKONE_API_KEY env var
 # Or explicitly: toolset = StackOneToolSet(api_key="your-api-key")
 
 # Get HRIS-related tools with glob patterns
-tools = toolset.get_tools("hris_*", account_id="your-account-id")
-# Exclude certain tools with negative patterns
-tools = toolset.get_tools(["hris_*", "!hris_delete_*"])
+tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
 
-# Use a specific tool with the new call method
+# Use a specific tool with the call method
 employee_tool = tools.get_tool("hris_get_employee")
 # Call with keyword arguments
 employee = employee_tool.call(id="employee-id")
@@ -83,30 +68,9 @@ employee = employee_tool.execute({"id": "employee-id"})
 
 StackOne AI SDK provides powerful filtering capabilities to help you select the exact tools you need.
 
-### Filtering with `get_tools()`
+### Filtering with `fetch_tools()`
 
-Use glob patterns to filter tools by name:
-
-```python
-from stackone_ai import StackOneToolSet
-
-toolset = StackOneToolSet()
-
-# Get all HRIS tools
-tools = toolset.get_tools("hris_*", account_id="your-account-id")
-
-# Get multiple categories
-tools = toolset.get_tools(["hris_*", "ats_*"])
-
-# Exclude specific tools with negative patterns
-tools = toolset.get_tools(["hris_*", "!hris_delete_*"])
-```
-
-### Advanced Filtering with `fetch_tools()`
-
-The `fetch_tools()` method provides advanced filtering by providers, actions, and account IDs:
-
-> Install the optional extra (`pip install 'stackone-ai[mcp]'`) on Python 3.10+ to enable dynamic discovery.
+The `fetch_tools()` method provides filtering by providers, actions, and account IDs:
 
 ```python
 from stackone_ai import StackOneToolSet
@@ -199,9 +163,9 @@ StackOne tools work seamlessly with LangChain, enabling powerful AI agent workfl
 from langchain_openai import ChatOpenAI
 from stackone_ai import StackOneToolSet
 
-# Initialize StackOne tools
+# Initialise StackOne tools
 toolset = StackOneToolSet()
-tools = toolset.get_tools("hris_*", account_id="your-account-id")
+tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
 
 # Convert to LangChain format
 langchain_tools = tools.to_langchain()
@@ -248,7 +212,7 @@ from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_too
 
 # Prepare tools
 toolset = StackOneToolSet()
-tools = toolset.get_tools("hris_*", account_id="your-account-id")
+tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
 langchain_tools = tools.to_langchain()
 
 class State(TypedDict):
@@ -280,7 +244,7 @@ _ = app.invoke({"messages": [("user", "Get employee with id emp123") ]})
 
 CrewAI uses LangChain tools natively, making integration seamless:
 
-> **Note**: CrewAI requires Python 3.10+. Install with `pip install 'stackone-ai[examples]'`
+> **Note**: CrewAI requires Python 3.10+. Install with `pip install 'stackone-ai[mcp,examples]'`
 
 ```python
 from crewai import Agent, Crew, Task
@@ -288,13 +252,13 @@ from stackone_ai import StackOneToolSet
 
 # Get tools and convert to LangChain format
 toolset = StackOneToolSet()
-tools = toolset.get_tools("hris_*", account_id="your-account-id")
+tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
 langchain_tools = tools.to_langchain()
 
 # Create CrewAI agent with StackOne tools
 agent = Agent(
     role="HR Manager",
-    goal="Analyze employee data and generate insights",
+    goal="Analyse employee data and generate insights",
     backstory="Expert in HR analytics and employee management",
     tools=langchain_tools,
     llm="gpt-4o-mini"
@@ -323,7 +287,7 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 
 # Get the feedback tool (included with "meta_*" pattern or all tools)
-tools = toolset.get_tools("meta_*")
+tools = toolset.fetch_tools(actions=["meta_*"])
 feedback_tool = tools.get_tool("meta_collect_tool_feedback")
 
 # Submit feedback (typically invoked by AI after user consent)
@@ -346,7 +310,7 @@ Meta tools enable dynamic tool discovery and execution without hardcoding tool n
 
 ```python
 # Get meta tools for dynamic discovery
-tools = toolset.get_tools("hris_*")
+tools = toolset.fetch_tools(actions=["hris_*"])
 meta_tools = tools.meta_tools()
 
 # Search for relevant tools using natural language
@@ -362,15 +326,30 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 
 For more examples, check out the [examples/](examples/) directory:
 
-- [Error Handling](examples/error_handling.py)
 - [StackOne Account IDs](examples/stackone_account_ids.py)
-- [Available Tools](examples/available_tools.py)
 - [File Uploads](examples/file_uploads.py)
 - [OpenAI Integration](examples/openai_integration.py)
 - [LangChain Integration](examples/langchain_integration.py)
 - [CrewAI Integration](examples/crewai_integration.py)
-- [LangGraph Tool Node](examples/langgraph_tool_node.py)
 - [Meta Tools](examples/meta_tools_example.py)
+
+## Migration from `get_tools()` to `fetch_tools()`
+
+If you're upgrading from a previous version that used `get_tools()`, here's how to migrate:
+
+```python
+# Before (deprecated)
+tools = toolset.get_tools("hris_*", account_id="acc-123")
+
+# After
+tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["acc-123"])
+```
+
+Key differences:
+- `fetch_tools()` uses keyword arguments for all filtering
+- `account_id` becomes `account_ids` (list)
+- Filter patterns go in the `actions` parameter (list)
+- `fetch_tools()` requires the MCP extra (`pip install 'stackone-ai[mcp]'`)
 
 ## License
 

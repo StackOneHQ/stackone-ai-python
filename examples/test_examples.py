@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import responses
 
 
 def get_example_files() -> list[str]:
@@ -23,10 +22,16 @@ def get_example_files() -> list[str]:
 EXAMPLES = get_example_files()
 
 # Map of example files to required optional packages
+# Note: All examples now require MCP extra for fetch_tools()
 OPTIONAL_DEPENDENCIES = {
-    "openai_integration.py": ["openai"],
-    "langchain_integration.py": ["langchain_openai"],
-    "crewai_integration.py": ["crewai"],
+    "openai_integration.py": ["openai", "mcp"],
+    "langchain_integration.py": ["langchain_openai", "mcp"],
+    "crewai_integration.py": ["crewai", "mcp"],
+    "index.py": ["mcp"],
+    "file_uploads.py": ["mcp"],
+    "stackone_account_ids.py": ["mcp"],
+    "meta_tools_example.py": ["mcp"],
+    "mcp_server.py": ["mcp"],
 }
 
 
@@ -37,7 +42,6 @@ def test_example_files_exist() -> None:
 
 
 @pytest.mark.parametrize("example_file", EXAMPLES)
-@responses.activate
 def test_run_example(example_file: str) -> None:
     """Run each example file directly using python"""
     # Skip if optional dependencies are not available
@@ -47,33 +51,6 @@ def test_run_example(example_file: str) -> None:
                 __import__(module)
             except ImportError:
                 pytest.skip(f"Skipping {example_file}: {module} not installed")
-
-    # Setup mock responses for examples that need them
-    if example_file in ["index.py", "file_uploads.py"]:
-        # Mock employee list endpoint
-        responses.add(
-            responses.GET,
-            "https://api.stackone.com/unified/hris/employees",
-            json={
-                "data": [
-                    {
-                        "id": "test-employee-1",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "email": "john.doe@example.com"
-                    }
-                ]
-            },
-            status=200
-        )
-
-        # Mock document upload endpoint
-        responses.add(
-            responses.POST,
-            "https://api.stackone.com/unified/hris/employees/c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA/documents/upload",
-            json={"success": True, "document_id": "test-doc-123"},
-            status=200
-        )
 
     example_path = Path(__file__).parent / example_file
 
