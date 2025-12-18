@@ -57,11 +57,6 @@ examples = [
     "openai>=1.63.2",
     "python-dotenv>=1.0.1",
 ]
-docs = [
-    "mkdocs-terminal>=4.7.0",
-    "pygments>=2.12",
-    "pymdown-extensions"
-] 
 
 [dependency-groups]
 dev = [

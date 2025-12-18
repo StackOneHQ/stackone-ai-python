@@ -26,16 +26,6 @@ test-examples:
 mypy:
 	uv run mypy stackone_ai
 
-# Build and serve docs locally
-docs-serve:
-	uv run scripts/build_docs.py
-	uv run mkdocs serve
-
-# Build docs for deployment
-docs-build:
-	uv run scripts/build_docs.py
-	uv run mkdocs build
-
 # Run MCP server inspector for debugging
 mcp-inspector:
 	uv sync --all-extras
