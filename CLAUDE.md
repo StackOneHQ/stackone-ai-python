@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **no-relative-imports**      | `**/*.py`           | Enforce absolute imports in Python files           |
 | **package-installation**     | `**/pyproject.toml` | UV package management standards                    |
 | **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
-| **examples-standards**       | `examples/**/*`     | Example requirements and organisation              |
+| **examples-standards**       | `examples/**/*`     | Example requirements and organization              |
 
 ## Project Overview
 
@@ -114,7 +114,7 @@ toolset = StackOneToolSet(
 2. Parser automatically converts to tool definitions
 3. Test with `make test-tools`
 
-### Modifying Tool Behaviour
+### Modifying Tool Behavior
 
 - Core execution logic in `StackOneTool.execute()` method
 - HTTP configuration via `ExecuteConfig` class

@@ -12,7 +12,7 @@ Standards for using absolute imports instead of relative imports in Python files
 
 - Always use absolute imports starting with the full package name (`stackone_ai`)
 - Never use relative imports (`.` or `..`)
-- Keep imports organised and grouped
+- Keep imports organized and grouped
 
 ## Examples
 
