@@ -29,10 +29,6 @@ make mypy             # Run type checking
 make test             # Run all tests
 make test-tools       # Run tool-specific tests
 make test-examples    # Run example tests
-
-# Documentation
-make docs-serve       # Build and serve docs locally (http://localhost:8000)
-make docs-build       # Build docs for deployment
 ```
 
 ## Code Architecture
@@ -113,9 +109,3 @@ toolset = StackOneToolSet(
 - Core execution logic in `StackOneTool.execute()` method
 - HTTP configuration via `ExecuteConfig` class
 - Response handling in `_process_response()`
-
-### Updating Documentation
-
-- Examples requirements: See @./.cursor/rules/examples-standards
-- Run `make docs-serve` to preview changes
-- MkDocs config in `mkdocs.yml`
