@@ -25,8 +25,3 @@ test-examples:
 # Run type checking
 mypy:
 	uv run mypy stackone_ai
-
-# Run MCP server inspector for debugging
-mcp-inspector:
-	uv sync --all-extras
-	npx @modelcontextprotocol/inspector stackmcp

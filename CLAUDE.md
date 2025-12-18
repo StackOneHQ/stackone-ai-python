@@ -29,9 +29,6 @@ make mypy             # Run type checking
 make test             # Run all tests
 make test-tools       # Run tool-specific tests
 make test-examples    # Run example tests
-
-# MCP Development
-make mcp-inspector    # Run MCP server inspector for debugging
 ```
 
 ## Code Architecture
@@ -52,10 +49,6 @@ make mcp-inspector    # Run MCP server inspector for debugging
    - Converts OpenAPI specs to tool definitions
    - Handles file upload detection (`format: binary` → `type: file`)
    - Resolves schema references
-
-4. **MCP Server** (`stackone_ai/server.py`): Protocol implementation
-   - Async tool execution
-   - CLI interface via `stackmcp` command
 
 ### OpenAPI Specifications
 
