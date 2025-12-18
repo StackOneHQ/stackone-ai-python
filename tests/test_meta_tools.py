@@ -17,14 +17,14 @@ def sample_tools():
     """Create sample tools for testing"""
     tools = []
 
-    # Create HRIS tools
+    # Create HiBob tools
     for action in ["create", "list", "update", "delete"]:
         for entity in ["employee", "department", "timeoff"]:
-            tool_name = f"hris_{action}_{entity}"
+            tool_name = f"hibob_{action}_{entity}"
             execute_config = ExecuteConfig(
                 name=tool_name,
                 method="POST" if action in ["create", "update"] else "GET",
-                url=f"https://api.example.com/hris/{entity}",
+                url=f"https://api.example.com/hibob/{entity}",
                 headers={},
             )
 
@@ -37,21 +37,21 @@ def sample_tools():
             )
 
             tool = StackOneTool(
-                description=f"{action.capitalize()} {entity} in HRIS system",
+                description=f"{action.capitalize()} {entity} in HiBob system",
                 parameters=parameters,
                 _execute_config=execute_config,
                 _api_key="test_key",
             )
             tools.append(tool)
 
-    # Create ATS tools
+    # Create BambooHR tools
     for action in ["create", "list", "search"]:
         for entity in ["candidate", "job", "application"]:
-            tool_name = f"ats_{action}_{entity}"
+            tool_name = f"bamboohr_{action}_{entity}"
             execute_config = ExecuteConfig(
                 name=tool_name,
                 method="POST" if action == "create" else "GET",
-                url=f"https://api.example.com/ats/{entity}",
+                url=f"https://api.example.com/bamboohr/{entity}",
                 headers={},
             )
 
@@ -64,7 +64,7 @@ def sample_tools():
             )
 
             tool = StackOneTool(
-                description=f"{action.capitalize()} {entity} in ATS system",
+                description=f"{action.capitalize()} {entity} in BambooHR system",
                 parameters=parameters,
                 _execute_config=execute_config,
                 _api_key="test_key",
@@ -217,13 +217,13 @@ class TestMetaExecuteTool:
         with responses.RequestsMock() as rsps:
             rsps.add(
                 responses.GET,
-                "https://api.example.com/hris/employee",
+                "https://api.example.com/hibob/employee",
                 json={"success": True, "employees": []},
                 status=200,
             )
 
             # Call the meta execute tool
-            result = execute_tool.call(toolName="hris_list_employee", params={"limit": 10})
+            result = execute_tool.call(toolName="hibob_list_employee", params={"limit": 10})
 
             assert result is not None
             assert "success" in result or "employees" in result
@@ -288,14 +288,14 @@ class TestHybridSearch:
         """Test that hybrid search returns meaningful results"""
         index = ToolIndex(sample_tools, hybrid_alpha=0.2)
         # Use more specific query to ensure we get employee tools
-        results = index.search("employee hris", limit=10)
+        results = index.search("employee hibob", limit=10)
 
         assert len(results) > 0
-        # Should find HRIS employee tools - check in broader result set
+        # Should find HiBob employee tools - check in broader result set
         result_names = [r.name for r in results]
-        # At least one result should contain "employee" or "hris"
-        assert any("employee" in name or "hris" in name for name in result_names), (
-            f"Expected 'employee' or 'hris' in results: {result_names}"
+        # At least one result should contain "employee" or "hibob"
+        assert any("employee" in name or "hibob" in name for name in result_names), (
+            f"Expected 'employee' or 'hibob' in results: {result_names}"
         )
 
     def test_hybrid_search_with_different_alphas(self, sample_tools):

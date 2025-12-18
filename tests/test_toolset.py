@@ -18,15 +18,15 @@ def test_filter_by_provider():
     toolset = StackOneToolSet(api_key="test_key")
 
     # Test matching providers
-    assert toolset._filter_by_provider("hris_list_employees", ["hris", "ats"])
-    assert toolset._filter_by_provider("ats_create_job", ["hris", "ats"])
+    assert toolset._filter_by_provider("hibob_list_employees", ["hibob", "bamboohr"])
+    assert toolset._filter_by_provider("bamboohr_create_job", ["hibob", "bamboohr"])
 
     # Test non-matching providers
-    assert not toolset._filter_by_provider("crm_list_contacts", ["hris", "ats"])
+    assert not toolset._filter_by_provider("workday_list_contacts", ["hibob", "bamboohr"])
 
     # Test case-insensitive matching
-    assert toolset._filter_by_provider("HRIS_list_employees", ["hris"])
-    assert toolset._filter_by_provider("hris_list_employees", ["HRIS"])
+    assert toolset._filter_by_provider("HIBOB_list_employees", ["hibob"])
+    assert toolset._filter_by_provider("hibob_list_employees", ["HIBOB"])
 
 
 def test_filter_by_action():
@@ -34,17 +34,17 @@ def test_filter_by_action():
     toolset = StackOneToolSet(api_key="test_key")
 
     # Test exact match
-    assert toolset._filter_by_action("hris_list_employees", ["hris_list_employees"])
+    assert toolset._filter_by_action("hibob_list_employees", ["hibob_list_employees"])
 
     # Test glob pattern
-    assert toolset._filter_by_action("hris_list_employees", ["*_list_employees"])
-    assert toolset._filter_by_action("ats_list_employees", ["*_list_employees"])
-    assert toolset._filter_by_action("hris_list_employees", ["hris_*"])
-    assert toolset._filter_by_action("hris_create_employee", ["hris_*"])
+    assert toolset._filter_by_action("hibob_list_employees", ["*_list_employees"])
+    assert toolset._filter_by_action("bamboohr_list_employees", ["*_list_employees"])
+    assert toolset._filter_by_action("hibob_list_employees", ["hibob_*"])
+    assert toolset._filter_by_action("hibob_create_employee", ["hibob_*"])
 
     # Test non-matching patterns
-    assert not toolset._filter_by_action("crm_list_contacts", ["*_list_employees"])
-    assert not toolset._filter_by_action("ats_create_job", ["hris_*"])
+    assert not toolset._filter_by_action("workday_list_contacts", ["*_list_employees"])
+    assert not toolset._filter_by_action("bamboohr_create_job", ["hibob_*"])
 
 
 def test_matches_filter_positive_patterns():
@@ -52,14 +52,14 @@ def test_matches_filter_positive_patterns():
     toolset = StackOneToolSet(api_key="test_key")
 
     # Single pattern
-    assert toolset._matches_filter("hris_list_employees", "hris_*")
-    assert toolset._matches_filter("ats_create_job", "ats_*")
-    assert not toolset._matches_filter("crm_contacts", "hris_*")
+    assert toolset._matches_filter("hibob_list_employees", "hibob_*")
+    assert toolset._matches_filter("bamboohr_create_job", "bamboohr_*")
+    assert not toolset._matches_filter("workday_contacts", "hibob_*")
 
     # Multiple patterns (OR logic)
-    assert toolset._matches_filter("hris_list_employees", ["hris_*", "ats_*"])
-    assert toolset._matches_filter("ats_create_job", ["hris_*", "ats_*"])
-    assert not toolset._matches_filter("crm_contacts", ["hris_*", "ats_*"])
+    assert toolset._matches_filter("hibob_list_employees", ["hibob_*", "bamboohr_*"])
+    assert toolset._matches_filter("bamboohr_create_job", ["hibob_*", "bamboohr_*"])
+    assert not toolset._matches_filter("workday_contacts", ["hibob_*", "bamboohr_*"])
 
 
 def test_matches_filter_negative_patterns():
@@ -67,9 +67,9 @@ def test_matches_filter_negative_patterns():
     toolset = StackOneToolSet(api_key="test_key")
 
     # Negative pattern
-    assert not toolset._matches_filter("hris_delete_employee", ["hris_*", "!hris_delete_*"])
-    assert toolset._matches_filter("hris_list_employees", ["hris_*", "!hris_delete_*"])
+    assert not toolset._matches_filter("hibob_delete_employee", ["hibob_*", "!hibob_delete_*"])
+    assert toolset._matches_filter("hibob_list_employees", ["hibob_*", "!hibob_delete_*"])
 
     # Only negative patterns (should match everything not excluded)
-    assert not toolset._matches_filter("hris_delete_employee", "!hris_delete_*")
-    assert toolset._matches_filter("hris_list_employees", "!hris_delete_*")
+    assert not toolset._matches_filter("hibob_delete_employee", "!hibob_delete_*")
+    assert toolset._matches_filter("hibob_list_employees", "!hibob_delete_*")
