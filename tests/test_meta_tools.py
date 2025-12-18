@@ -1,7 +1,8 @@
 """Tests for meta tools functionality"""
 
+import httpx
 import pytest
-import responses
+import respx
 
 from stackone_ai import StackOneTool, Tools
 from stackone_ai.meta_tools import (
@@ -209,24 +210,22 @@ class TestMetaExecuteTool:
                 }
             )
 
+    @respx.mock
     def test_execute_tool_call(self, tools_collection):
         """Test calling the execute tool with call method"""
         execute_tool = create_meta_execute_tool(tools_collection)
 
-        # Mock the actual tool execution by patching the requests
-        with responses.RequestsMock() as rsps:
-            rsps.add(
-                responses.GET,
-                "https://api.example.com/hris/employee",
-                json={"success": True, "employees": []},
-                status=200,
-            )
+        # Mock the actual tool execution
+        route = respx.get("https://api.example.com/hris/employee").mock(
+            return_value=httpx.Response(200, json={"success": True, "employees": []})
+        )
 
-            # Call the meta execute tool
-            result = execute_tool.call(toolName="hris_list_employee", params={"limit": 10})
+        # Call the meta execute tool
+        result = execute_tool.call(toolName="hris_list_employee", params={"limit": 10})
 
-            assert result is not None
-            assert "success" in result or "employees" in result
+        assert result is not None
+        assert "success" in result or "employees" in result
+        assert route.called
 
 
 class TestToolsMetaTools:

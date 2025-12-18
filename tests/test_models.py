@@ -56,9 +56,11 @@ def mock_specs() -> dict:
 
 def test_tool_execution(mock_tool):
     """Test tool execution with parameters"""
-    with patch("requests.request") as mock_request:
+    with patch("httpx.request") as mock_request:
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": "123", "name": "Test User"}
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
         mock_request.return_value = mock_response
 
         result = mock_tool.execute({"id": "123"})
@@ -69,9 +71,11 @@ def test_tool_execution(mock_tool):
 
 def test_tool_execution_with_string_args(mock_tool):
     """Test tool execution with string arguments"""
-    with patch("requests.request") as mock_request:
+    with patch("httpx.request") as mock_request:
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": "123", "name": "Test User"}
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
         mock_request.return_value = mock_response
 
         result = mock_tool.execute('{"id": "123"}')
@@ -138,9 +142,11 @@ async def test_langchain_tool_execution(mock_tool):
     langchain_tool = langchain_tools[0]
 
     # Mock the HTTP request
-    with patch("requests.request") as mock_request:
+    with patch("httpx.request") as mock_request:
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": "test_value", "name": "Test User"}
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
         mock_request.return_value = mock_response
 
         # Test sync execution with correct parameter name

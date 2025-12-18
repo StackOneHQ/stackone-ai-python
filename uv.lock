@@ -4204,17 +4204,15 @@ wheels = [
 ]
 
 [[package]]
-name = "responses"
-version = "0.25.8"
+name = "respx"
+version = "0.22.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "urllib3" },
+    { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/95/89c054ad70bfef6da605338b009b2e283485835351a9935c7bfbfaca7ffc/responses-0.25.8.tar.gz", hash = "sha256:9374d047a575c8f781b94454db5cab590b6029505f488d12899ddb10a4af1cf4", size = 79320, upload-time = "2025-08-08T19:01:46.709Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/7c/96bd0bc759cf009675ad1ee1f96535edcb11e9666b985717eb8c87192a95/respx-0.22.0.tar.gz", hash = "sha256:3c8924caa2a50bd71aefc07aa812f2466ff489f1848c96e954a5362d17095d91", size = 28439, upload-time = "2024-12-19T22:33:59.374Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/4c/cc276ce57e572c102d9542d383b2cfd551276581dc60004cb94fe8774c11/responses-0.25.8-py3-none-any.whl", hash = "sha256:0c710af92def29c8352ceadff0c3fe340ace27cf5af1bbe46fb71275bcd2831c", size = 34769, upload-time = "2025-08-08T19:01:45.018Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/67/afbb0978d5399bc9ea200f1d4489a23c9a1dad4eee6376242b8182389c79/respx-0.22.0-py2.py3-none-any.whl", hash = "sha256:631128d4c9aba15e56903fb5f66fb1eff412ce28dd387ca3a81339e52dbd3ad0", size = 25127, upload-time = "2024-12-19T22:33:57.837Z" },
 ]
 
 [[package]]
@@ -4662,12 +4660,12 @@ source = { editable = "." }
 dependencies = [
     { name = "bm25s" },
     { name = "eval-type-backport", marker = "python_full_version < '3.10'" },
+    { name = "httpx" },
     { name = "langchain-core" },
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pydantic" },
-    { name = "requests" },
     { name = "typing-extensions" },
 ]
 
@@ -4690,10 +4688,9 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-snapshot" },
-    { name = "responses" },
+    { name = "respx" },
     { name = "ruff" },
     { name = "stackone-ai" },
-    { name = "types-requests" },
 ]
 
 [package.metadata]
@@ -4701,6 +4698,7 @@ requires-dist = [
     { name = "bm25s", specifier = ">=0.2.2" },
     { name = "crewai", marker = "python_full_version >= '3.10' and extra == 'examples'", specifier = ">=0.102.0" },
     { name = "eval-type-backport", marker = "python_full_version < '3.10'" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "langchain-core", specifier = ">=0.1.0" },
     { name = "langchain-openai", marker = "extra == 'examples'", specifier = ">=0.3.6" },
     { name = "langgraph", marker = "extra == 'examples'", specifier = ">=0.2.0" },
@@ -4709,7 +4707,6 @@ requires-dist = [
     { name = "openai", marker = "extra == 'examples'", specifier = ">=1.63.2" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.0.1" },
-    { name = "requests", specifier = ">=2.32.3" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
 ]
 provides-extras = ["mcp", "examples"]
@@ -4721,10 +4718,9 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.25.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-snapshot", specifier = ">=0.9.0" },
-    { name = "responses", specifier = ">=0.25.8" },
+    { name = "respx", specifier = ">=0.22.0" },
     { name = "ruff", specifier = ">=0.9.6" },
     { name = "stackone-ai" },
-    { name = "types-requests", specifier = ">=2.31.0.20240311" },
 ]
 
 [[package]]
@@ -4946,18 +4942,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/21/ca/950278884e2ca20547ff3eb109478c6baf6b8cf219318e6bc4f666fad8e8/typer-0.19.2.tar.gz", hash = "sha256:9ad824308ded0ad06cc716434705f691d4ee0bfd0fb081839d2e426860e7fdca", size = 104755, upload-time = "2025-09-23T09:47:48.256Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/22/35617eee79080a5d071d0f14ad698d325ee6b3bf824fc0467c03b30e7fa8/typer-0.19.2-py3-none-any.whl", hash = "sha256:755e7e19670ffad8283db353267cb81ef252f595aa6834a0d1ca9312d9326cb9", size = 46748, upload-time = "2025-09-23T09:47:46.777Z" },
-]
-
-[[package]]
-name = "types-requests"
-version = "2.32.4.20250913"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/36/27/489922f4505975b11de2b5ad07b4fe1dca0bca9be81a703f26c5f3acfce5/types_requests-2.32.4.20250913.tar.gz", hash = "sha256:abd6d4f9ce3a9383f269775a9835a4c24e5cd6b9f647d64f88aa4613c33def5d", size = 23113, upload-time = "2025-09-13T02:40:02.309Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/20/9a227ea57c1285986c4cf78400d0a91615d25b24e257fd9e2969606bdfae/types_requests-2.32.4.20250913-py3-none-any.whl", hash = "sha256:78c9c1fffebbe0fa487a418e0fa5252017e9c60d1a2da394077f1780f655d7e1", size = 20658, upload-time = "2025-09-13T02:40:01.115Z" },
 ]
 
 [[package]]
