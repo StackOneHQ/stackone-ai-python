@@ -12,21 +12,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6.6.1
-        with:
-          python-version: "3.11"
-          enable-cache: true
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
 
       - name: Install all dependencies
-        run: uv sync --all-extras
+        run: nix develop --command uv sync --all-extras
 
       - name: Build documentation
         run: |
-          uv run scripts/build_docs.py
-          uv run mkdocs build
+          nix develop --command uv run scripts/build_docs.py
+          nix develop --command uv run mkdocs build
 
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main'

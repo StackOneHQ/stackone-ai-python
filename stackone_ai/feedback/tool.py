@@ -120,23 +120,11 @@ class FeedbackTool(StackOneTool):
                         "tool_names": tool_names,
                     }
                     result = super().execute(validated_arguments, options=options)
-                    results.append({
-                        "account_id": account_id,
-                        "status": "success",
-                        "result": result
-                    })
+                    results.append({"account_id": account_id, "status": "success", "result": result})
                 except Exception as exc:
                     error_msg = str(exc)
-                    errors.append({
-                        "account_id": account_id,
-                        "status": "error",
-                        "error": error_msg
-                    })
-                    results.append({
-                        "account_id": account_id,
-                        "status": "error",
-                        "error": error_msg
-                    })
+                    errors.append({"account_id": account_id, "status": "error", "error": error_msg})
+                    results.append({"account_id": account_id, "status": "error", "error": error_msg})
 
             # Return combined results
             return {
@@ -144,7 +132,7 @@ class FeedbackTool(StackOneTool):
                 "total_accounts": len(account_ids),
                 "successful": len([r for r in results if r["status"] == "success"]),
                 "failed": len(errors),
-                "results": results
+                "results": results,
             }
 
         except json.JSONDecodeError as exc:
@@ -176,7 +164,7 @@ def create_feedback_tool(
     name = "meta_collect_tool_feedback"
     description = (
         "Collects user feedback on StackOne tool performance. "
-        "First ask the user, \"Are you ok with sending feedback to StackOne?\" "
+        'First ask the user, "Are you ok with sending feedback to StackOne?" '
         "and mention that the LLM will take care of sending it. "
         "Call this tool only when the user explicitly answers yes."
     )

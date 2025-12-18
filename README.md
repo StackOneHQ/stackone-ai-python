@@ -28,6 +28,30 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Installation
 
+### Using Nix (Recommended for Development)
+
+If you have [Nix](https://nixos.org/) installed with flakes enabled:
+
+```bash
+# Enter development environment (auto-installs dependencies and git hooks)
+nix develop
+
+# Format code
+nix fmt
+
+# Run checks
+nix flake check
+```
+
+The Nix development environment includes:
+
+- Python with uv package manager
+- Automatic dependency installation
+- Git hooks (treefmt + mypy) auto-configured
+- Consistent environment across all platforms
+
+### Using pip/uv
+
 ```bash
 pip install 'stackone-ai[mcp]'
 
@@ -299,6 +323,7 @@ result = feedback_tool.call(
 ```
 
 **Important**: The AI agent should always ask for user permission before submitting feedback:
+
 - "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
 - Only call the tool after the user explicitly agrees.
 
@@ -346,6 +371,7 @@ tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["acc-123"])
 ```
 
 Key differences:
+
 - `fetch_tools()` uses keyword arguments for all filtering
 - `account_id` becomes `account_ids` (list)
 - Filter patterns go in the `actions` parameter (list)
