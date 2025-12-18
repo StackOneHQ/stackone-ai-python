@@ -2076,12 +2076,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1c/72/3751feae343a5ad07959df713907b5c3fbaed269d697a14b0c449080cf2e/mcp-1.17.0-py3-none-any.whl", hash = "sha256:0660ef275cada7a545af154db3082f176cf1d2681d5e35ae63e014faf0a35d40", size = 167737, upload-time = "2025-10-10T12:16:42.863Z" },
 ]
 
-[package.optional-dependencies]
-cli = [
-    { name = "python-dotenv", marker = "python_full_version >= '3.10'" },
-    { name = "typer", marker = "python_full_version >= '3.10'" },
-]
-
 [[package]]
 name = "mdurl"
 version = "0.1.2"
@@ -4686,7 +4680,7 @@ examples = [
     { name = "python-dotenv" },
 ]
 mcp = [
-    { name = "mcp", extra = ["cli"], marker = "python_full_version >= '3.10'" },
+    { name = "mcp", marker = "python_full_version >= '3.10'" },
 ]
 
 [package.dev-dependencies]
@@ -4710,7 +4704,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.1.0" },
     { name = "langchain-openai", marker = "extra == 'examples'", specifier = ">=0.3.6" },
     { name = "langgraph", marker = "extra == 'examples'", specifier = ">=0.2.0" },
-    { name = "mcp", extras = ["cli"], marker = "python_full_version >= '3.10' and extra == 'mcp'", specifier = ">=1.3.0" },
+    { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'mcp'", specifier = ">=1.3.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "openai", marker = "extra == 'examples'", specifier = ">=1.63.2" },
     { name = "pydantic", specifier = ">=2.10.6" },
