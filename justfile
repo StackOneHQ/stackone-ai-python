@@ -26,6 +26,14 @@ test-examples:
 mypy:
 	uv run mypy stackone_ai
 
+# Run typos spell checker
+typos:
+	typos --config typos.toml .
+
+# Fix typos
+typos-fix:
+	typos --config typos.toml --write-changes .
+
 # Update version in __init__.py
 update-version:
 	uv run scripts/update_version.py
