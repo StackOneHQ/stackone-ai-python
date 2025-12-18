@@ -28,8 +28,8 @@ mypy:
 
 # Run typos spell checker
 typos:
-	typos .
+	typos --config typos.toml .
 
 # Fix typos
 typos-fix:
-	typos --write-changes .
+	typos --config typos.toml --write-changes .
