@@ -1,6 +1,6 @@
 # Install dependencies and pre-commit hooks
-install:
-	uv sync --all-extras
+install *extras:
+	uv sync {{ extras }}
 
 # Run ruff linting
 lint:
@@ -25,3 +25,15 @@ test-examples:
 # Run type checking
 mypy:
 	uv run mypy stackone_ai
+
+# Update version in __init__.py
+update-version:
+	uv run scripts/update_version.py
+
+# Build package
+build:
+	uv build
+
+# Publish package to PyPI
+publish:
+	uv publish

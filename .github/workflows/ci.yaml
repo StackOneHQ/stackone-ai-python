@@ -37,18 +37,13 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
-        run: nix develop --command uv sync ${{ matrix.sync-extras }}
+        run: nix develop --command just install ${{ matrix.sync-extras }}
 
       - name: Run Lint
-        run: nix develop --command uv run ruff check .
+        run: nix develop --command just lint
 
       - name: Run Mypy
-        run: |
-          if [[ "${{ matrix.python-version }}" == "3.9" ]]; then
-            nix develop --command uv run mypy stackone_ai --exclude stackone_ai/server.py
-          else
-            nix develop --command uv run mypy stackone_ai
-          fi
+        run: nix develop --command just mypy
 
       - name: Run Tests
-        run: nix develop --command uv run pytest
+        run: nix develop --command just test
