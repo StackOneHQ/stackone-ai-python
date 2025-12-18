@@ -358,25 +358,6 @@ For more examples, check out the [examples/](examples/) directory:
 - [CrewAI Integration](examples/crewai_integration.py)
 - [Meta Tools](examples/meta_tools_example.py)
 
-## Migration from `get_tools()` to `fetch_tools()`
-
-If you're upgrading from a previous version that used `get_tools()`, here's how to migrate:
-
-```python
-# Before (deprecated)
-tools = toolset.get_tools("hris_*", account_id="acc-123")
-
-# After
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["acc-123"])
-```
-
-Key differences:
-
-- `fetch_tools()` uses keyword arguments for all filtering
-- `account_id` becomes `account_ids` (list)
-- Filter patterns go in the `actions` parameter (list)
-- `fetch_tools()` requires the MCP extra (`pip install 'stackone-ai[mcp]'`)
-
 ## License
 
 Apache 2.0 License
