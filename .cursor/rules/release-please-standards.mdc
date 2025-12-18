@@ -23,7 +23,7 @@ actions:
          ```
          .release-please-config.json    # Release configuration
          .release-please-manifest.json  # Version tracking
-         .github/workflows/release.yml  # Release workflow
+         .github/workflows/release.yaml  # Release workflow
          ```
 
       2. Commit Message Format:
