@@ -18,9 +18,9 @@ This rule provides guidance on git workflow, commit conventions, and pull reques
 
 1. Create feature branch: `git switch -c feature-name`
 2. Make changes to source files
-3. Run linter: `make lint`
-4. Run tests: `make test`
-5. Fix linting issues: `make lint-fix`
+3. Run linter: `just lint`
+4. Run tests: `just test`
+5. Fix linting issues: `just lint-fix`
 6. Commit with detailed messages
 7. Push and create PR: `gh pr create`
 

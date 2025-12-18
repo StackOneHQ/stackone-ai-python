@@ -28,17 +28,17 @@ StackOne AI SDK is a Python library that provides a unified interface for access
 
 ```bash
 # Setup and installation
-make install           # Install dependencies and pre-commit hooks
+just install           # Install dependencies and pre-commit hooks
 
 # Code quality
-make lint             # Run ruff linting
-make lint-fix         # Auto-fix linting issues
-make mypy             # Run type checking
+just lint             # Run ruff linting
+just lint-fix         # Auto-fix linting issues
+just mypy             # Run type checking
 
 # Testing
-make test             # Run all tests
-make test-tools       # Run tool-specific tests
-make test-examples    # Run example tests
+just test             # Run all tests
+just test-tools       # Run tool-specific tests
+just test-examples    # Run example tests
 ```
 
 ## Code Architecture
