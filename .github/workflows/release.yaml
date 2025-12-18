@@ -30,12 +30,12 @@ jobs:
 
       - name: Update version in __init__.py
         if: ${{ steps.release.outputs.release_created }}
-        run: nix develop --command uv run scripts/update_version.py
+        run: nix develop --command just update-version
 
       - name: Build and publish package
         if: ${{ steps.release.outputs.release_created }}
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          nix develop --command uv build
-          nix develop --command uv publish
+          nix develop --command just build
+          nix develop --command just publish

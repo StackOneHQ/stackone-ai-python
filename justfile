@@ -1,6 +1,6 @@
 # Install dependencies and pre-commit hooks
-install:
-	uv sync --all-extras
+install *extras:
+	uv sync {{ extras }}
 
 # Run ruff linting
 lint:
@@ -33,3 +33,15 @@ typos:
 # Fix typos
 typos-fix:
 	typos --config typos.toml --write-changes .
+
+# Update version in __init__.py
+update-version:
+	uv run scripts/update_version.py
+
+# Build package
+build:
+	uv build
+
+# Publish package to PyPI
+publish:
+	uv publish
