@@ -73,7 +73,7 @@ uv add 'stackone-ai[mcp,examples]'
 ```python
 from stackone_ai import StackOneToolSet
 
-# Initialise with API key
+# Initialize with API key
 toolset = StackOneToolSet()  # Uses STACKONE_API_KEY env var
 # Or explicitly: toolset = StackOneToolSet(api_key="your-api-key")
 
@@ -133,11 +133,11 @@ tools = toolset.fetch_tools(providers=["hibob"])
 
 ## Implicit Feedback (Beta)
 
-The Python SDK can emit implicit behavioural feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
+The Python SDK can emit implicit behavioral feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
 
 ### Automatic configuration
 
-Set `LANGSMITH_API_KEY` in your environment and the SDK will initialise the implicit feedback manager on first tool execution. You can optionally fine-tune behaviour with:
+Set `LANGSMITH_API_KEY` in your environment and the SDK will initialize the implicit feedback manager on first tool execution. You can optionally fine-tune behavior with:
 
 - `STACKONE_IMPLICIT_FEEDBACK_ENABLED` (`true`/`false`, defaults to `true` when an API key is present)
 - `STACKONE_IMPLICIT_FEEDBACK_PROJECT` to pin a LangSmith project name
@@ -187,7 +187,7 @@ StackOne tools work seamlessly with LangChain, enabling powerful AI agent workfl
 from langchain_openai import ChatOpenAI
 from stackone_ai import StackOneToolSet
 
-# Initialise StackOne tools
+# Initialize StackOne tools
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
 
@@ -282,7 +282,7 @@ langchain_tools = tools.to_langchain()
 # Create CrewAI agent with StackOne tools
 agent = Agent(
     role="HR Manager",
-    goal="Analyse employee data and generate insights",
+    goal="Analyze employee data and generate insights",
     backstory="Expert in HR analytics and employee management",
     tools=langchain_tools,
     llm="gpt-4o-mini"

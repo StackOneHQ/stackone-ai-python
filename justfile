@@ -29,3 +29,7 @@ mypy:
 # Run typos spell checker
 typos:
 	typos .
+
+# Fix typos
+typos-fix:
+	typos --write-changes .
