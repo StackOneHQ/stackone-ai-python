@@ -1,6 +1,6 @@
 # Install dependencies and pre-commit hooks
-install:
-	uv sync --all-extras
+install *extras:
+	uv sync {{ extras }}
 
 # Run ruff linting
 lint:
