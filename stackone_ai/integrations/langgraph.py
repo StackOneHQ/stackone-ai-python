@@ -7,7 +7,7 @@ Usage:
     from stackone_ai.integrations.langgraph import to_tool_node
 
     toolset = StackOneToolSet()
-    tools = toolset.get_tools("hris_*", account_id="...")
+    tools = toolset.fetch_tools(actions=["hibob_*"], account_ids=["..."])
     node = to_tool_node(tools)  # langgraph.prebuilt.ToolNode
 """
 
