@@ -35,8 +35,3 @@ docs-serve:
 docs-build:
 	uv run scripts/build_docs.py
 	uv run mkdocs build
-
-# Run MCP server inspector for debugging
-mcp-inspector:
-	uv sync --all-extras
-	npx @modelcontextprotocol/inspector stackmcp
