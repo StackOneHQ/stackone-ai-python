@@ -24,7 +24,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Requirements
 
-- Python 3.10+ (MCP extra required for `fetch_tools()`)
+- Python 3.9+ (Python 3.10+ required for MCP-backed `fetch_tools()`)
 
 ## Installation
 

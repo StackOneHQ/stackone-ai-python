@@ -33,9 +33,6 @@ make test-examples    # Run example tests
 # Documentation
 make docs-serve       # Build and serve docs locally (http://localhost:8000)
 make docs-build       # Build docs for deployment
-
-# MCP Development
-make mcp-inspector    # Run MCP server inspector for debugging
 ```
 
 ## Code Architecture
@@ -56,10 +53,6 @@ make mcp-inspector    # Run MCP server inspector for debugging
    - Converts OpenAPI specs to tool definitions
    - Handles file upload detection (`format: binary` → `type: file`)
    - Resolves schema references
-
-4. **MCP Server** (`stackone_ai/server.py`): Protocol implementation
-   - Async tool execution
-   - CLI interface via `stackmcp` command
 
 ### OpenAPI Specifications
 
