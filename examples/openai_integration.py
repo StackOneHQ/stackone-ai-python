@@ -36,9 +36,9 @@ def openai_integration() -> None:
     # Filter tools to only the ones we need to avoid context window limits
     tools = toolset.fetch_tools(
         actions=[
-            "hris_get_employee",
-            "hris_list_employee_employments",
-            "hris_get_employee_employment",
+            "hibob_get_employee",
+            "hibob_list_employee_employments",
+            "hibob_get_employee_employment",
         ],
         account_ids=[account_id],
     )
