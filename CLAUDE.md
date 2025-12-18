@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **no-relative-imports**      | `**/*.py`           | Enforce absolute imports in Python files           |
 | **package-installation**     | `**/pyproject.toml` | UV package management standards                    |
 | **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
-| **examples-standards**       | `examples/**/*`     | Example requirements and organisation              |
+| **examples-standards**       | `examples/**/*`     | Example requirements and organization              |
 
 ## Project Overview
 
@@ -33,7 +33,7 @@ just install           # Install dependencies and pre-commit hooks
 # Code quality
 just lint             # Run ruff linting
 just lint-fix         # Auto-fix linting issues
-just mypy             # Run type checking
+just ty               # Run type checking
 
 # Testing
 just test             # Run all tests
@@ -88,7 +88,7 @@ toolset = StackOneToolSet(
 ### Type Safety
 
 - Full type annotations required (Python 3.11+)
-- Strict mypy configuration
+- Strict ty configuration
 - Use generics for better IDE support
 
 ### Testing
@@ -100,7 +100,7 @@ toolset = StackOneToolSet(
 ## Important Considerations
 
 1. **Dependencies**: See `package-installation` rule for uv dependency management
-2. **Pre-commit**: Hooks configured for ruff and mypy - run on all commits
+2. **Pre-commit**: Hooks configured for ruff and ty - run on all commits
 3. **Python Version**: Requires Python >=3.11
 4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
 5. **File Uploads**: Binary parameters auto-detected from OpenAPI specs
@@ -114,7 +114,7 @@ toolset = StackOneToolSet(
 2. Parser automatically converts to tool definitions
 3. Test with `make test-tools`
 
-### Modifying Tool Behaviour
+### Modifying Tool Behavior
 
 - Core execution logic in `StackOneTool.execute()` method
 - HTTP configuration via `ExecuteConfig` class

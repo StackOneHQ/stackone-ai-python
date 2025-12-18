@@ -60,16 +60,16 @@
 
           # Git hooks configuration
           pre-commit = {
-            check.enable = false; # Skip check in flake (mypy needs Python env)
+            check.enable = false; # Skip check in flake (ty needs Python env)
             settings.hooks = {
               treefmt = {
                 enable = true;
                 package = config.treefmt.build.wrapper;
               };
-              mypy = {
+              ty = {
                 enable = true;
-                name = "mypy";
-                entry = "${pkgs.uv}/bin/uv run mypy";
+                name = "ty";
+                entry = "${pkgs.uv}/bin/uv run ty check";
                 files = "^stackone_ai/";
                 language = "system";
                 types = [ "python" ];

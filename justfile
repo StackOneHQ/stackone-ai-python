@@ -23,8 +23,8 @@ test-examples:
 	uv run pytest examples
 
 # Run type checking
-mypy:
-	uv run mypy stackone_ai
+ty:
+	uv run ty check stackone_ai
 
 # Run typos spell checker
 typos:
