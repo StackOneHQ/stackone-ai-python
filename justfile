@@ -25,3 +25,7 @@ test-examples:
 # Run type checking
 mypy:
 	uv run mypy stackone_ai
+
+# Run typos spell checker
+typos:
+	typos .
