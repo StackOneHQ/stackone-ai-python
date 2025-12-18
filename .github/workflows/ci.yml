@@ -24,7 +24,7 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Run Typo Check
-        run: nix develop --command typos .
+        run: nix develop --command just typos
 
   ci:
     runs-on: ubuntu-latest
