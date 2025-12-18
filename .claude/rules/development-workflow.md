@@ -48,7 +48,7 @@ just test-examples # Run example tests
 - Use `.yaml` extension instead of `.yml` for YAML files
 - Keep file names concise but meaningful
 
-## Import Organisation
+## Import Organization
 
 - Standard library imports first
 - Third-party imports second
