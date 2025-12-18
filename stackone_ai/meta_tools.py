@@ -86,7 +86,7 @@ class ToolIndex:
 
         # Create BM25 index
         self.bm25_retriever = bm25s.BM25()
-        corpus_tokens = bm25s.tokenize(corpus, stemmer=None, show_progress=False)
+        corpus_tokens = bm25s.tokenize(corpus, stemmer=None, show_progress=False)  # ty: ignore[invalid-argument-type]
         self.bm25_retriever.index(corpus_tokens)
 
         # Create TF-IDF index
@@ -108,7 +108,7 @@ class ToolIndex:
         fetch_limit = max(50, limit)
 
         # Tokenize query for BM25
-        query_tokens = bm25s.tokenize([query], stemmer=None, show_progress=False)
+        query_tokens = bm25s.tokenize([query], stemmer=None, show_progress=False)  # ty: ignore[invalid-argument-type]
 
         # Search with BM25
         bm25_results, bm25_scores = self.bm25_retriever.retrieve(

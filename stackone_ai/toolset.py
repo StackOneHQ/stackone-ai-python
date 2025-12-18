@@ -97,9 +97,9 @@ def _build_auth_header(api_key: str) -> str:
 
 def _fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
     try:
-        from mcp import types as mcp_types
-        from mcp.client.session import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
+        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
+        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+        from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ToolsetConfigError(
             "MCP dependencies are required for fetch_tools. Install with 'pip install \"stackone-ai[mcp]\"'."

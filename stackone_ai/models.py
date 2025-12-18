@@ -426,7 +426,7 @@ class StackOneTool(BaseModel):
         class StackOneLangChainTool(BaseTool):
             name: str = parent_tool.name
             description: str = parent_tool.description
-            args_schema: type[BaseModel] = schema_class
+            args_schema: type[BaseModel] = schema_class  # ty: ignore[invalid-assignment]
             func = staticmethod(parent_tool.execute)  # Required by CrewAI
 
             def _run(self, **kwargs: Any) -> Any:
