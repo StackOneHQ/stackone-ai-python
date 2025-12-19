@@ -1,6 +1,6 @@
 """
 Example demonstrating file upload functionality using StackOne.
-Shows how to upload an employee document using an HRIS integration.
+Shows how to upload an employee document using a BambooHR integration.
 
 This example is runnable with the following command:
 ```bash
@@ -24,7 +24,7 @@ employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 """
 # Resume content
 
-This is a sample resume content that will be uploaded using the `hibob_upload_employee_document` tool.
+This is a sample resume content that will be uploaded using the `bamboohr_upload_employee_document` tool.
 """
 
 resume_content = """
@@ -46,7 +46,7 @@ resume_content = """
 """
 # Upload employee document
 
-This function uploads a resume using the `hibob_upload_employee_document` tool.
+This function uploads a resume using the `bamboohr_upload_employee_document` tool.
 
 """
 
@@ -57,9 +57,9 @@ def upload_employee_document() -> None:
         resume_file.write_text(resume_content)
 
         toolset = StackOneToolSet()
-        tools = toolset.fetch_tools(actions=["hibob_*"], account_ids=[account_id])
+        tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=[account_id])
 
-        upload_tool = tools.get_tool("hibob_upload_employee_document")
+        upload_tool = tools.get_tool("bamboohr_upload_employee_document")
         assert upload_tool is not None
 
         with open(resume_file, "rb") as f:

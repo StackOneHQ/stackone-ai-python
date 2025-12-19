@@ -19,14 +19,14 @@ def stackone_account_ids():
     """
     Set the account ID whilst getting tools using fetch_tools().
     """
-    tools = toolset.fetch_tools(actions=["hibob_*"], account_ids=["test_id"])
+    tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["test_id"])
 
     """
     You can override the account ID on fetched tools.
     """
     tools.set_account_id("a_different_id")
 
-    employee_tool = tools.get_tool("hibob_get_employee")
+    employee_tool = tools.get_tool("bamboohr_get_employee")
     assert employee_tool is not None
 
     """

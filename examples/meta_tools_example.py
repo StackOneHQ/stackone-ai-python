@@ -24,8 +24,8 @@ def example_meta_tools_basic():
     toolset = StackOneToolSet()
 
     # Get all available tools using MCP-backed fetch_tools()
-    all_tools = toolset.fetch_tools(actions=["hibob_*"])
-    print(f"Total HiBob tools available: {len(all_tools)}")
+    all_tools = toolset.fetch_tools(actions=["bamboohr_*"])
+    print(f"Total BambooHR tools available: {len(all_tools)}")
 
     # Get meta tools for dynamic discovery
     meta_tools = all_tools.meta_tools()
@@ -93,9 +93,9 @@ def example_with_openai():
         # Initialize StackOne toolset
         toolset = StackOneToolSet()
 
-        # Get HiBob tools and their meta tools using MCP-backed fetch_tools()
-        hibob_tools = toolset.fetch_tools(actions=["hibob_*"])
-        meta_tools = hibob_tools.meta_tools()
+        # Get BambooHR tools and their meta tools using MCP-backed fetch_tools()
+        bamboohr_tools = toolset.fetch_tools(actions=["bamboohr_*"])
+        meta_tools = bamboohr_tools.meta_tools()
 
         # Convert to OpenAI format
         openai_tools = meta_tools.to_openai()
@@ -142,7 +142,7 @@ def example_with_langchain():
         toolset = StackOneToolSet()
 
         # Get tools and convert to LangChain format using MCP-backed fetch_tools()
-        tools = toolset.fetch_tools(actions=["hibob_list_*"])
+        tools = toolset.fetch_tools(actions=["bamboohr_list_*"])
         langchain_tools = tools.to_langchain()
 
         # Get meta tools as well

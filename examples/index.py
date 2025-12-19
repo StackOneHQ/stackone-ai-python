@@ -72,11 +72,11 @@ from stackone_ai import StackOneToolSet
 def quickstart():
     toolset = StackOneToolSet()
 
-    # Get all HiBob-related tools using MCP-backed fetch_tools()
-    tools = toolset.fetch_tools(actions=["hibob_*"], account_ids=[account_id])
+    # Get all BambooHR-related tools using MCP-backed fetch_tools()
+    tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=[account_id])
 
     # Use a specific tool
-    employee_tool = tools.get_tool("hibob_list_employees")
+    employee_tool = tools.get_tool("bamboohr_list_employees")
     assert employee_tool is not None
 
     employees = employee_tool.execute()
