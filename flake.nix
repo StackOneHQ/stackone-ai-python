@@ -84,6 +84,7 @@
               nixfmt-rfc-style
               typos
               typos-lsp
+              basedpyright
             ];
 
             shellHook = ''
