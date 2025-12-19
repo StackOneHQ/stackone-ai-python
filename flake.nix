@@ -54,6 +54,7 @@
                   "CHANGELOG.md"
                 ];
               };
+              typos.enable = true;
             };
           };
 
@@ -81,6 +82,8 @@
               uv
               just
               nixfmt-rfc-style
+              typos
+              typos-lsp
             ];
 
             shellHook = ''

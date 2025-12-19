@@ -14,6 +14,18 @@ permissions:
   contents: read
 
 jobs:
+  typos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
+
+      - name: Run Typo Check
+        run: nix develop --command just typos
+
   ci:
     runs-on: ubuntu-latest
     strategy:
@@ -37,18 +49,13 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
-        run: nix develop --command uv sync ${{ matrix.sync-extras }}
+        run: nix develop --command just install ${{ matrix.sync-extras }}
 
       - name: Run Lint
-        run: nix develop --command uv run ruff check .
+        run: nix develop --command just lint
 
       - name: Run Mypy
-        run: |
-          if [[ "${{ matrix.python-version }}" == "3.9" ]]; then
-            nix develop --command uv run mypy stackone_ai --exclude stackone_ai/server.py
-          else
-            nix develop --command uv run mypy stackone_ai
-          fi
+        run: nix develop --command just mypy
 
       - name: Run Tests
-        run: nix develop --command uv run pytest
+        run: nix develop --command just test
