@@ -200,6 +200,8 @@ class TestFeedbackToolExecution:
 
         error_result = next(r for r in result["results"] if r["account_id"] == "acc_unauthorized")
         assert error_result["status"] == "error"
+        assert "error" in error_result
+        assert "401" in error_result["error"]
 
     def test_tool_integration(self) -> None:
         """Test that feedback tool integrates properly with toolset."""

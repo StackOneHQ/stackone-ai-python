@@ -255,7 +255,6 @@ class StackOneTool(BaseModel):
             raise ValueError(error_message) from exc
         except httpx.HTTPStatusError as exc:
             status = "error"
-            error_message = str(exc)
             response_body = None
             if exc.response.text:
                 try:
@@ -269,7 +268,6 @@ class StackOneTool(BaseModel):
             ) from exc
         except httpx.RequestError as exc:
             status = "error"
-            error_message = str(exc)
             raise StackOneError(f"Request failed: {exc}") from exc
         finally:
             datetime.now(timezone.utc)
