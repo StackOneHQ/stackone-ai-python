@@ -2,13 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Cursor Rules
+## Rules and Skills Structure
 
-- @./.cursor/rules/package-installation
-- @./.cursor/rules/no-relative-imports
-- @./.cursor/rules/uv-scripts
-- @./.cursor/rules/release-please-standards
-- @./.cursor/rules/examples-standards
+- **Rules** (`.claude/rules/`): Automatically loaded based on file paths. Source of truth for project conventions.
+- **Skills** (`.claude/skills/`): Manually invoked for specific integrations.
+- **Cursor rules** (`.cursor/rules/`): Symlinks to `.claude/rules/` for consistency.
+
+## Available Rules
+
+| Rule                         | Applies To          | Description                                        |
+| ---------------------------- | ------------------- | -------------------------------------------------- |
+| **git-workflow**             | All files           | Commit conventions, branch strategy, PR guidelines |
+| **development-workflow**     | All files           | Code style, file naming, project conventions       |
+| **release-please-standards** | All files           | Release versioning with release-please             |
+| **no-relative-imports**      | `**/*.py`           | Enforce absolute imports in Python files           |
+| **package-installation**     | `**/pyproject.toml` | UV package management standards                    |
+| **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
+| **examples-standards**       | `examples/**/*`     | Example requirements and organization              |
 
 ## Project Overview
 
@@ -18,17 +28,17 @@ StackOne AI SDK is a Python library that provides a unified interface for access
 
 ```bash
 # Setup and installation
-make install           # Install dependencies and pre-commit hooks
+just install           # Install dependencies and pre-commit hooks
 
 # Code quality
-make lint             # Run ruff linting
-make lint-fix         # Auto-fix linting issues
-make mypy             # Run type checking
+just lint             # Run ruff linting
+just lint-fix         # Auto-fix linting issues
+just mypy             # Run type checking
 
 # Testing
-make test             # Run all tests
-make test-tools       # Run tool-specific tests
-make test-examples    # Run example tests
+just test             # Run all tests
+just test-tools       # Run tool-specific tests
+just test-examples    # Run example tests
 ```
 
 ## Code Architecture
@@ -85,11 +95,11 @@ toolset = StackOneToolSet(
 
 - Snapshot testing for tool parsing (`tests/snapshots/`)
 - Async tests use `pytest-asyncio`
-- Example validation: See @./.cursor/rules/examples-standards
+- See `examples-standards` rule for example validation
 
 ## Important Considerations
 
-1. **Dependencies**: See @./.cursor/rules/package-installation for uv dependency management
+1. **Dependencies**: See `package-installation` rule for uv dependency management
 2. **Pre-commit**: Hooks configured for ruff and mypy - run on all commits
 3. **Python Version**: Requires Python >=3.11
 4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
