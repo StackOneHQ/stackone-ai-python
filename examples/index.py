@@ -1,5 +1,5 @@
 """
-StackOne AI SDK provides an AI-friendly interface for accessing various SaaS tools through the StackOne Unified API.
+StackOne AI SDK provides an AI-friendly interface for accessing various SaaS tools through the StackOne API.
 
 This SDK is available on [PyPI](https://pypi.org/project/stackone-ai/) for python projects. There is a node version in the works.
 
@@ -72,11 +72,11 @@ from stackone_ai import StackOneToolSet
 def quickstart():
     toolset = StackOneToolSet()
 
-    # Get all HRIS-related tools using MCP-backed fetch_tools()
-    tools = toolset.fetch_tools(actions=["hris_*"], account_ids=[account_id])
+    # Get all BambooHR-related tools using MCP-backed fetch_tools()
+    tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=[account_id])
 
     # Use a specific tool
-    employee_tool = tools.get_tool("hris_list_employees")
+    employee_tool = tools.get_tool("bamboohr_list_employees")
     assert employee_tool is not None
 
     employees = employee_tool.execute()
