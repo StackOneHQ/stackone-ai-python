@@ -34,6 +34,10 @@ mypy:
 typos:
 	typos --config typos.toml .
 
+# Run gitleaks secret detection
+gitleaks:
+	gitleaks detect --source . --config .gitleaks.toml
+
 # Fix typos
 typos-fix:
 	typos --config typos.toml --write-changes .
