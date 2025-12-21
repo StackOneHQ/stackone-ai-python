@@ -2,6 +2,7 @@
 
 [![PyPI version](https://badge.fury.io/py/stackone-ai.svg)](https://badge.fury.io/py/stackone-ai)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/StackOneHQ/stackone-ai-python)](https://github.com/StackOneHQ/stackone-ai-python/releases)
+[![Coverage](https://stackonehq.github.io/stackone-ai-python/badges.svg)](https://stackonehq.github.io/stackone-ai-python/html/)
 
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
@@ -357,25 +358,6 @@ For more examples, check out the [examples/](examples/) directory:
 - [LangChain Integration](examples/langchain_integration.py)
 - [CrewAI Integration](examples/crewai_integration.py)
 - [Meta Tools](examples/meta_tools_example.py)
-
-## Migration from `get_tools()` to `fetch_tools()`
-
-If you're upgrading from a previous version that used `get_tools()`, here's how to migrate:
-
-```python
-# Before (deprecated)
-tools = toolset.get_tools("hris_*", account_id="acc-123")
-
-# After
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["acc-123"])
-```
-
-Key differences:
-
-- `fetch_tools()` uses keyword arguments for all filtering
-- `account_id` becomes `account_ids` (list)
-- Filter patterns go in the `actions` parameter (list)
-- `fetch_tools()` requires the MCP extra (`pip install 'stackone-ai[mcp]'`)
 
 ## License
 

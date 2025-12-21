@@ -44,9 +44,9 @@ class TestTokenize:
 
     def test_underscore_preservation(self):
         """Test that underscores are preserved"""
-        text = "hris_list_employees"
+        text = "hibob_list_employees"
         tokens = tokenize(text)
-        assert "hris_list_employees" in tokens
+        assert "hibob_list_employees" in tokens
 
     def test_empty_string(self):
         """Test tokenization of empty string"""
@@ -279,17 +279,17 @@ class TestTfidfIntegration:
         """Test matching tool names"""
         index = TfidfIndex()
         docs = [
-            TfidfDocument(id="hris_create_employee", text="create employee hris system"),
-            TfidfDocument(id="hris_list_employees", text="list employees hris system"),
-            TfidfDocument(id="ats_create_candidate", text="create candidate ats system"),
-            TfidfDocument(id="crm_list_contacts", text="list contacts crm system"),
+            TfidfDocument(id="hibob_create_employee", text="create employee hibob system"),
+            TfidfDocument(id="hibob_list_employees", text="list employees hibob system"),
+            TfidfDocument(id="bamboohr_create_candidate", text="create candidate bamboohr system"),
+            TfidfDocument(id="workday_list_contacts", text="list contacts workday system"),
         ]
         index.build(docs)
 
-        # Search for HRIS tools
-        results = index.search("employee hris", k=5)
+        # Search for HiBob tools
+        results = index.search("employee hibob", k=5)
         top_ids = [r.id for r in results[:2]]
-        assert "hris_create_employee" in top_ids or "hris_list_employees" in top_ids
+        assert "hibob_create_employee" in top_ids or "hibob_list_employees" in top_ids
 
         # Search for create operations
         results = index.search("create", k=5)

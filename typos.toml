@@ -8,7 +8,9 @@ extend-ignore-re = [
 ]
 
 [files]
+ignore-hidden = false
 extend-exclude = [
+  ".git",
   ".venv",
   "uv.lock",
   "CHANGELOG.md",

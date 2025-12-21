@@ -94,3 +94,26 @@ select = [
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
 ]
+
+[tool.coverage.run]
+source = ["stackone_ai"]
+branch = true
+omit = [
+    "stackone_ai/__init__.py",
+    "**/py.typed",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+]
+
+[tool.coverage.json]
+output = "coverage/coverage.json"
+
+[tool.coverage.html]
+directory = "coverage/html"

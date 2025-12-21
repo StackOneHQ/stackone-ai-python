@@ -14,6 +14,10 @@ lint-fix:
 test:
 	uv run pytest
 
+# Run tests with coverage
+coverage:
+	uv run pytest --cov --cov-report=term --cov-report=json --cov-report=html
+
 # Run tool-specific tests
 test-tools:
 	uv run pytest tests
