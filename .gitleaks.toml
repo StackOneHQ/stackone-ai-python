@@ -8,4 +8,7 @@ useDefault = true
 description = "Global allowlist"
 paths = [
     '''uv\.lock$''',
+    '''venv/''',
+    '''\.venv/''',
+    '''\.ruff_cache/''',
 ]
