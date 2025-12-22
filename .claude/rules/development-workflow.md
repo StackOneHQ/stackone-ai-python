@@ -18,15 +18,15 @@ This rule provides code style guidelines and project conventions for the StackOn
 
 - Full type annotations required for all public APIs
 - Use Python 3.11+ typing features
-- Run `just mypy` to verify type correctness
-- Strict mypy configuration is enforced
+- Run `just ty` to verify type correctness
+- Strict ty configuration is enforced
 
 ## Pre-commit Hooks
 
 Pre-commit hooks are configured for:
 
 - ruff linting
-- mypy type checking
+- ty type checking
 
 Run `just install` to set up hooks.
 
@@ -36,7 +36,7 @@ Run `just install` to set up hooks.
 just install       # Install dependencies and pre-commit hooks
 just lint          # Run ruff linting
 just lint-fix      # Auto-fix linting issues
-just mypy          # Run type checking
+just ty            # Run type checking
 just test          # Run all tests
 just test-tools    # Run tool-specific tests
 just test-examples # Run example tests

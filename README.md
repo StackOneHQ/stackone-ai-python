@@ -2,6 +2,7 @@
 
 [![PyPI version](https://badge.fury.io/py/stackone-ai.svg)](https://badge.fury.io/py/stackone-ai)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/StackOneHQ/stackone-ai-python)](https://github.com/StackOneHQ/stackone-ai-python/releases)
+[![Coverage](https://stackonehq.github.io/stackone-ai-python/badges.svg)](https://stackonehq.github.io/stackone-ai-python/html/)
 
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
@@ -47,7 +48,7 @@ The Nix development environment includes:
 
 - Python with uv package manager
 - Automatic dependency installation
-- Git hooks (treefmt + mypy) auto-configured
+- Git hooks (treefmt + ty) auto-configured
 - Consistent environment across all platforms
 
 ### Using pip/uv

@@ -7,31 +7,23 @@ Usage:
     from stackone_ai.integrations.langgraph import to_tool_node
 
     toolset = StackOneToolSet()
-    tools = toolset.get_tools("hris_*", account_id="...")
+    tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["..."])
     node = to_tool_node(tools)  # langgraph.prebuilt.ToolNode
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from langchain_core.tools import BaseTool
 
 from stackone_ai.models import Tools
 
-if TYPE_CHECKING:  # pragma: no cover - only for typing
-    try:
-        from langgraph.prebuilt import ToolNode
-    except Exception:  # pragma: no cover
-
-        class ToolNode:  # type: ignore[no-redef]
-            pass
-
 
 def _ensure_langgraph() -> None:
     try:
-        from langgraph import prebuilt as _  # noqa: F401
+        from langgraph import prebuilt as _  # noqa: F401  # ty: ignore[unresolved-import]
     except Exception as e:  # pragma: no cover
         raise ImportError(
             "LangGraph is not installed. Install with `pip install langgraph` or "
@@ -53,7 +45,7 @@ def to_tool_node(tools: Tools | Sequence[BaseTool], **kwargs: Any) -> Any:
     for inclusion in a graph.
     """
     _ensure_langgraph()
-    from langgraph.prebuilt import ToolNode  # local import with helpful error
+    from langgraph.prebuilt import ToolNode  # ty: ignore[unresolved-import]
 
     langchain_tools = _to_langchain_tools(tools)
     return ToolNode(langchain_tools, **kwargs)
@@ -66,7 +58,7 @@ def to_tool_executor(tools: Tools | Sequence[BaseTool], **kwargs: Any) -> Any:
     This function now returns a ToolNode for compatibility.
     """
     _ensure_langgraph()
-    from langgraph.prebuilt import ToolNode  # local import with helpful error
+    from langgraph.prebuilt import ToolNode  # ty: ignore[unresolved-import]
 
     langchain_tools = _to_langchain_tools(tools)
     return ToolNode(langchain_tools, **kwargs)
@@ -89,6 +81,6 @@ def create_react_agent(llm: Any, tools: Tools | Sequence[BaseTool], **kwargs: An
     `Tools` collection from this SDK.
     """
     _ensure_langgraph()
-    from langgraph.prebuilt import create_react_agent as _create
+    from langgraph.prebuilt import create_react_agent as _create  # ty: ignore[unresolved-import]
 
     return _create(llm, _to_langchain_tools(tools), **kwargs)

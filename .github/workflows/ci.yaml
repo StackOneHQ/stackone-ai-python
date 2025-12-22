@@ -12,8 +12,24 @@ concurrency:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
+
+      - name: Run Gitleaks
+        run: nix develop --command just gitleaks
+
   typos:
     runs-on: ubuntu-latest
     steps:
@@ -54,8 +70,51 @@ jobs:
       - name: Run Lint
         run: nix develop --command just lint
 
-      - name: Run Mypy
-        run: nix develop --command just mypy
+      - name: Run Ty
+        run: nix develop --command just ty
 
       - name: Run Tests
         run: nix develop --command just test
+
+  coverage:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      STACKONE_API_KEY: ${{ secrets.STACKONE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
+
+      - name: Install dependencies
+        run: nix develop --command just install --all-extras
+
+      - name: Run Tests with Coverage
+        run: nix develop --command just coverage
+
+      - name: Create Coverage Badge
+        uses: jaywcjlove/coverage-badges-cli@bd6ccbf422c0ed54c01f283019fd2bc648f58541 # v2.2.0
+        with:
+          source: coverage/coverage.json
+          output: coverage/badges.svg
+          jsonPath: totals.percent_covered
+
+      - name: Upload coverage artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v3.0.2
+        with:
+          path: coverage/
+
+  deploy-coverage:
+    needs: coverage
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

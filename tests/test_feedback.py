@@ -240,7 +240,7 @@ def test_live_feedback_submission() -> None:
         {
             "feedback": f"CI live test feedback {feedback_token}",
             "account_id": f"acc-ci-{feedback_token}",
-            "tool_names": ["hris_list_employees"],
+            "tool_names": ["hibob_list_employees"],
         }
     )
 

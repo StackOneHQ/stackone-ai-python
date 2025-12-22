@@ -18,7 +18,7 @@ employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 def crewai_integration():
     toolset = StackOneToolSet()
-    tools = toolset.fetch_tools(actions=["hris_*"], account_ids=[account_id])
+    tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=[account_id])
 
     # CrewAI uses LangChain tools natively
     langchain_tools = tools.to_langchain()

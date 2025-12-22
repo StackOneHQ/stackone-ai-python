@@ -60,16 +60,23 @@
 
           # Git hooks configuration
           pre-commit = {
-            check.enable = false; # Skip check in flake (mypy needs Python env)
+            check.enable = false; # Skip check in flake (ty needs Python env)
             settings.hooks = {
+              gitleaks = {
+                enable = true;
+                name = "gitleaks";
+                entry = "${pkgs.gitleaks}/bin/gitleaks protect --staged --config .gitleaks.toml";
+                language = "system";
+                pass_filenames = false;
+              };
               treefmt = {
                 enable = true;
                 package = config.treefmt.build.wrapper;
               };
-              mypy = {
+              ty = {
                 enable = true;
-                name = "mypy";
-                entry = "${pkgs.uv}/bin/uv run mypy";
+                name = "ty";
+                entry = "${pkgs.uv}/bin/uv run ty check";
                 files = "^stackone_ai/";
                 language = "system";
                 types = [ "python" ];
@@ -84,6 +91,10 @@
               nixfmt-rfc-style
               typos
               typos-lsp
+              basedpyright
+
+              # security
+              gitleaks
             ];
 
             shellHook = ''
