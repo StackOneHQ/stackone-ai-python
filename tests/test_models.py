@@ -1,15 +1,21 @@
 from collections.abc import Sequence
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from langchain_core.tools import BaseTool as LangChainBaseTool
+from pydantic import ValidationError
 
 from stackone_ai.models import (
     ExecuteConfig,
+    ParameterLocation,
+    StackOneAPIError,
+    StackOneError,
     StackOneTool,
     ToolDefinition,
     ToolParameters,
     Tools,
+    validate_method,
 )
 
 
@@ -192,3 +198,536 @@ def test_to_langchain_multiple_tools(mock_tool):
     assert set(langchain_tools[1].args_schema.__annotations__.keys()) == set(
         second_tool.parameters.properties.keys()
     )
+
+
+class TestValidateMethod:
+    """Test validate_method function"""
+
+    def test_valid_methods(self):
+        """Test valid HTTP methods"""
+        assert validate_method("get") == "GET"
+        assert validate_method("POST") == "POST"
+        assert validate_method("put") == "PUT"
+        assert validate_method("DELETE") == "DELETE"
+        assert validate_method("patch") == "PATCH"
+
+    def test_unsupported_method(self):
+        """Test unsupported HTTP method raises ValueError"""
+        with pytest.raises(ValueError, match="Unsupported HTTP method"):
+            validate_method("OPTIONS")
+
+
+class TestExecuteConfig:
+    """Test ExecuteConfig validation"""
+
+    def test_invalid_method_in_config(self):
+        """Test that invalid method in ExecuteConfig raises ValidationError"""
+        with pytest.raises(ValidationError):
+            ExecuteConfig(
+                method="INVALID",
+                url="https://api.example.com",
+                name="test",
+            )
+
+
+class TestStackOneToolExecution:
+    """Test StackOneTool execution edge cases"""
+
+    @pytest.fixture
+    def tool_with_locations(self) -> StackOneTool:
+        """Create a tool with explicit parameter locations"""
+        return StackOneTool(
+            description="Test tool with param locations",
+            parameters=ToolParameters(
+                type="object",
+                properties={
+                    "path_param": {"type": "string"},
+                    "query_param": {"type": "string"},
+                    "body_param": {"type": "string"},
+                },
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="POST",
+                url="https://api.example.com/resource/{path_param}",
+                name="test_tool",
+                parameter_locations={
+                    "path_param": ParameterLocation.PATH,
+                    "query_param": ParameterLocation.QUERY,
+                    "body_param": ParameterLocation.BODY,
+                },
+            ),
+            _api_key="test_key",
+        )
+
+    def test_parameter_location_path(self, tool_with_locations):
+        """Test PATH parameter location handling"""
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"success": True}
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            tool_with_locations.execute(
+                {
+                    "path_param": "test_id",
+                    "query_param": "filter",
+                    "body_param": "data",
+                }
+            )
+
+            call_kwargs = mock_request.call_args[1]
+            assert "resource/test_id" in call_kwargs["url"]
+            assert call_kwargs["params"] == {"query_param": "filter"}
+            assert call_kwargs["json"] == {"body_param": "data"}
+
+    def test_account_id_in_headers(self):
+        """Test account ID is added to headers"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/test",
+                name="test",
+            ),
+            _api_key="test_key",
+            _account_id="acc123",
+        )
+
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {}
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            tool.execute({})
+
+            call_kwargs = mock_request.call_args[1]
+            assert call_kwargs["headers"]["x-account-id"] == "acc123"
+
+    def test_invalid_json_arguments(self, mock_tool):
+        """Test invalid JSON string raises ValueError"""
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            mock_tool.execute("not valid json")
+
+    def test_non_dict_arguments(self, mock_tool):
+        """Test non-dict JSON raises ValueError"""
+        with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
+            mock_tool.execute("[1, 2, 3]")
+
+    def test_form_body_type(self):
+        """Test form body type handling"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={"field": {"type": "string"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="POST",
+                url="https://api.example.com/test",
+                name="test",
+                body_type="form",
+            ),
+            _api_key="test_key",
+        )
+
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {}
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            tool.execute({"field": "value"})
+
+            call_kwargs = mock_request.call_args[1]
+            assert call_kwargs["data"] == {"field": "value"}
+            assert "json" not in call_kwargs
+
+    def test_http_status_error_with_json_body(self, mock_tool):
+        """Test HTTP error with JSON response body"""
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.status_code = 400
+            mock_response.text = '{"error": "Bad request"}'
+            mock_response.json.return_value = {"error": "Bad request"}
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "Bad Request",
+                request=MagicMock(),
+                response=mock_response,
+            )
+            mock_request.return_value = mock_response
+
+            with pytest.raises(StackOneAPIError) as exc_info:
+                mock_tool.execute({"id": "123"})
+
+            assert exc_info.value.status_code == 400
+            assert exc_info.value.response_body == {"error": "Bad request"}
+
+    def test_http_status_error_with_text_body(self, mock_tool):
+        """Test HTTP error with plain text response body"""
+        import json as json_module
+
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.status_code = 500
+            mock_response.text = "Internal Server Error"
+            mock_response.json.side_effect = json_module.JSONDecodeError("No JSON", "", 0)
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "Server Error",
+                request=MagicMock(),
+                response=mock_response,
+            )
+            mock_request.return_value = mock_response
+
+            with pytest.raises(StackOneAPIError) as exc_info:
+                mock_tool.execute({"id": "123"})
+
+            assert exc_info.value.status_code == 500
+            assert exc_info.value.response_body == "Internal Server Error"
+
+    def test_request_error(self, mock_tool):
+        """Test network/request error handling"""
+        with patch("httpx.request") as mock_request:
+            mock_request.side_effect = httpx.RequestError("Connection failed")
+
+            with pytest.raises(StackOneError, match="Request failed"):
+                mock_tool.execute({"id": "123"})
+
+    def test_non_dict_response(self, mock_tool):
+        """Test non-dict JSON response is wrapped"""
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = ["item1", "item2"]
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            result = mock_tool.execute({"id": "123"})
+            assert result == {"result": ["item1", "item2"]}
+
+
+class TestStackOneToolOpenAIConversion:
+    """Test OpenAI function conversion edge cases"""
+
+    def test_enum_property(self):
+        """Test enum property is included in OpenAI format"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "inactive"],
+                        "description": "Status",
+                    }
+                },
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        openai_format = tool.to_openai_function()
+        props = openai_format["function"]["parameters"]["properties"]
+        assert props["status"]["enum"] == ["active", "inactive"]
+
+    def test_array_type_property(self):
+        """Test array type with items is converted"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string", "description": "Tag"},
+                    }
+                },
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        openai_format = tool.to_openai_function()
+        props = openai_format["function"]["parameters"]["properties"]
+        assert props["tags"]["type"] == "array"
+        assert props["tags"]["items"]["type"] == "string"
+
+    def test_object_type_property(self):
+        """Test object type with nested properties is converted"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={
+                    "address": {
+                        "type": "object",
+                        "properties": {
+                            "street": {"type": "string"},
+                            "city": {"type": "string"},
+                        },
+                    }
+                },
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        openai_format = tool.to_openai_function()
+        props = openai_format["function"]["parameters"]["properties"]
+        assert props["address"]["type"] == "object"
+        assert "street" in props["address"]["properties"]
+
+    def test_non_dict_property(self):
+        """Test non-dict property is converted to string type"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={
+                    "simple": "string",  # non-dict property
+                },
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        openai_format = tool.to_openai_function()
+        props = openai_format["function"]["parameters"]["properties"]
+        assert props["simple"]["type"] == "string"
+
+
+class TestStackOneToolLangChainConversion:
+    """Test LangChain conversion edge cases"""
+
+    def test_number_type_conversion(self):
+        """Test number type is converted to float"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={"amount": {"type": "number", "description": "Amount"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        lc_tool = tool.to_langchain()
+        assert lc_tool.args_schema.__annotations__["amount"] is float
+
+    def test_integer_type_conversion(self):
+        """Test integer type is converted to int"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={"count": {"type": "integer", "description": "Count"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        lc_tool = tool.to_langchain()
+        assert lc_tool.args_schema.__annotations__["count"] is int
+
+    def test_boolean_type_conversion(self):
+        """Test boolean type is converted to bool"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={"active": {"type": "boolean", "description": "Active"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        lc_tool = tool.to_langchain()
+        assert lc_tool.args_schema.__annotations__["active"] is bool
+
+    def test_non_dict_property_conversion(self):
+        """Test non-dict property defaults to str"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={"field": "simple_string"},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        lc_tool = tool.to_langchain()
+        assert lc_tool.args_schema.__annotations__["field"] is str
+
+    @pytest.mark.asyncio
+    async def test_arun_method(self):
+        """Test async _arun method"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(
+                type="object",
+                properties={"id": {"type": "string"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        lc_tool = tool.to_langchain()
+
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"result": "async_test"}
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            result = await lc_tool._arun(id="123")
+            assert result == {"result": "async_test"}
+
+
+class TestStackOneToolAccountId:
+    """Test account ID methods"""
+
+    def test_set_and_get_account_id(self):
+        """Test setting and getting account ID"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        assert tool.get_account_id() is None
+
+        tool.set_account_id("new_account")
+        assert tool.get_account_id() == "new_account"
+
+        tool.set_account_id(None)
+        assert tool.get_account_id() is None
+
+
+class TestToolsContainer:
+    """Test Tools container class"""
+
+    @pytest.fixture
+    def sample_tools(self) -> list[StackOneTool]:
+        """Create sample tools for testing"""
+        tool1 = StackOneTool(
+            description="Tool 1",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/1",
+                name="tool_1",
+            ),
+            _api_key="key",
+            _account_id="acc1",
+        )
+        tool2 = StackOneTool(
+            description="Tool 2",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/2",
+                name="tool_2",
+            ),
+            _api_key="key",
+        )
+        return [tool1, tool2]
+
+    def test_iteration(self, sample_tools):
+        """Test Tools is iterable"""
+        tools = Tools(sample_tools)
+        collected = list(tools)
+        assert len(collected) == 2
+        assert collected[0].name == "tool_1"
+        assert collected[1].name == "tool_2"
+
+    def test_set_account_id_all_tools(self, sample_tools):
+        """Test set_account_id sets for all tools"""
+        tools = Tools(sample_tools)
+        tools.set_account_id("new_account")
+
+        for tool in tools:
+            assert tool.get_account_id() == "new_account"
+
+    def test_get_account_id_returns_first_non_none(self, sample_tools):
+        """Test get_account_id returns first non-None account ID"""
+        tools = Tools(sample_tools)
+        assert tools.get_account_id() == "acc1"
+
+    def test_get_account_id_returns_none_when_all_none(self):
+        """Test get_account_id returns None when all tools have None"""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="key",
+        )
+        tools = Tools([tool])
+        assert tools.get_account_id() is None

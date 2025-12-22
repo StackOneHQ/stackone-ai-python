@@ -253,34 +253,6 @@ class StackOneToolSet:
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
 
-    def _matches_filter(self, tool_name: str, filter_pattern: str | list[str]) -> bool:
-        """Check if a tool name matches the filter pattern
-
-        Args:
-            tool_name: Name of the tool to check
-            filter_pattern: String or list of glob patterns to match against.
-                          Patterns starting with ! are treated as negative matches.
-
-        Returns:
-            True if the tool name matches any positive pattern and no negative patterns,
-            False otherwise
-        """
-        patterns = [filter_pattern] if isinstance(filter_pattern, str) else filter_pattern
-
-        # Split into positive and negative patterns
-        positive_patterns = [p for p in patterns if not p.startswith("!")]
-        negative_patterns = [p[1:] for p in patterns if p.startswith("!")]
-
-        # If no positive patterns, treat as match all
-        matches_positive = (
-            any(fnmatch.fnmatch(tool_name, p) for p in positive_patterns) if positive_patterns else True
-        )
-
-        # If any negative pattern matches, exclude the tool
-        matches_negative = any(fnmatch.fnmatch(tool_name, p) for p in negative_patterns)
-
-        return matches_positive and not matches_negative
-
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
 

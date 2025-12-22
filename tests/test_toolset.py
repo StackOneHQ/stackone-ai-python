@@ -45,31 +45,3 @@ def test_filter_by_action():
     # Test non-matching patterns
     assert not toolset._filter_by_action("workday_list_contacts", ["*_list_employees"])
     assert not toolset._filter_by_action("bamboohr_create_job", ["hibob_*"])
-
-
-def test_matches_filter_positive_patterns():
-    """Test _matches_filter with positive patterns"""
-    toolset = StackOneToolSet(api_key="test_key")
-
-    # Single pattern
-    assert toolset._matches_filter("hibob_list_employees", "hibob_*")
-    assert toolset._matches_filter("bamboohr_create_job", "bamboohr_*")
-    assert not toolset._matches_filter("workday_contacts", "hibob_*")
-
-    # Multiple patterns (OR logic)
-    assert toolset._matches_filter("hibob_list_employees", ["hibob_*", "bamboohr_*"])
-    assert toolset._matches_filter("bamboohr_create_job", ["hibob_*", "bamboohr_*"])
-    assert not toolset._matches_filter("workday_contacts", ["hibob_*", "bamboohr_*"])
-
-
-def test_matches_filter_negative_patterns():
-    """Test _matches_filter with negative patterns (exclusion)"""
-    toolset = StackOneToolSet(api_key="test_key")
-
-    # Negative pattern
-    assert not toolset._matches_filter("hibob_delete_employee", ["hibob_*", "!hibob_delete_*"])
-    assert toolset._matches_filter("hibob_list_employees", ["hibob_*", "!hibob_delete_*"])
-
-    # Only negative patterns (should match everything not excluded)
-    assert not toolset._matches_filter("hibob_delete_employee", "!hibob_delete_*")
-    assert toolset._matches_filter("hibob_list_employees", "!hibob_delete_*")
