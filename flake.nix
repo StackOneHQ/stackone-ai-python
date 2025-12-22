@@ -95,6 +95,11 @@
 
               # security
               gitleaks
+
+              # Node.js for MCP mock server
+              bun
+              pnpm
+              typescript-go
             ];
 
             shellHook = ''
