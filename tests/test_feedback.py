@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import json
 import os
-from unittest.mock import Mock, patch
 
+import httpx
 import pytest
+import respx
 
 from stackone_ai.feedback import create_feedback_tool
 from stackone_ai.models import StackOneError
@@ -55,165 +56,152 @@ class TestFeedbackToolValidation:
         with pytest.raises(StackOneError, match="At least one valid account ID is required"):
             tool.execute({"feedback": "Great tools!", "account_id": ["", "   "], "tool_names": ["test_tool"]})
 
+    @respx.mock
     def test_json_string_input(self) -> None:
         """Test that JSON string input is properly parsed."""
         tool = create_feedback_tool(api_key="test_key")
 
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"message": "Success"}
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
+        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+            return_value=httpx.Response(200, json={"message": "Success"})
+        )
 
-            json_string = json.dumps(
-                {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
-            )
-            result = tool.execute(json_string)
-            assert result["message"] == "Success"
+        json_string = json.dumps(
+            {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
+        )
+        result = tool.execute(json_string)
+        assert result["message"] == "Success"
+        assert route.called
 
 
 class TestFeedbackToolExecution:
     """Test suite for feedback tool execution."""
 
+    @respx.mock
     def test_single_account_execution(self) -> None:
         """Test execution with single account ID."""
         tool = create_feedback_tool(api_key="test_key")
         api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
+        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+            return_value=httpx.Response(200, json=api_response)
+        )
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["data_export", "analytics"],
-                }
-            )
+        result = tool.execute(
+            {
+                "feedback": "Great tools!",
+                "account_id": "acc_123456",
+                "tool_names": ["data_export", "analytics"],
+            }
+        )
 
-            assert result == api_response
-            mock_request.assert_called_once()
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["method"] == "POST"
-            assert call_kwargs["url"] == "https://api.stackone.com/ai/tool-feedback"
-            assert call_kwargs["json"]["feedback"] == "Great tools!"
-            assert call_kwargs["json"]["account_id"] == "acc_123456"
-            assert call_kwargs["json"]["tool_names"] == ["data_export", "analytics"]
+        assert result == api_response
+        assert route.called
+        assert route.call_count == 1
+        request = route.calls[0].request
+        body = json.loads(request.content)
+        assert body["feedback"] == "Great tools!"
+        assert body["account_id"] == "acc_123456"
+        assert body["tool_names"] == ["data_export", "analytics"]
 
+    @respx.mock
     def test_call_method_interface(self) -> None:
         """Test that the .call() method works correctly."""
         tool = create_feedback_tool(api_key="test_key")
         api_response = {"message": "Success", "trace_id": "test-trace-id"}
 
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
+        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+            return_value=httpx.Response(200, json=api_response)
+        )
 
-            result = tool.call(
-                feedback="Testing the .call() method interface.",
-                account_id="acc_test004",
-                tool_names=["meta_collect_tool_feedback"],
-            )
+        result = tool.call(
+            feedback="Testing the .call() method interface.",
+            account_id="acc_test004",
+            tool_names=["meta_collect_tool_feedback"],
+        )
 
-            assert result == api_response
-            mock_request.assert_called_once()
+        assert result == api_response
+        assert route.called
+        assert route.call_count == 1
 
+    @respx.mock
     def test_api_error_handling(self) -> None:
         """Test that API errors are handled properly."""
         tool = create_feedback_tool(api_key="test_key")
 
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 401
-            mock_response.text = '{"error": "Unauthorized"}'
-            mock_response.json.return_value = {"error": "Unauthorized"}
-            mock_response.raise_for_status.side_effect = Exception("401 Client Error: Unauthorized")
-            mock_request.return_value = mock_response
+        respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+            return_value=httpx.Response(401, json={"error": "Unauthorized"})
+        )
 
-            with pytest.raises(StackOneError):
-                tool.execute(
-                    {
-                        "feedback": "Great tools!",
-                        "account_id": "acc_123456",
-                        "tool_names": ["test_tool"],
-                    }
-                )
+        with pytest.raises(StackOneError):
+            tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": "acc_123456",
+                    "tool_names": ["test_tool"],
+                }
+            )
 
+    @respx.mock
     def test_multiple_account_ids_execution(self) -> None:
         """Test execution with multiple account IDs - both success and mixed scenarios."""
         tool = create_feedback_tool(api_key="test_key")
         api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
         # Test all successful case
-        with patch("requests.request") as mock_request:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = api_response
-            mock_response.raise_for_status = Mock()
-            mock_request.return_value = mock_response
+        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+            return_value=httpx.Response(200, json=api_response)
+        )
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": ["acc_123456", "acc_789012", "acc_345678"],
-                    "tool_names": ["test_tool"],
-                }
-            )
+        result = tool.execute(
+            {
+                "feedback": "Great tools!",
+                "account_id": ["acc_123456", "acc_789012", "acc_345678"],
+                "tool_names": ["test_tool"],
+            }
+        )
 
-            assert result["message"] == "Feedback sent to 3 account(s)"
-            assert result["total_accounts"] == 3
-            assert result["successful"] == 3
-            assert result["failed"] == 0
-            assert len(result["results"]) == 3
-            assert mock_request.call_count == 3
+        assert result["message"] == "Feedback sent to 3 account(s)"
+        assert result["total_accounts"] == 3
+        assert result["successful"] == 3
+        assert result["failed"] == 0
+        assert len(result["results"]) == 3
+        assert route.call_count == 3
 
-        # Test mixed success/error case
-        def mock_request_side_effect(*args, **kwargs):
-            account_id = kwargs.get("json", {}).get("account_id")
+    @respx.mock
+    def test_multiple_account_ids_mixed_success(self) -> None:
+        """Test execution with multiple account IDs - mixed success and error."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        def custom_side_effect(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            account_id = body.get("account_id")
             if account_id == "acc_123456":
-                mock_response = Mock()
-                mock_response.status_code = 200
-                mock_response.json.return_value = {"message": "Success"}
-                mock_response.raise_for_status = Mock()
-                return mock_response
+                return httpx.Response(200, json={"message": "Success"})
             else:
-                mock_response = Mock()
-                mock_response.status_code = 401
-                mock_response.text = '{"error": "Unauthorized"}'
-                mock_response.json.return_value = {"error": "Unauthorized"}
-                mock_response.raise_for_status.side_effect = Exception("401 Client Error: Unauthorized")
-                return mock_response
+                return httpx.Response(401, json={"error": "Unauthorized"})
 
-        with patch("requests.request") as mock_request:
-            mock_request.side_effect = mock_request_side_effect
+        respx.post("https://api.stackone.com/ai/tool-feedback").mock(side_effect=custom_side_effect)
 
-            result = tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": ["acc_123456", "acc_unauthorized"],
-                    "tool_names": ["test_tool"],
-                }
-            )
+        result = tool.execute(
+            {
+                "feedback": "Great tools!",
+                "account_id": ["acc_123456", "acc_unauthorized"],
+                "tool_names": ["test_tool"],
+            }
+        )
 
-            assert result["total_accounts"] == 2
-            assert result["successful"] == 1
-            assert result["failed"] == 1
-            assert len(result["results"]) == 2
+        assert result["total_accounts"] == 2
+        assert result["successful"] == 1
+        assert result["failed"] == 1
+        assert len(result["results"]) == 2
 
-            success_result = next(r for r in result["results"] if r["account_id"] == "acc_123456")
-            assert success_result["status"] == "success"
+        success_result = next(r for r in result["results"] if r["account_id"] == "acc_123456")
+        assert success_result["status"] == "success"
 
-            error_result = next(r for r in result["results"] if r["account_id"] == "acc_unauthorized")
-            assert error_result["status"] == "error"
-            assert "401 Client Error: Unauthorized" in error_result["error"]
+        error_result = next(r for r in result["results"] if r["account_id"] == "acc_unauthorized")
+        assert error_result["status"] == "error"
+        assert "error" in error_result
+        assert "401" in error_result["error"]
 
     def test_tool_integration(self) -> None:
         """Test that feedback tool integrates properly with toolset."""

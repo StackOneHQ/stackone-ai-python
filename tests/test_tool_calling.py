@@ -2,8 +2,9 @@
 
 import json
 
+import httpx
 import pytest
-import responses
+import respx
 
 from stackone_ai import StackOneTool
 from stackone_ai.models import ExecuteConfig, ToolParameters
@@ -40,15 +41,12 @@ def mock_tool():
 class TestToolCalling:
     """Test tool calling functionality"""
 
-    @responses.activate
+    @respx.mock
     def test_call_with_kwargs(self, mock_tool):
         """Test calling a tool with keyword arguments"""
         # Mock the API response
-        responses.add(
-            responses.POST,
-            "https://api.example.com/test",
-            json={"success": True, "result": "test_result"},
-            status=200,
+        route = respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
         )
 
         # Call the tool with kwargs
@@ -58,19 +56,17 @@ class TestToolCalling:
         assert result == {"success": True, "result": "test_result"}
 
         # Verify the request was made correctly
-        assert len(responses.calls) == 1
-        request = responses.calls[0].request
-        assert json.loads(request.body) == {"name": "test", "value": 42}
+        assert route.called
+        assert route.call_count == 1
+        request = route.calls[0].request
+        assert json.loads(request.content) == {"name": "test", "value": 42}
 
-    @responses.activate
+    @respx.mock
     def test_call_with_dict_arg(self, mock_tool):
         """Test calling a tool with a dictionary argument"""
         # Mock the API response
-        responses.add(
-            responses.POST,
-            "https://api.example.com/test",
-            json={"success": True, "result": "test_result"},
-            status=200,
+        route = respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
         )
 
         # Call the tool with a dict
@@ -80,19 +76,17 @@ class TestToolCalling:
         assert result == {"success": True, "result": "test_result"}
 
         # Verify the request
-        assert len(responses.calls) == 1
-        request = responses.calls[0].request
-        assert json.loads(request.body) == {"name": "test", "value": 42}
+        assert route.called
+        assert route.call_count == 1
+        request = route.calls[0].request
+        assert json.loads(request.content) == {"name": "test", "value": 42}
 
-    @responses.activate
+    @respx.mock
     def test_call_with_json_string(self, mock_tool):
         """Test calling a tool with a JSON string argument"""
         # Mock the API response
-        responses.add(
-            responses.POST,
-            "https://api.example.com/test",
-            json={"success": True, "result": "test_result"},
-            status=200,
+        route = respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
         )
 
         # Call the tool with a JSON string
@@ -102,9 +96,10 @@ class TestToolCalling:
         assert result == {"success": True, "result": "test_result"}
 
         # Verify the request
-        assert len(responses.calls) == 1
-        request = responses.calls[0].request
-        assert json.loads(request.body) == {"name": "test", "value": 42}
+        assert route.called
+        assert route.call_count == 1
+        request = route.calls[0].request
+        assert json.loads(request.content) == {"name": "test", "value": 42}
 
     def test_call_with_both_args_and_kwargs_raises_error(self, mock_tool):
         """Test that providing both args and kwargs raises an error"""
@@ -116,15 +111,12 @@ class TestToolCalling:
         with pytest.raises(ValueError, match="Only one positional argument is allowed"):
             mock_tool.call({"name": "test"}, {"value": 42})
 
-    @responses.activate
+    @respx.mock
     def test_call_without_arguments(self, mock_tool):
         """Test calling a tool without any arguments"""
         # Mock the API response
-        responses.add(
-            responses.POST,
-            "https://api.example.com/test",
-            json={"success": True, "result": "no_args"},
-            status=200,
+        route = respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(200, json={"success": True, "result": "no_args"})
         )
 
         # Call the tool without arguments
@@ -134,10 +126,11 @@ class TestToolCalling:
         assert result == {"success": True, "result": "no_args"}
 
         # Verify the request body is empty or contains empty JSON
-        assert len(responses.calls) == 1
-        request = responses.calls[0].request
+        assert route.called
+        assert route.call_count == 1
+        request = route.calls[0].request
         # Handle case where body might be None for empty POST
-        if request.body:
-            assert json.loads(request.body) == {}
+        if request.content:
+            assert json.loads(request.content) == {}
         else:
-            assert request.body is None or request.body == b""
+            assert request.content == b""

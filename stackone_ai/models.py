@@ -10,10 +10,9 @@ from enum import Enum
 from typing import Annotated, Any, ClassVar, cast
 from urllib.parse import quote
 
-import requests
+import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
-from requests.exceptions import RequestException
 
 # TODO: Remove when Python 3.9 support is dropped
 from typing_extensions import TypeAlias
@@ -242,7 +241,7 @@ class StackOneTool(BaseModel):
             if query_params:
                 request_kwargs["params"] = query_params
 
-            response = requests.request(**request_kwargs)
+            response = httpx.request(**request_kwargs)
             response_status = response.status_code
             response.raise_for_status()
 
@@ -254,15 +253,21 @@ class StackOneTool(BaseModel):
             status = "error"
             error_message = f"Invalid JSON in arguments: {exc}"
             raise ValueError(error_message) from exc
-        except RequestException as exc:
+        except httpx.HTTPStatusError as exc:
             status = "error"
-            error_message = str(exc)
-            if hasattr(exc, "response") and exc.response is not None:
-                raise StackOneAPIError(
-                    str(exc),
-                    exc.response.status_code,
-                    exc.response.json() if exc.response.text else None,
-                ) from exc
+            response_body = None
+            if exc.response.text:
+                try:
+                    response_body = exc.response.json()
+                except json.JSONDecodeError:
+                    response_body = exc.response.text
+            raise StackOneAPIError(
+                str(exc),
+                exc.response.status_code,
+                response_body,
+            ) from exc
+        except httpx.RequestError as exc:
+            status = "error"
             raise StackOneError(f"Request failed: {exc}") from exc
         finally:
             datetime.now(timezone.utc)
