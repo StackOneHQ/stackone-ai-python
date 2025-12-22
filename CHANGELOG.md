@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.4.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.4...stackone-ai-v0.4.0) (2025-12-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate examples and tests to connector-based tool naming ([#51](https://github.com/StackOneHQ/stackone-ai-python/issues/51))
+* The `docs` optional dependency group and related commands (`make docs-serve`, `make docs-build`) are no longer available.
+* remove MCP server implementation ([#45](https://github.com/StackOneHQ/stackone-ai-python/issues/45))
+* remove deprecated OAS-based getTools, migrate to fetchTools only ([#42](https://github.com/StackOneHQ/stackone-ai-python/issues/42))
+
+### Features
+
+* add test coverage reporting with GitHub Pages badge ([#62](https://github.com/StackOneHQ/stackone-ai-python/issues/62)) ([0ef05cf](https://github.com/StackOneHQ/stackone-ai-python/commit/0ef05cf8746e3ca113e6fd6d33bc62fc91711f77))
+* **security:** add gitleaks for secret detection ([#63](https://github.com/StackOneHQ/stackone-ai-python/issues/63)) ([1a31baa](https://github.com/StackOneHQ/stackone-ai-python/commit/1a31baa489882da9fc12684d1a060e48928288a9))
+
+
+### Bug Fixes
+
+* **ci:** use just commands in CI and release workflows ([#57](https://github.com/StackOneHQ/stackone-ai-python/issues/57)) ([38a9dd6](https://github.com/StackOneHQ/stackone-ai-python/commit/38a9dd6cc0b0deea53d1dfb6472686e151df53e4))
+* migrate examples and tests to connector-based tool naming ([#51](https://github.com/StackOneHQ/stackone-ai-python/issues/51)) ([c365dbd](https://github.com/StackOneHQ/stackone-ai-python/commit/c365dbd98e8084eea45857292eee90a1798bce16))
+* remove MCP server implementation ([#45](https://github.com/StackOneHQ/stackone-ai-python/issues/45)) ([bcb12b4](https://github.com/StackOneHQ/stackone-ai-python/commit/bcb12b4ee50e055c4cb29f3aa9baf81352683415))
+* **scripts:** add uv lock refresh to version update script ([#50](https://github.com/StackOneHQ/stackone-ai-python/issues/50)) ([bde6d88](https://github.com/StackOneHQ/stackone-ai-python/commit/bde6d88a5688790ada366ed76563092aba0effe4))
+
+
+### Documentation
+
+* remove meta tools implementation details from README ([#40](https://github.com/StackOneHQ/stackone-ai-python/issues/40)) ([10510d4](https://github.com/StackOneHQ/stackone-ai-python/commit/10510d4b93fc4e20aa51a706541a649115900e6d))
+* remove obsolete migration section from README ([#56](https://github.com/StackOneHQ/stackone-ai-python/issues/56)) ([bdcf90d](https://github.com/StackOneHQ/stackone-ai-python/commit/bdcf90d07cd29236f1372d53872689ef624f8e03))
+
+
+### Miscellaneous Chores
+
+* remove MkDocs documentation generation feature ([#46](https://github.com/StackOneHQ/stackone-ai-python/issues/46)) ([947863e](https://github.com/StackOneHQ/stackone-ai-python/commit/947863e91160a07fcd60d8ee837fb79a35abf0b0))
+
+
+### Code Refactoring
+
+* remove deprecated OAS-based getTools, migrate to fetchTools only ([#42](https://github.com/StackOneHQ/stackone-ai-python/issues/42)) ([d50d5fb](https://github.com/StackOneHQ/stackone-ai-python/commit/d50d5fb20402dd625217b2900287ae7d9e4cb98c))
+
 ## [0.3.4](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.3...stackone-ai-v0.3.4) (2025-11-12)
 
 
