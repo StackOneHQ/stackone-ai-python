@@ -48,7 +48,7 @@ The Nix development environment includes:
 
 - Python with uv package manager
 - Automatic dependency installation
-- Git hooks (treefmt + mypy) auto-configured
+- Git hooks (treefmt + ty) auto-configured
 - Consistent environment across all platforms
 
 ### Using pip/uv
