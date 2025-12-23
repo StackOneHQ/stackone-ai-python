@@ -2,13 +2,15 @@
 install *extras:
 	uv sync {{ extras }}
 
-# Run ruff linting
+# Run ruff linting and format check
 lint:
 	uv run ruff check .
+	nix fmt -- --fail-on-change
 
-# Auto-fix linting issues
-lint-fix:
+# Format and auto-fix linting issues
+format:
 	uv run ruff check --fix .
+	nix fmt
 
 # Run all tests
 test:
