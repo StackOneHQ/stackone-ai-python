@@ -437,9 +437,6 @@ class StackOneTool(BaseModel):
             def _run(self, **kwargs: Any) -> Any:
                 return parent_tool.execute(kwargs)
 
-            async def _arun(self, **kwargs: Any) -> Any:
-                return self._run(**kwargs)
-
         return StackOneLangChainTool()
 
     def set_account_id(self, account_id: str | None) -> None:
