@@ -42,7 +42,7 @@ jobs:
           title: "chore(deps): update nix flake inputs"
           body: |
             ## Summary
-            - Automated update of Nix flake inputs (`nixpkgs`, `flake-parts`)
+            - Automated update of Nix flake inputs
 
             ## Test plan
             - [ ] `nix flake check` passes in CI
