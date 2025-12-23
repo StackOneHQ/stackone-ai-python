@@ -2,14 +2,12 @@
 install *extras:
 	uv sync {{ extras }}
 
-# Run ruff linting and format check
+# Run linting and format check (ruff, typos, nixfmt, oxfmt)
 lint:
-	uv run ruff check .
 	nix fmt -- --fail-on-change
 
 # Format and auto-fix linting issues
 format:
-	uv run ruff check --fix .
 	nix fmt
 
 # Run all tests
@@ -32,17 +30,9 @@ test-examples:
 ty:
 	uv run ty check stackone_ai
 
-# Run typos spell checker
-typos:
-	typos --config typos.toml .
-
 # Run gitleaks secret detection
 gitleaks:
 	gitleaks detect --source . --config .gitleaks.toml
-
-# Fix typos
-typos-fix:
-	typos --config typos.toml --write-changes .
 
 # Update version in __init__.py
 update-version:
