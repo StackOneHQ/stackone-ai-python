@@ -2,7 +2,7 @@ name: "Scheduled: Nix flake update"
 
 on:
   schedule:
-    # Run every Monday at 09:00 UTC (same as Dependabot)
+    # Run every Monday at 09:00 UTC (aligns with Dependabot's 09:00 Europe/London schedule in winter; 10:00 Europe/London in summer)
     - cron: "0 9 * * 1"
   workflow_dispatch: # Allow manual trigger
 
