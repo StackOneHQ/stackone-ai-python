@@ -223,9 +223,9 @@ class TestMetaExecuteTool:
         # Call the meta execute tool
         result = execute_tool.call(toolName="hibob_list_employee", params={"limit": 10})
 
-        assert result is not None
-        assert "success" in result or "employees" in result
+        assert result == {"success": True, "employees": []}
         assert route.called
+        assert route.calls[0].response.status_code == 200
 
 
 class TestToolsMetaTools:

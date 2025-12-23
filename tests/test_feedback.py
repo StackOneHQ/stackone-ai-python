@@ -69,8 +69,9 @@ class TestFeedbackToolValidation:
             {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
         )
         result = tool.execute(json_string)
-        assert result["message"] == "Success"
+        assert result == {"message": "Success"}
         assert route.called
+        assert route.calls[0].response.status_code == 200
 
 
 class TestFeedbackToolExecution:
@@ -97,6 +98,7 @@ class TestFeedbackToolExecution:
         assert result == api_response
         assert route.called
         assert route.call_count == 1
+        assert route.calls[0].response.status_code == 200
         request = route.calls[0].request
         body = json.loads(request.content)
         assert body["feedback"] == "Great tools!"
@@ -122,13 +124,14 @@ class TestFeedbackToolExecution:
         assert result == api_response
         assert route.called
         assert route.call_count == 1
+        assert route.calls[0].response.status_code == 200
 
     @respx.mock
     def test_api_error_handling(self) -> None:
         """Test that API errors are handled properly."""
         tool = create_feedback_tool(api_key="test_key")
 
-        respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
             return_value=httpx.Response(401, json={"error": "Unauthorized"})
         )
 
@@ -140,6 +143,9 @@ class TestFeedbackToolExecution:
                     "tool_names": ["test_tool"],
                 }
             )
+
+        assert route.called
+        assert route.calls[0].response.status_code == 401
 
     @respx.mock
     def test_multiple_account_ids_execution(self) -> None:
@@ -160,12 +166,33 @@ class TestFeedbackToolExecution:
             }
         )
 
-        assert result["message"] == "Feedback sent to 3 account(s)"
-        assert result["total_accounts"] == 3
-        assert result["successful"] == 3
-        assert result["failed"] == 0
-        assert len(result["results"]) == 3
+        assert result == {
+            "message": "Feedback sent to 3 account(s)",
+            "total_accounts": 3,
+            "successful": 3,
+            "failed": 0,
+            "results": [
+                {
+                    "account_id": "acc_123456",
+                    "status": "success",
+                    "result": {"message": "Feedback successfully stored", "trace_id": "test-trace-id"},
+                },
+                {
+                    "account_id": "acc_789012",
+                    "status": "success",
+                    "result": {"message": "Feedback successfully stored", "trace_id": "test-trace-id"},
+                },
+                {
+                    "account_id": "acc_345678",
+                    "status": "success",
+                    "result": {"message": "Feedback successfully stored", "trace_id": "test-trace-id"},
+                },
+            ],
+        }
         assert route.call_count == 3
+        assert route.calls[0].response.status_code == 200
+        assert route.calls[1].response.status_code == 200
+        assert route.calls[2].response.status_code == 200
 
     @respx.mock
     def test_multiple_account_ids_mixed_success(self) -> None:
@@ -180,7 +207,7 @@ class TestFeedbackToolExecution:
             else:
                 return httpx.Response(401, json={"error": "Unauthorized"})
 
-        respx.post("https://api.stackone.com/ai/tool-feedback").mock(side_effect=custom_side_effect)
+        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(side_effect=custom_side_effect)
 
         result = tool.execute(
             {
@@ -190,18 +217,32 @@ class TestFeedbackToolExecution:
             }
         )
 
-        assert result["total_accounts"] == 2
-        assert result["successful"] == 1
-        assert result["failed"] == 1
-        assert len(result["results"]) == 2
-
-        success_result = next(r for r in result["results"] if r["account_id"] == "acc_123456")
-        assert success_result["status"] == "success"
-
-        error_result = next(r for r in result["results"] if r["account_id"] == "acc_unauthorized")
-        assert error_result["status"] == "error"
-        assert "error" in error_result
-        assert "401" in error_result["error"]
+        assert result == {
+            "message": "Feedback sent to 2 account(s)",
+            "total_accounts": 2,
+            "successful": 1,
+            "failed": 1,
+            "results": [
+                {
+                    "account_id": "acc_123456",
+                    "status": "success",
+                    "result": {"message": "Success"},
+                },
+                {
+                    "account_id": "acc_unauthorized",
+                    "status": "error",
+                    "error": (
+                        "Client error '401 Unauthorized' for url "
+                        "'https://api.stackone.com/ai/tool-feedback'\n"
+                        "For more information check: "
+                        "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
+                    ),
+                },
+            ],
+        }
+        assert route.call_count == 2
+        assert route.calls[0].response.status_code == 200
+        assert route.calls[1].response.status_code == 401
 
     def test_tool_integration(self) -> None:
         """Test that feedback tool integrates properly with toolset."""
