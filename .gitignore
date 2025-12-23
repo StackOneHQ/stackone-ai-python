@@ -10,9 +10,6 @@ coverage/
 
 .DS_Store
 
-# Documentation build
-.docs/
-site/
 
 *.egg-info
 dist/
