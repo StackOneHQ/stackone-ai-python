@@ -42,19 +42,26 @@
               nixfmt.package = pkgs.nixfmt-rfc-style;
               ruff-check.enable = true;
               ruff-format.enable = true;
-              prettier = {
-                enable = true;
-                includes = [
-                  "*.md"
-                  "*.yml"
-                  "*.yaml"
-                  "*.json"
-                ];
-                excludes = [
-                  "CHANGELOG.md"
-                ];
-              };
               typos.enable = true;
+              typos.configFile = "typos.toml";
+            };
+            settings.formatter.oxfmt = {
+              command = "${pkgs.oxfmt}/bin/oxfmt";
+              includes = [
+                "*.md"
+                "*.yml"
+                "*.yaml"
+                "*.json"
+                "*.ts"
+                "*.tsx"
+                "*.js"
+                "*.jsx"
+                "*.html"
+                "*.css"
+              ];
+              excludes = [
+                "CHANGELOG.md"
+              ];
             };
           };
 
