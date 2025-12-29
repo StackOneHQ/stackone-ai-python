@@ -122,7 +122,7 @@ class ToolIndex:
         score_map: dict[str, dict[str, float]] = {}
 
         # Add BM25 scores
-        for idx, score in zip(bm25_results[0], bm25_scores[0]):
+        for idx, score in zip(bm25_results[0], bm25_scores[0], strict=True):
             tool_name = self.tool_names[idx]
             # Normalize BM25 score to 0-1 range
             normalized_score = float(1 / (1 + np.exp(-score / 10)))

@@ -138,7 +138,7 @@ class TfidfIndex:
 
         # Build document vectors
         self.docs = []
-        for doc, tokens in zip(corpus, docs_tokens):
+        for doc, tokens in zip(corpus, docs_tokens, strict=True):
             # Compute term frequency (TF)
             tf: dict[int, int] = {}
             for token in tokens:
