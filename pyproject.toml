@@ -3,7 +3,7 @@ name = "stackone-ai"
 version = "0.3.4"
 description = "agents performing actions on your SaaS"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [
     { name = "StackOne", email = "support@stackone.com" }
 ]
@@ -12,8 +12,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -26,7 +24,6 @@ dependencies = [
     "bm25s>=0.2.2",
     "numpy>=1.24.0",
     "typing-extensions>=4.0.0",
-    "eval-type-backport; python_version<'3.10'",  # TODO: Remove when Python 3.9 support is dropped
 ]
 
 [build-system]
@@ -43,12 +40,11 @@ packages = ["stackone_ai"]
 "py.typed" = "py.typed"
 
 [project.optional-dependencies]
-# TODO: Remove python_version conditions when Python 3.9 support is dropped
 mcp = [
-    "mcp>=1.3.0; python_version>='3.10'",
+    "mcp>=1.3.0",
 ]
 examples = [
-    "crewai>=0.102.0; python_version>='3.10'",
+    "crewai>=0.102.0",
     "langchain-openai>=0.3.6",
     "langgraph>=0.2.0",
     "openai>=1.63.2",
@@ -82,7 +78,7 @@ markers = [
 
 [tool.ruff]
 line-length = 110
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
