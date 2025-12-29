@@ -270,3 +270,51 @@ class TestProviderAndActionFiltering:
         assert len(tools) == 1
         tool_names = [t.name for t in tools.to_list()]
         assert "hibob_list_employees" in tool_names
+
+
+class TestAccountIdFallback:
+    """Test account ID fallback to instance account_id."""
+
+    def test_uses_instance_account_id_when_no_other_provided(self, monkeypatch):
+        """Test that fetch_tools uses instance account_id when no account_ids provided."""
+        sample_tool = _McpToolDefinition(
+            name="test_tool",
+            description="Test tool",
+            input_schema={"type": "object", "properties": {}},
+        )
+
+        captured_accounts: list[str | None] = []
+
+        def fake_fetch(_: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            captured_accounts.append(headers.get("x-account-id"))
+            return [sample_tool]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        # Create toolset with account_id in constructor
+        toolset = StackOneToolSet(api_key="test_key", account_id="instance_account")
+        tools = toolset.fetch_tools()  # No account_ids, no set_accounts
+
+        # Should use the instance account_id
+        assert captured_accounts == ["instance_account"]
+        assert len(tools) == 1
+        tool = tools.get_tool("test_tool")
+        assert tool is not None
+        assert tool.get_account_id() == "instance_account"
+
+
+class TestToolsetErrorHandling:
+    """Test error handling in fetch_tools."""
+
+    def test_reraises_toolset_error(self, monkeypatch):
+        """Test that ToolsetError is re-raised without wrapping."""
+        from stackone_ai.toolset import ToolsetConfigError
+
+        def fake_fetch(_: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            raise ToolsetConfigError("Original config error")
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test_key")
+        with pytest.raises(ToolsetConfigError, match="Original config error"):
+            toolset.fetch_tools()
