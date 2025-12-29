@@ -144,6 +144,21 @@ class TestMetaSearchTool:
         assert filter_tool.name == "meta_search_tools"
         assert "natural language query" in filter_tool.description.lower()
 
+    def test_filter_tool_execute_with_json_string(self, sample_tools):
+        """Test executing the filter tool with JSON string input."""
+        import json
+
+        index = ToolIndex(sample_tools)
+        filter_tool = create_meta_search_tools(index)
+
+        # Execute with JSON string
+        json_input = json.dumps({"query": "employee", "limit": 2, "minScore": 0.0})
+        result = filter_tool.execute(json_input)
+
+        assert "tools" in result
+        assert isinstance(result["tools"], list)
+        assert len(result["tools"]) <= 2
+
     def test_filter_tool_execute(self, sample_tools):
         """Test executing the filter tool"""
         index = ToolIndex(sample_tools)
@@ -197,6 +212,17 @@ class TestMetaExecuteTool:
 
         with pytest.raises(ValueError, match="toolName is required"):
             execute_tool.execute({"params": {}})
+
+    def test_execute_tool_with_json_string(self, tools_collection):
+        """Test execute tool with JSON string input."""
+        import json
+
+        execute_tool = create_meta_execute_tool(tools_collection)
+
+        # Execute with JSON string - should raise ValueError for invalid tool
+        json_input = json.dumps({"toolName": "nonexistent_tool", "params": {}})
+        with pytest.raises(ValueError, match="Tool 'nonexistent_tool' not found"):
+            execute_tool.execute(json_input)
 
     def test_execute_tool_invalid_name(self, tools_collection):
         """Test execute tool with invalid tool name"""
