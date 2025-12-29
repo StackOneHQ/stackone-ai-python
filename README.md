@@ -29,30 +29,6 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Installation
 
-### Using Nix (Recommended for Development)
-
-If you have [Nix](https://nixos.org/) installed with flakes enabled:
-
-```bash
-# Enter development environment (auto-installs dependencies and git hooks)
-nix develop
-
-# Format code
-nix fmt
-
-# Run checks
-nix flake check
-```
-
-The Nix development environment includes:
-
-- Python with uv package manager
-- Automatic dependency installation
-- Git hooks (treefmt + ty) auto-configured
-- Consistent environment across all platforms
-
-### Using pip/uv
-
 ```bash
 pip install 'stackone-ai[mcp]'
 
@@ -356,6 +332,33 @@ For more examples, check out the [examples/](examples/) directory:
 - [LangChain Integration](examples/langchain_integration.py)
 - [CrewAI Integration](examples/crewai_integration.py)
 - [Meta Tools](examples/meta_tools_example.py)
+
+## Development
+
+### Using Nix (Recommended)
+
+[Nix](https://nixos.org/) with flakes provides a consistent development environment:
+
+```bash
+# Enter development environment (auto-installs dependencies and git hooks)
+nix develop
+
+# Or with direnv (recommended for automatic activation)
+direnv allow
+
+# Format code
+nix fmt
+
+# Run checks
+nix flake check
+```
+
+The Nix development environment includes:
+
+- Python with uv package manager
+- Automatic dependency installation
+- Git hooks (treefmt + ty) auto-configured
+- Consistent environment across all platforms
 
 ## License
 
