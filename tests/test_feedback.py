@@ -5,13 +5,43 @@ from __future__ import annotations
 
 import json
 import os
+import string
 
 import httpx
 import pytest
 import respx
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from stackone_ai.feedback import create_feedback_tool
 from stackone_ai.models import StackOneError
+
+# Hypothesis strategies for PBT
+# Various whitespace characters including Unicode
+WHITESPACE_CHARS = " \t\n\r\u00a0\u2003\u2009"
+whitespace_strategy = st.text(alphabet=WHITESPACE_CHARS, min_size=1, max_size=20)
+
+# Valid non-empty strings (stripped)
+valid_string_strategy = st.text(
+    alphabet=string.ascii_letters + string.digits + "_-",
+    min_size=1,
+    max_size=50,
+).filter(lambda s: s.strip())
+
+# Invalid JSON strings (strings that cannot be parsed as valid JSON at all)
+# Note: Python's json module accepts NaN/Infinity by default, so avoid those
+invalid_json_strategy = st.one_of(
+    st.just("{incomplete"),
+    st.just('{"missing": }'),
+    st.just('{"key": value}'),
+    st.just("[1, 2, 3"),
+    st.just("{trailing}garbage"),
+    st.just("{missing closing brace"),
+    st.just("undefined"),
+    st.just("not valid json"),
+    st.just("abc123"),
+    st.just("foo bar baz"),
+)
 
 
 class TestFeedbackToolValidation:
@@ -78,6 +108,59 @@ class TestFeedbackToolValidation:
 
         with pytest.raises(StackOneError, match="Invalid JSON"):
             tool.execute("{missing closing brace")
+
+    @given(whitespace=whitespace_strategy)
+    @settings(max_examples=50)
+    def test_whitespace_feedback_validation_pbt(self, whitespace: str) -> None:
+        """PBT: Test validation for various whitespace patterns in feedback."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        with pytest.raises(StackOneError, match="non-empty"):
+            tool.execute({"feedback": whitespace, "account_id": "acc_123456", "tool_names": ["test_tool"]})
+
+    @given(whitespace=whitespace_strategy)
+    @settings(max_examples=50)
+    def test_whitespace_account_id_validation_pbt(self, whitespace: str) -> None:
+        """PBT: Test validation for various whitespace patterns in account_id."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        with pytest.raises(StackOneError, match="non-empty"):
+            tool.execute({"feedback": "Great!", "account_id": whitespace, "tool_names": ["test_tool"]})
+
+    @given(whitespace_list=st.lists(whitespace_strategy, min_size=1, max_size=5))
+    @settings(max_examples=50)
+    def test_whitespace_tool_names_validation_pbt(self, whitespace_list: list[str]) -> None:
+        """PBT: Test validation for lists containing only whitespace tool names."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        with pytest.raises(StackOneError, match="At least one tool name"):
+            tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": whitespace_list})
+
+    @given(
+        whitespace_list=st.lists(whitespace_strategy, min_size=1, max_size=5),
+    )
+    @settings(max_examples=50)
+    def test_whitespace_account_ids_list_validation_pbt(self, whitespace_list: list[str]) -> None:
+        """PBT: Test validation for lists containing only whitespace account IDs."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        with pytest.raises(StackOneError, match="At least one valid account ID is required"):
+            tool.execute(
+                {
+                    "feedback": "Great tools!",
+                    "account_id": whitespace_list,
+                    "tool_names": ["test_tool"],
+                }
+            )
+
+    @given(invalid_json=invalid_json_strategy)
+    @settings(max_examples=50)
+    def test_invalid_json_input_pbt(self, invalid_json: str) -> None:
+        """PBT: Test that various invalid JSON inputs raise appropriate error."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        with pytest.raises(StackOneError, match="Invalid JSON"):
+            tool.execute(invalid_json)
 
     @respx.mock
     def test_json_string_input(self) -> None:

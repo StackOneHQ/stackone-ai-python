@@ -1,8 +1,71 @@
 """Tests for TF-IDF index implementation"""
 
+import string
+
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from stackone_ai.utils.tfidf_index import TfidfDocument, TfidfIndex, tokenize
+
+# Hypothesis strategies for PBT
+# Text with various punctuation patterns
+punctuation_text_strategy = st.text(
+    alphabet=string.ascii_letters + string.punctuation + " ",
+    min_size=1,
+    max_size=100,
+).filter(lambda s: any(c in string.ascii_letters for c in s))  # Must have some letters
+
+# Common English stopwords (subset for testing)
+STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "is",
+    "are",
+    "was",
+}
+
+# Text containing stopwords mixed with content words
+stopword_text_strategy = st.lists(
+    st.one_of(
+        st.sampled_from(list(STOPWORDS)),
+        st.text(alphabet="abcdefghij", min_size=3, max_size=10).filter(lambda s: s.lower() not in STOPWORDS),
+    ),
+    min_size=1,
+    max_size=20,
+).map(lambda words: " ".join(words))
+
+# Tool name patterns with underscores
+tool_name_strategy = st.lists(
+    st.text(alphabet=string.ascii_lowercase, min_size=2, max_size=10),
+    min_size=1,
+    max_size=4,
+).map(lambda parts: "_".join(parts))
+
+# Document collection for TF-IDF testing
+document_strategy = st.builds(
+    TfidfDocument,
+    id=st.text(alphabet=string.ascii_lowercase + string.digits, min_size=1, max_size=20),
+    text=st.text(alphabet=string.ascii_letters + " _", min_size=1, max_size=100),
+)
+
+# Query strings for search testing
+query_strategy = st.text(
+    alphabet=string.ascii_letters + " ",
+    min_size=1,
+    max_size=50,
+).filter(lambda s: s.strip())
 
 
 class TestTokenize:
@@ -58,6 +121,43 @@ class TestTokenize:
         text = "the a an and or but"
         tokens = tokenize(text)
         assert tokens == []
+
+    @given(text=punctuation_text_strategy)
+    @settings(max_examples=100)
+    def test_punctuation_removal_pbt(self, text: str):
+        """PBT: Test that all punctuation is removed from tokens."""
+        tokens = tokenize(text)
+        # No token should contain punctuation (except underscore which is preserved)
+        for token in tokens:
+            non_underscore_punct = set(string.punctuation) - {"_"}
+            assert not any(c in non_underscore_punct for c in token), f"Token '{token}' contains punctuation"
+
+    @given(text=punctuation_text_strategy)
+    @settings(max_examples=100)
+    def test_lowercase_conversion_pbt(self, text: str):
+        """PBT: Test that all tokens are lowercase."""
+        tokens = tokenize(text)
+        assert all(t.islower() or "_" in t for t in tokens), f"Not all tokens are lowercase: {tokens}"
+
+    @given(tool_name=tool_name_strategy)
+    @settings(max_examples=100)
+    def test_underscore_preservation_pbt(self, tool_name: str):
+        """PBT: Test that underscores in tool names are preserved."""
+        tokens = tokenize(tool_name)
+        # If the tool name contains underscores and is long enough, underscores should be preserved
+        if "_" in tool_name and len(tool_name) > 2:
+            # Either the full tool name is preserved, or we get tokens with underscores
+            # Note: very short parts may be filtered as stopwords
+            assert tool_name.lower() in tokens or any("_" in t for t in tokens) or len(tokens) == 0
+
+    @given(text=stopword_text_strategy)
+    @settings(max_examples=100)
+    def test_stopword_filtering_pbt(self, text: str):
+        """PBT: Test that stopwords are filtered out."""
+        tokens = tokenize(text)
+        # No stopword should appear in the result
+        for token in tokens:
+            assert token.lower() not in STOPWORDS, f"Stopword '{token}' was not filtered"
 
 
 class TestTfidfIndex:
@@ -151,6 +251,59 @@ class TestTfidfIndex:
 
         for result in results:
             assert 0.0 <= result.score <= 1.0
+
+    @given(
+        documents=st.lists(document_strategy, min_size=1, max_size=20),
+        query=query_strategy,
+        k=st.integers(min_value=1, max_value=50),
+    )
+    @settings(max_examples=50)
+    def test_score_range_pbt(self, documents: list[TfidfDocument], query: str, k: int):
+        """PBT: Test that scores are always in [0, 1] range."""
+        index = TfidfIndex()
+        index.build(documents)
+
+        results = index.search(query, k=k)
+
+        # All scores must be in valid range
+        for result in results:
+            assert 0.0 <= result.score <= 1.0, f"Score {result.score} out of range"
+
+    @given(
+        documents=st.lists(document_strategy, min_size=1, max_size=20),
+        query=query_strategy,
+        k=st.integers(min_value=1, max_value=50),
+    )
+    @settings(max_examples=50)
+    def test_results_sorted_descending_pbt(self, documents: list[TfidfDocument], query: str, k: int):
+        """PBT: Test that results are always sorted by score descending."""
+        index = TfidfIndex()
+        index.build(documents)
+
+        results = index.search(query, k=k)
+
+        # Results should be sorted by score in descending order
+        for i in range(len(results) - 1):
+            assert results[i].score >= results[i + 1].score, (
+                f"Results not sorted: {results[i].score} < {results[i + 1].score}"
+            )
+
+    @given(
+        documents=st.lists(document_strategy, min_size=1, max_size=20),
+        query=query_strategy,
+        k=st.integers(min_value=1, max_value=50),
+    )
+    @settings(max_examples=50)
+    def test_result_count_respects_limit_pbt(self, documents: list[TfidfDocument], query: str, k: int):
+        """PBT: Test that result count never exceeds k or document count."""
+        index = TfidfIndex()
+        index.build(documents)
+
+        results = index.search(query, k=k)
+
+        # Result count should not exceed k or total documents
+        assert len(results) <= k
+        assert len(results) <= len(documents)
 
     def test_empty_query(self, sample_documents):
         """Test search with empty query"""

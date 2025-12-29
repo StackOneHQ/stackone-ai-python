@@ -1,10 +1,15 @@
 """Tests for StackOneToolSet."""
 
 import asyncio
+import base64
+import fnmatch
 import os
+import string
 from unittest.mock import patch
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from stackone_ai.toolset import (
     StackOneToolSet,
@@ -13,6 +18,35 @@ from stackone_ai.toolset import (
     ToolsetLoadError,
     _build_auth_header,
     _run_async,
+)
+
+# Hypothesis strategies for PBT
+# API key strategy with printable ASCII characters
+api_key_strategy = st.text(
+    alphabet="".join(chr(i) for i in range(32, 127)),
+    min_size=1,
+    max_size=200,
+)
+
+# Tool name strategy (lowercase letters, digits, underscores)
+tool_name_strategy = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "_",
+    min_size=1,
+    max_size=50,
+)
+
+# Glob pattern strategy
+glob_pattern_strategy = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "_*?",
+    min_size=1,
+    max_size=50,
+)
+
+# Provider name strategy
+provider_name_strategy = st.text(
+    alphabet=string.ascii_lowercase,
+    min_size=2,
+    max_size=20,
 )
 
 
@@ -52,6 +86,35 @@ class TestBuildAuthHeader:
         """Test auth header with special characters in key."""
         result = _build_auth_header("key:with:colons")
         assert result.startswith("Basic ")
+
+    @given(api_key=api_key_strategy)
+    @settings(max_examples=100)
+    def test_auth_header_format_pbt(self, api_key: str):
+        """PBT: Test auth header format for various API keys."""
+        result = _build_auth_header(api_key)
+
+        # Should start with "Basic "
+        assert result.startswith("Basic ")
+
+        # Should be valid base64
+        encoded_part = result.replace("Basic ", "")
+        decoded = base64.b64decode(encoded_part).decode("utf-8")
+
+        # Decoded should be "api_key:"
+        assert decoded == f"{api_key}:"
+
+    @given(api_key=api_key_strategy)
+    @settings(max_examples=100)
+    def test_auth_header_round_trip_pbt(self, api_key: str):
+        """PBT: Test that auth header can be decoded back to original key."""
+        result = _build_auth_header(api_key)
+        encoded_part = result.replace("Basic ", "")
+        decoded = base64.b64decode(encoded_part).decode("utf-8")
+
+        # Should be able to extract original key (remove trailing colon)
+        # The format is "api_key:" so we remove the last character
+        extracted_key = decoded[:-1] if decoded.endswith(":") else decoded
+        assert extracted_key == api_key
 
 
 class TestRunAsync:
@@ -257,3 +320,36 @@ def test_filter_by_action():
     # Test non-matching patterns
     assert not toolset._filter_by_action("workday_list_contacts", ["*_list_employees"])
     assert not toolset._filter_by_action("bamboohr_create_job", ["hibob_*"])
+
+
+@given(
+    tool_name=tool_name_strategy,
+    pattern=glob_pattern_strategy,
+)
+@settings(max_examples=100)
+def test_filter_by_action_matches_fnmatch_pbt(tool_name: str, pattern: str):
+    """PBT: Test that action filtering matches Python fnmatch behavior."""
+    toolset = StackOneToolSet(api_key="test_key")
+
+    result = toolset._filter_by_action(tool_name, [pattern])
+    expected = fnmatch.fnmatch(tool_name, pattern)
+
+    assert result == expected, f"Mismatch for tool='{tool_name}', pattern='{pattern}'"
+
+
+@given(
+    provider=provider_name_strategy,
+    action=st.text(alphabet=string.ascii_lowercase + "_", min_size=1, max_size=20),
+    entity=st.text(alphabet=string.ascii_lowercase, min_size=1, max_size=20),
+)
+@settings(max_examples=100)
+def test_filter_by_provider_case_insensitive_pbt(provider: str, action: str, entity: str):
+    """PBT: Test that provider filtering is case-insensitive."""
+    toolset = StackOneToolSet(api_key="test_key")
+    tool_name = f"{provider}_{action}_{entity}"
+
+    # Should match regardless of case
+    assert toolset._filter_by_provider(tool_name, [provider.lower()])
+    assert toolset._filter_by_provider(tool_name, [provider.upper()])
+    assert toolset._filter_by_provider(tool_name.upper(), [provider.lower()])
+    assert toolset._filter_by_provider(tool_name.lower(), [provider.upper()])
