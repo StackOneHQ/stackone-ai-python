@@ -98,15 +98,29 @@
 
               # security
               gitleaks
+
+              # Node.js for MCP mock server
+              bun
+              pnpm_10
+              typescript-go
             ];
 
             shellHook = ''
               echo "StackOne AI Python SDK development environment"
 
-              # Install dependencies only if .venv is missing or uv.lock is newer
+              # Install Python dependencies only if .venv is missing or uv.lock is newer
               if [ ! -d .venv ] || [ uv.lock -nt .venv ]; then
-                echo "📦 Installing dependencies..."
+                echo "📦 Installing Python dependencies..."
                 uv sync --all-extras
+              fi
+
+              # Install Node.js dependencies for MCP mock server (used in tests)
+              if [ -f vendor/stackone-ai-node/package.json ]; then
+                if [ ! -f vendor/stackone-ai-node/node_modules/.pnpm/lock.yaml ] || \
+                   [ vendor/stackone-ai-node/pnpm-lock.yaml -nt vendor/stackone-ai-node/node_modules/.pnpm/lock.yaml ]; then
+                  echo "📦 Installing MCP mock server dependencies..."
+                  (cd vendor/stackone-ai-node && pnpm install --frozen-lockfile)
+                fi
               fi
 
               # Install git hooks
