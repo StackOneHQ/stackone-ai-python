@@ -1,8 +1,9 @@
-from __future__ import annotations
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from stackone_ai.toolset import StackOneToolSet, _McpToolDefinition
+from stackone_ai.toolset import StackOneToolSet, _fetch_mcp_tools, _McpToolDefinition
 
 
 @pytest.fixture
@@ -270,3 +271,144 @@ class TestProviderAndActionFiltering:
         assert len(tools) == 1
         tool_names = [t.name for t in tools.to_list()]
         assert "hibob_list_employees" in tool_names
+
+
+class TestAccountIdFallback:
+    """Test account ID fallback to instance account_id."""
+
+    def test_uses_instance_account_id_when_no_other_provided(self, monkeypatch):
+        """Test that fetch_tools uses instance account_id when no account_ids provided."""
+        sample_tool = _McpToolDefinition(
+            name="test_tool",
+            description="Test tool",
+            input_schema={"type": "object", "properties": {}},
+        )
+
+        captured_accounts: list[str | None] = []
+
+        def fake_fetch(_: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            captured_accounts.append(headers.get("x-account-id"))
+            return [sample_tool]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        # Create toolset with account_id in constructor
+        toolset = StackOneToolSet(api_key="test_key", account_id="instance_account")
+        tools = toolset.fetch_tools()  # No account_ids, no set_accounts
+
+        # Should use the instance account_id
+        assert captured_accounts == ["instance_account"]
+        assert len(tools) == 1
+        tool = tools.get_tool("test_tool")
+        assert tool is not None
+        assert tool.get_account_id() == "instance_account"
+
+
+class TestToolsetErrorHandling:
+    """Test error handling in fetch_tools."""
+
+    def test_reraises_toolset_error(self, monkeypatch):
+        """Test that ToolsetError is re-raised without wrapping."""
+        from stackone_ai.toolset import ToolsetConfigError
+
+        def fake_fetch(_: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            raise ToolsetConfigError("Original config error")
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test_key")
+        with pytest.raises(ToolsetConfigError, match="Original config error"):
+            toolset.fetch_tools()
+
+
+class TestFetchMcpToolsInternal:
+    """Test _fetch_mcp_tools internal implementation."""
+
+    def test_fetch_mcp_tools_single_page(self):
+        """Test fetching tools with single page response."""
+        # Create mock tool response
+        mock_tool = MagicMock()
+        mock_tool.name = "test_tool"
+        mock_tool.description = "Test description"
+        mock_tool.inputSchema = {"type": "object", "properties": {"id": {"type": "string"}}}
+
+        mock_result = MagicMock()
+        mock_result.tools = [mock_tool]
+        mock_result.nextCursor = None
+
+        # Create mock session
+        mock_session = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session.list_tools = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        # Create mock streamable client
+        @asynccontextmanager
+        async def mock_streamable_client(endpoint, headers):
+            yield (MagicMock(), MagicMock(), MagicMock())
+
+        # Patch at the module where imports happen
+        with (
+            patch(
+                "mcp.client.streamable_http.streamablehttp_client",
+                side_effect=mock_streamable_client,
+            ),
+            patch("mcp.client.session.ClientSession", return_value=mock_session),
+            patch("mcp.types.Implementation", MagicMock()),
+        ):
+            result = _fetch_mcp_tools("https://api.example.com/mcp", {"Authorization": "Basic test"})
+
+            assert len(result) == 1
+            assert result[0].name == "test_tool"
+            assert result[0].description == "Test description"
+            assert result[0].input_schema == {"type": "object", "properties": {"id": {"type": "string"}}}
+
+    def test_fetch_mcp_tools_with_pagination(self):
+        """Test fetching tools with multiple pages."""
+        # First page
+        mock_tool1 = MagicMock()
+        mock_tool1.name = "tool_1"
+        mock_tool1.description = "Tool 1"
+        mock_tool1.inputSchema = {}
+
+        mock_result1 = MagicMock()
+        mock_result1.tools = [mock_tool1]
+        mock_result1.nextCursor = "cursor_page_2"
+
+        # Second page
+        mock_tool2 = MagicMock()
+        mock_tool2.name = "tool_2"
+        mock_tool2.description = "Tool 2"
+        mock_tool2.inputSchema = None  # Test None inputSchema
+
+        mock_result2 = MagicMock()
+        mock_result2.tools = [mock_tool2]
+        mock_result2.nextCursor = None
+
+        # Create mock session with pagination
+        mock_session = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session.list_tools = AsyncMock(side_effect=[mock_result1, mock_result2])
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        @asynccontextmanager
+        async def mock_streamable_client(endpoint, headers):
+            yield (MagicMock(), MagicMock(), MagicMock())
+
+        with (
+            patch(
+                "mcp.client.streamable_http.streamablehttp_client",
+                side_effect=mock_streamable_client,
+            ),
+            patch("mcp.client.session.ClientSession", return_value=mock_session),
+            patch("mcp.types.Implementation", MagicMock()),
+        ):
+            result = _fetch_mcp_tools("https://api.example.com/mcp", {})
+
+            assert len(result) == 2
+            assert result[0].name == "tool_1"
+            assert result[1].name == "tool_2"
+            assert result[1].input_schema == {}  # None should become empty dict
+            assert mock_session.list_tools.call_count == 2

@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from langchain_core.tools import BaseTool as LangChainBaseTool
 from pydantic import ValidationError
 
@@ -16,6 +18,65 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
     validate_method,
+)
+
+# Hypothesis strategies for PBT
+VALID_HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+
+# Strategy for case variations of valid HTTP methods
+valid_method_case_variants = st.sampled_from(VALID_HTTP_METHODS).flatmap(
+    lambda method: st.sampled_from(
+        [
+            method.lower(),
+            method.upper(),
+            method.capitalize(),
+            method.lower().capitalize(),
+        ]
+    )
+)
+
+# Strategy for invalid HTTP methods
+invalid_method_strategy = st.one_of(
+    st.sampled_from(["OPTIONS", "HEAD", "TRACE", "CONNECT", "COPY", "MOVE", "INVALID", "FOO"]),
+    st.text(min_size=1, max_size=10, alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ").filter(
+        lambda m: m.upper() not in VALID_HTTP_METHODS
+    ),
+)
+
+# Strategy for invalid JSON strings (must not be parseable as valid JSON at all)
+# Note: Python's json module accepts NaN/Infinity by default, so avoid those
+invalid_json_strategy = st.one_of(
+    st.just("{incomplete"),
+    st.just('{"missing": }'),
+    st.just('{"key": value}'),
+    st.just("[1, 2, 3"),
+    st.just("not json at all"),
+    st.just("{trailing}garbage"),
+    st.just("{missing closing brace"),
+    st.just("undefined"),
+    st.just("abc123"),
+    st.just("foo bar baz"),
+)
+
+# Strategy for valid JSON that is not a dict (arrays, primitives)
+# These are all valid JSON but not objects/dicts
+non_dict_json_strategy = st.one_of(
+    st.just("[]"),
+    st.just("[1, 2, 3]"),
+    st.just("[1]"),
+    st.just("null"),
+    st.just("true"),
+    st.just("false"),
+    st.just("123"),
+    st.just("45.67"),
+    st.just('"a string"'),
+    st.just('["array", "of", "strings"]'),
+)
+
+# Strategy for account IDs
+account_id_strategy = st.one_of(
+    st.none(),
+    st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=50),
 )
 
 
@@ -216,6 +277,21 @@ class TestValidateMethod:
         with pytest.raises(ValueError, match="Unsupported HTTP method"):
             validate_method("OPTIONS")
 
+    @given(method=valid_method_case_variants)
+    @settings(max_examples=50)
+    def test_valid_methods_case_variations_pbt(self, method: str):
+        """PBT: Test valid HTTP methods with various case combinations."""
+        result = validate_method(method)
+        assert result in VALID_HTTP_METHODS
+        assert result == method.upper()
+
+    @given(method=invalid_method_strategy)
+    @settings(max_examples=50)
+    def test_invalid_methods_pbt(self, method: str):
+        """PBT: Test that invalid HTTP methods raise ValueError."""
+        with pytest.raises(ValueError, match="Unsupported HTTP method"):
+            validate_method(method)
+
 
 class TestExecuteConfig:
     """Test ExecuteConfig validation"""
@@ -318,6 +394,50 @@ class TestStackOneToolExecution:
         """Test non-dict JSON raises ValueError"""
         with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
             mock_tool.execute("[1, 2, 3]")
+
+    @given(invalid_json=invalid_json_strategy)
+    @settings(max_examples=50)
+    def test_invalid_json_arguments_pbt(self, invalid_json: str):
+        """PBT: Test various invalid JSON strings raise ValueError."""
+        # Create tool inside the test to avoid fixture issues with Hypothesis
+        tool = StackOneTool(
+            description="Test tool",
+            parameters=ToolParameters(
+                type="object",
+                properties={"id": {"type": "string"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/test/{id}",
+                name="test_tool",
+            ),
+            _api_key="test_key",
+        )
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            tool.execute(invalid_json)
+
+    @given(non_dict_json=non_dict_json_strategy)
+    @settings(max_examples=50)
+    def test_non_dict_arguments_pbt(self, non_dict_json: str):
+        """PBT: Test non-dict JSON values raise ValueError."""
+        # Create tool inside the test to avoid fixture issues with Hypothesis
+        tool = StackOneTool(
+            description="Test tool",
+            parameters=ToolParameters(
+                type="object",
+                properties={"id": {"type": "string"}},
+            ),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/test/{id}",
+                name="test_tool",
+            ),
+            _api_key="test_key",
+        )
+        with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
+            tool.execute(non_dict_json)
 
     def test_form_body_type(self):
         """Test form body type handling"""
@@ -638,6 +758,96 @@ class TestStackOneToolLangChainConversion:
             assert result == {"result": "async_test"}
 
 
+class TestStackOneToolFeedbackOptions:
+    """Test feedback options handling."""
+
+    def test_split_feedback_options_extracts_from_params(self):
+        """Test that feedback options are extracted from params."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        params = {
+            "regular_param": "value",
+            "feedback_session_id": "session123",
+            "feedback_user_id": "user456",
+        }
+
+        new_params, feedback_options = tool._split_feedback_options(params, None)
+
+        # Feedback options should be extracted
+        assert "feedback_session_id" in feedback_options
+        assert feedback_options["feedback_session_id"] == "session123"
+        assert "feedback_user_id" in feedback_options
+        assert feedback_options["feedback_user_id"] == "user456"
+
+        # Original params should have them removed
+        assert "feedback_session_id" not in new_params
+        assert "feedback_user_id" not in new_params
+        assert new_params["regular_param"] == "value"
+
+    def test_split_feedback_options_with_existing_options(self):
+        """Test that existing options take precedence."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        params = {"feedback_session_id": "from_params"}
+        options = {"feedback_session_id": "from_options"}
+
+        _, feedback_options = tool._split_feedback_options(params, options)
+
+        # Options should take precedence
+        assert feedback_options["feedback_session_id"] == "from_options"
+
+    def test_execute_with_feedback_metadata(self):
+        """Test execution with feedback_metadata in options."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/test",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"success": True}
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            result = tool.execute(
+                {},
+                options={
+                    "feedback_metadata": {"custom_field": "custom_value"},
+                    "feedback_session_id": "sess123",
+                },
+            )
+
+            assert result == {"success": True}
+
+
 class TestStackOneToolAccountId:
     """Test account ID methods"""
 
@@ -662,6 +872,25 @@ class TestStackOneToolAccountId:
 
         tool.set_account_id(None)
         assert tool.get_account_id() is None
+
+    @given(account_id=account_id_strategy)
+    @settings(max_examples=50)
+    def test_account_id_round_trip_pbt(self, account_id: str | None):
+        """PBT: Test setting and getting various account ID values."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        tool.set_account_id(account_id)
+        assert tool.get_account_id() == account_id
 
 
 class TestToolsContainer:

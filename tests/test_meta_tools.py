@@ -3,6 +3,8 @@
 import httpx
 import pytest
 import respx
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from stackone_ai import StackOneTool, Tools
 from stackone_ai.meta_tools import (
@@ -11,6 +13,77 @@ from stackone_ai.meta_tools import (
     create_meta_search_tools,
 )
 from stackone_ai.models import ExecuteConfig, ToolParameters
+
+# Hypothesis strategies for PBT
+# Score threshold strategy
+score_threshold_strategy = st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False)
+
+# Hybrid alpha strategy (can be outside [0, 1] to test clamping)
+hybrid_alpha_strategy = st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False)
+
+# Limit strategy
+limit_strategy = st.integers(min_value=1, max_value=100)
+
+
+def _create_sample_tools() -> list[StackOneTool]:
+    """Helper function to create sample tools (for use in PBT tests)."""
+    tools = []
+
+    # Create HiBob tools
+    for action in ["create", "list", "update", "delete"]:
+        for entity in ["employee", "department", "timeoff"]:
+            tool_name = f"hibob_{action}_{entity}"
+            execute_config = ExecuteConfig(
+                name=tool_name,
+                method="POST" if action in ["create", "update"] else "GET",
+                url=f"https://api.example.com/hibob/{entity}",
+                headers={},
+            )
+
+            parameters = ToolParameters(
+                type="object",
+                properties={
+                    "id": {"type": "string", "description": "Entity ID"},
+                    "data": {"type": "object", "description": "Entity data"},
+                },
+            )
+
+            tool = StackOneTool(
+                description=f"{action.capitalize()} {entity} in HiBob system",
+                parameters=parameters,
+                _execute_config=execute_config,
+                _api_key="test_key",
+            )
+            tools.append(tool)
+
+    # Create BambooHR tools
+    for action in ["create", "list", "search"]:
+        for entity in ["candidate", "job", "application"]:
+            tool_name = f"bamboohr_{action}_{entity}"
+            execute_config = ExecuteConfig(
+                name=tool_name,
+                method="POST" if action == "create" else "GET",
+                url=f"https://api.example.com/bamboohr/{entity}",
+                headers={},
+            )
+
+            parameters = ToolParameters(
+                type="object",
+                properties={
+                    "query": {"type": "string", "description": "Search query"},
+                    "filters": {"type": "object", "description": "Filter criteria"},
+                },
+            )
+
+            tool = StackOneTool(
+                description=f"{action.capitalize()} {entity} in BambooHR system",
+                parameters=parameters,
+                _execute_config=execute_config,
+                _api_key="test_key",
+            )
+            tools.append(tool)
+
+    return tools
 
 
 @pytest.fixture
@@ -132,6 +205,36 @@ class TestToolIndex:
 
         assert len(results) <= 3
 
+    @given(min_score=score_threshold_strategy, limit=limit_strategy)
+    @settings(max_examples=50)
+    def test_search_with_min_score_pbt(self, min_score: float, limit: int):
+        """PBT: Test that min_score filtering always works correctly."""
+        # Create tools inside test to avoid fixture issues with Hypothesis
+        tools = _create_sample_tools()
+        index = ToolIndex(tools)
+
+        results = index.search("employee", limit=limit, min_score=min_score)
+
+        # All results must meet the score threshold
+        for r in results:
+            assert r.score >= min_score, f"Score {r.score} < min_score {min_score}"
+
+        # Result count should not exceed limit
+        assert len(results) <= limit
+
+    @given(limit=limit_strategy)
+    @settings(max_examples=50)
+    def test_search_limit_pbt(self, limit: int):
+        """PBT: Test that limit is always respected."""
+        # Create tools inside test to avoid fixture issues with Hypothesis
+        tools = _create_sample_tools()
+        index = ToolIndex(tools)
+
+        results = index.search("employee", limit=limit)
+
+        assert len(results) <= limit
+        assert len(results) <= len(tools)
+
 
 class TestMetaSearchTool:
     """Test the meta_search_tools functionality"""
@@ -143,6 +246,21 @@ class TestMetaSearchTool:
 
         assert filter_tool.name == "meta_search_tools"
         assert "natural language query" in filter_tool.description.lower()
+
+    def test_filter_tool_execute_with_json_string(self, sample_tools):
+        """Test executing the filter tool with JSON string input."""
+        import json
+
+        index = ToolIndex(sample_tools)
+        filter_tool = create_meta_search_tools(index)
+
+        # Execute with JSON string
+        json_input = json.dumps({"query": "employee", "limit": 2, "minScore": 0.0})
+        result = filter_tool.execute(json_input)
+
+        assert "tools" in result
+        assert isinstance(result["tools"], list)
+        assert len(result["tools"]) <= 2
 
     def test_filter_tool_execute(self, sample_tools):
         """Test executing the filter tool"""
@@ -197,6 +315,17 @@ class TestMetaExecuteTool:
 
         with pytest.raises(ValueError, match="toolName is required"):
             execute_tool.execute({"params": {}})
+
+    def test_execute_tool_with_json_string(self, tools_collection):
+        """Test execute tool with JSON string input."""
+        import json
+
+        execute_tool = create_meta_execute_tool(tools_collection)
+
+        # Execute with JSON string - should raise ValueError for invalid tool
+        json_input = json.dumps({"toolName": "nonexistent_tool", "params": {}})
+        with pytest.raises(ValueError, match="Tool 'nonexistent_tool' not found"):
+            execute_tool.execute(json_input)
 
     def test_execute_tool_invalid_name(self, tools_collection):
         """Test execute tool with invalid tool name"""
@@ -282,6 +411,25 @@ class TestHybridSearch:
 
         index_max = ToolIndex(sample_tools, hybrid_alpha=1.5)
         assert index_max.hybrid_alpha == 1.0
+
+    @given(alpha=hybrid_alpha_strategy)
+    @settings(max_examples=100)
+    def test_hybrid_alpha_clamping_pbt(self, alpha: float):
+        """PBT: Test that hybrid_alpha is always clamped to [0.0, 1.0]."""
+        # Create tools inside test to avoid fixture issues with Hypothesis
+        tools = _create_sample_tools()
+        index = ToolIndex(tools, hybrid_alpha=alpha)
+
+        # Should always be clamped to [0.0, 1.0]
+        assert 0.0 <= index.hybrid_alpha <= 1.0
+
+        # Verify clamping logic
+        if alpha < 0.0:
+            assert index.hybrid_alpha == 0.0
+        elif alpha > 1.0:
+            assert index.hybrid_alpha == 1.0
+        else:
+            assert index.hybrid_alpha == alpha
 
     def test_hybrid_search_returns_results(self, sample_tools):
         """Test that hybrid search returns meaningful results"""
