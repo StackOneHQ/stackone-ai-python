@@ -115,7 +115,7 @@
               fi
 
               # Install Node.js dependencies for MCP mock server (used in tests)
-              if [ -d vendor/stackone-ai-node ]; then
+              if [ -f vendor/stackone-ai-node/package.json ]; then
                 if [ ! -f vendor/stackone-ai-node/node_modules/.pnpm/lock.yaml ] || \
                    [ vendor/stackone-ai-node/pnpm-lock.yaml -nt vendor/stackone-ai-node/node_modules/.pnpm/lock.yaml ]; then
                   echo "📦 Installing MCP mock server dependencies..."
