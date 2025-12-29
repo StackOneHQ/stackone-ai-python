@@ -638,6 +638,96 @@ class TestStackOneToolLangChainConversion:
             assert result == {"result": "async_test"}
 
 
+class TestStackOneToolFeedbackOptions:
+    """Test feedback options handling."""
+
+    def test_split_feedback_options_extracts_from_params(self):
+        """Test that feedback options are extracted from params."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        params = {
+            "regular_param": "value",
+            "feedback_session_id": "session123",
+            "feedback_user_id": "user456",
+        }
+
+        new_params, feedback_options = tool._split_feedback_options(params, None)
+
+        # Feedback options should be extracted
+        assert "feedback_session_id" in feedback_options
+        assert feedback_options["feedback_session_id"] == "session123"
+        assert "feedback_user_id" in feedback_options
+        assert feedback_options["feedback_user_id"] == "user456"
+
+        # Original params should have them removed
+        assert "feedback_session_id" not in new_params
+        assert "feedback_user_id" not in new_params
+        assert new_params["regular_param"] == "value"
+
+    def test_split_feedback_options_with_existing_options(self):
+        """Test that existing options take precedence."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        params = {"feedback_session_id": "from_params"}
+        options = {"feedback_session_id": "from_options"}
+
+        _, feedback_options = tool._split_feedback_options(params, options)
+
+        # Options should take precedence
+        assert feedback_options["feedback_session_id"] == "from_options"
+
+    def test_execute_with_feedback_metadata(self):
+        """Test execution with feedback_metadata in options."""
+        tool = StackOneTool(
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                headers={},
+                method="GET",
+                url="https://api.example.com/test",
+                name="test",
+            ),
+            _api_key="test_key",
+        )
+
+        with patch("httpx.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"success": True}
+            mock_response.status_code = 200
+            mock_response.raise_for_status = MagicMock()
+            mock_request.return_value = mock_response
+
+            result = tool.execute(
+                {},
+                options={
+                    "feedback_metadata": {"custom_field": "custom_value"},
+                    "feedback_session_id": "sess123",
+                },
+            )
+
+            assert result == {"success": True}
+
+
 class TestStackOneToolAccountId:
     """Test account ID methods"""
 
