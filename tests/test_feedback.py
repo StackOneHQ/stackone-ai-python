@@ -1,6 +1,5 @@
 """Tests for feedback tool."""
 
-# TODO: Remove when Python 3.9 support is dropped
 from __future__ import annotations
 
 import json
