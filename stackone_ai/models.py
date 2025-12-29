@@ -1,21 +1,17 @@
-# TODO: Remove when Python 3.9 support is dropped
 from __future__ import annotations
 
 import base64
 import json
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Annotated, Any, ClassVar, cast
+from typing import Annotated, Any, ClassVar, TypeAlias, cast
 from urllib.parse import quote
 
 import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
-
-# TODO: Remove when Python 3.9 support is dropped
-from typing_extensions import TypeAlias
 
 # Type aliases for common types
 JsonDict: TypeAlias = dict[str, Any]
@@ -200,7 +196,7 @@ class StackOneTool(BaseModel):
             StackOneAPIError: If the API request fails
             ValueError: If the arguments are invalid
         """
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         feedback_options: JsonDict = {}
         result_payload: JsonDict | None = None
         response_status: int | None = None
@@ -270,7 +266,7 @@ class StackOneTool(BaseModel):
             status = "error"
             raise StackOneError(f"Request failed: {exc}") from exc
         finally:
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             metadata: JsonDict = {
                 "http_method": self._execute_config.method,
                 "url": url_used,
