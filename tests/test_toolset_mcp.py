@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import sys
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from stackone_ai.toolset import StackOneToolSet, _fetch_mcp_tools, _McpToolDefinition
+
+# MCP module requires Python 3.10+
+SKIP_MCP_TESTS = sys.version_info < (3, 10)
 
 
 @pytest.fixture
@@ -323,6 +327,7 @@ class TestToolsetErrorHandling:
             toolset.fetch_tools()
 
 
+@pytest.mark.skipif(SKIP_MCP_TESTS, reason="MCP module requires Python 3.10+")
 class TestFetchMcpToolsInternal:
     """Test _fetch_mcp_tools internal implementation."""
 
