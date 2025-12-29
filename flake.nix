@@ -42,8 +42,6 @@
               nixfmt.package = pkgs.nixfmt-rfc-style;
               ruff-check.enable = true;
               ruff-format.enable = true;
-              typos.enable = true;
-              typos.configFile = "typos.toml";
             };
             settings.formatter.oxfmt = {
               command = "${pkgs.oxfmt}/bin/oxfmt";
@@ -96,8 +94,6 @@
               uv
               just
               nixfmt-rfc-style
-              typos
-              typos-lsp
               basedpyright
 
               # security
