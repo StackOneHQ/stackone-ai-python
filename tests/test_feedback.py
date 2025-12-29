@@ -56,6 +56,29 @@ class TestFeedbackToolValidation:
         with pytest.raises(StackOneError, match="At least one valid account ID is required"):
             tool.execute({"feedback": "Great tools!", "account_id": ["", "   "], "tool_names": ["test_tool"]})
 
+    def test_invalid_account_id_type(self) -> None:
+        """Test validation with invalid account ID type (not string or list)."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        # Pydantic validates input types before our custom validator runs
+        with pytest.raises(StackOneError, match="(account_id|Input should be a valid)"):
+            tool.execute({"feedback": "Great tools!", "account_id": 12345, "tool_names": ["test_tool"]})
+
+        with pytest.raises(StackOneError, match="(account_id|Input should be a valid)"):
+            tool.execute(
+                {"feedback": "Great tools!", "account_id": {"nested": "dict"}, "tool_names": ["test_tool"]}
+            )
+
+    def test_invalid_json_input(self) -> None:
+        """Test that invalid JSON input raises appropriate error."""
+        tool = create_feedback_tool(api_key="test_key")
+
+        with pytest.raises(StackOneError, match="Invalid JSON"):
+            tool.execute("not valid json {}")
+
+        with pytest.raises(StackOneError, match="Invalid JSON"):
+            tool.execute("{missing closing brace")
+
     @respx.mock
     def test_json_string_input(self) -> None:
         """Test that JSON string input is properly parsed."""
