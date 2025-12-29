@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from stackone_ai.toolset import StackOneToolSet, _McpToolDefinition
+from stackone_ai.toolset import StackOneToolSet, _fetch_mcp_tools, _McpToolDefinition
 
 
 @pytest.fixture
@@ -318,3 +321,96 @@ class TestToolsetErrorHandling:
         toolset = StackOneToolSet(api_key="test_key")
         with pytest.raises(ToolsetConfigError, match="Original config error"):
             toolset.fetch_tools()
+
+
+class TestFetchMcpToolsInternal:
+    """Test _fetch_mcp_tools internal implementation."""
+
+    def test_fetch_mcp_tools_single_page(self):
+        """Test fetching tools with single page response."""
+        # Create mock tool response
+        mock_tool = MagicMock()
+        mock_tool.name = "test_tool"
+        mock_tool.description = "Test description"
+        mock_tool.inputSchema = {"type": "object", "properties": {"id": {"type": "string"}}}
+
+        mock_result = MagicMock()
+        mock_result.tools = [mock_tool]
+        mock_result.nextCursor = None
+
+        # Create mock session
+        mock_session = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session.list_tools = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        # Create mock streamable client
+        @asynccontextmanager
+        async def mock_streamable_client(endpoint, headers):
+            yield (MagicMock(), MagicMock(), MagicMock())
+
+        # Patch at the module where imports happen
+        with (
+            patch(
+                "mcp.client.streamable_http.streamablehttp_client",
+                side_effect=mock_streamable_client,
+            ),
+            patch("mcp.client.session.ClientSession", return_value=mock_session),
+            patch("mcp.types.Implementation", MagicMock()),
+        ):
+            result = _fetch_mcp_tools("https://api.example.com/mcp", {"Authorization": "Basic test"})
+
+            assert len(result) == 1
+            assert result[0].name == "test_tool"
+            assert result[0].description == "Test description"
+            assert result[0].input_schema == {"type": "object", "properties": {"id": {"type": "string"}}}
+
+    def test_fetch_mcp_tools_with_pagination(self):
+        """Test fetching tools with multiple pages."""
+        # First page
+        mock_tool1 = MagicMock()
+        mock_tool1.name = "tool_1"
+        mock_tool1.description = "Tool 1"
+        mock_tool1.inputSchema = {}
+
+        mock_result1 = MagicMock()
+        mock_result1.tools = [mock_tool1]
+        mock_result1.nextCursor = "cursor_page_2"
+
+        # Second page
+        mock_tool2 = MagicMock()
+        mock_tool2.name = "tool_2"
+        mock_tool2.description = "Tool 2"
+        mock_tool2.inputSchema = None  # Test None inputSchema
+
+        mock_result2 = MagicMock()
+        mock_result2.tools = [mock_tool2]
+        mock_result2.nextCursor = None
+
+        # Create mock session with pagination
+        mock_session = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session.list_tools = AsyncMock(side_effect=[mock_result1, mock_result2])
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        @asynccontextmanager
+        async def mock_streamable_client(endpoint, headers):
+            yield (MagicMock(), MagicMock(), MagicMock())
+
+        with (
+            patch(
+                "mcp.client.streamable_http.streamablehttp_client",
+                side_effect=mock_streamable_client,
+            ),
+            patch("mcp.client.session.ClientSession", return_value=mock_session),
+            patch("mcp.types.Implementation", MagicMock()),
+        ):
+            result = _fetch_mcp_tools("https://api.example.com/mcp", {})
+
+            assert len(result) == 2
+            assert result[0].name == "tool_1"
+            assert result[1].name == "tool_2"
+            assert result[1].input_schema == {}  # None should become empty dict
+            assert mock_session.list_tools.call_count == 2
