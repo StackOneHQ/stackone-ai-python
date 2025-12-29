@@ -34,11 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.13"]
+        python-version: ["3.11", "3.13"]
         include:
-          - python-version: "3.9"
-            sync-extras: "--all-extras --no-extra mcp"
-          - python-version: "3.10"
+          - python-version: "3.11"
             sync-extras: "--all-extras"
           - python-version: "3.13"
             sync-extras: "--all-extras"

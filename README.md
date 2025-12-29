@@ -25,7 +25,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Requirements
 
-- Python 3.10+ (MCP extra required for `fetch_tools()`)
+- Python 3.11+
 
 ## Installation
 
@@ -265,11 +265,9 @@ _ = app.invoke({"messages": [("user", "Get employee with id emp123") ]})
 </details>
 
 <details>
-<summary>CrewAI Integration (Python 3.10+)</summary>
+<summary>CrewAI Integration</summary>
 
 CrewAI uses LangChain tools natively, making integration seamless:
-
-> **Note**: CrewAI requires Python 3.10+. Install with `pip install 'stackone-ai[mcp,examples]'`
 
 ```python
 from crewai import Agent, Crew, Task
