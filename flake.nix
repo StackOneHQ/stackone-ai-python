@@ -108,6 +108,12 @@
             shellHook = ''
               echo "StackOne AI Python SDK development environment"
 
+              # Initialize git submodules if not already done
+              if [ -f .gitmodules ] && [ ! -f vendor/stackone-ai-node/package.json ]; then
+                echo "📦 Initializing git submodules..."
+                git submodule update --init --recursive
+              fi
+
               # Install Python dependencies only if .venv is missing or uv.lock is newer
               if [ ! -d .venv ] || [ uv.lock -nt .venv ]; then
                 echo "📦 Installing Python dependencies..."
