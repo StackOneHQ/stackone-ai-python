@@ -36,9 +36,6 @@ packages = ["stackone_ai"]
 [tool.hatch.build.targets.wheel.force-include]
 "stackone_ai/py.typed" = "stackone_ai/py.typed"
 
-[tool.hatch.build.targets.wheel.shared-data]
-"py.typed" = "py.typed"
-
 [project.optional-dependencies]
 mcp = [
     "mcp>=1.3.0",
@@ -115,3 +112,6 @@ output = "coverage/coverage.json"
 
 [tool.coverage.html]
 directory = "coverage/html"
+
+[tool.uv]
+link-mode = "clone"
