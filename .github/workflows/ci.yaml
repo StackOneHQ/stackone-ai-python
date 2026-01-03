@@ -16,7 +16,25 @@ permissions:
   id-token: write
 
 jobs:
+  build-cache:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["python311", "python313"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build Nix environment
+        run: nix develop .#${{ matrix.python-version }} --command true
+
   gitleaks:
+    needs: build-cache
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -31,6 +49,7 @@ jobs:
         run: nix develop --command just gitleaks
 
   ci:
+    needs: build-cache
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -56,6 +75,7 @@ jobs:
         run: nix develop .#${{ matrix.python-version }} --command just test
 
   coverage:
+    needs: build-cache
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
