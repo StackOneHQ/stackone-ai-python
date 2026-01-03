@@ -1,6 +1,3 @@
-# Helper to run Python commands (uses uv run if not in Nix environment)
-_run := if env("VIRTUAL_ENV", "") != "" { "" } else { "uv run " }
-
 # Install dependencies and pre-commit hooks
 install *extras:
 	uv sync {{ extras }}
@@ -13,28 +10,25 @@ lint:
 format:
 	nix fmt
 
-# Alias for format
-lint-fix: format
-
 # Run all tests
 test:
-	{{ _run }}pytest
+	uv run pytest
 
 # Run tests with coverage
 coverage:
-	{{ _run }}pytest --cov --cov-report=term --cov-report=json --cov-report=html
+	uv run pytest --cov --cov-report=term --cov-report=json --cov-report=html
 
 # Run tool-specific tests
 test-tools:
-	{{ _run }}pytest tests
+	uv run pytest tests
 
 # Run example tests
 test-examples:
-	{{ _run }}pytest examples
+	uv run pytest examples
 
 # Run type checking
 ty:
-	{{ _run }}ty check stackone_ai
+	uv run ty check stackone_ai
 
 # Run gitleaks secret detection
 gitleaks:
@@ -42,7 +36,7 @@ gitleaks:
 
 # Update version in __init__.py
 update-version:
-	{{ _run }}python scripts/update_version.py
+	uv run scripts/update_version.py
 
 # Build package
 build:
