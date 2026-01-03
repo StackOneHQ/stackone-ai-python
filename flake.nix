@@ -144,6 +144,8 @@
                 UV_NO_SYNC = "1";
                 UV_PYTHON = "${python}/bin/python";
                 UV_PYTHON_DOWNLOADS = "never";
+                # Set VIRTUAL_ENV for tools like ty that look for site-packages
+                VIRTUAL_ENV = "${virtualenv}";
               };
 
               shellHook = ''
