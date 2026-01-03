@@ -20,4 +20,3 @@ runs:
         restore-prefixes-first-match: |
           nix-${{ runner.os }}-${{ inputs.python-version }}-
           nix-${{ runner.os }}-
-        gc-max-store-size: 4G
