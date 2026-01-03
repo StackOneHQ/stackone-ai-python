@@ -20,7 +20,3 @@ runs:
         restore-prefixes-first-match: |
           nix-${{ runner.os }}-${{ inputs.python-version }}-
           nix-${{ runner.os }}-
-
-    - name: Verify Nix installation
-      shell: bash
-      run: nix develop --command true
