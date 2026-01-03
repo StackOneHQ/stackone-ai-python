@@ -16,7 +16,7 @@ runs:
     - name: Cache Nix store
       uses: nix-community/cache-nix-action@b426b118b6dc86d6952988d396aa7c6b09776d08 # v7
       with:
-        primary-key: nix-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('flake.lock', 'uv.lock') }}
+        primary-key: nix-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('flake.lock', 'uv.lock', 'pyproject.toml', 'src/**/*.py') }}
         restore-prefixes-first-match: |
           nix-${{ runner.os }}-${{ inputs.python-version }}-
           nix-${{ runner.os }}-
