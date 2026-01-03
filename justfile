@@ -10,6 +10,9 @@ lint:
 format:
 	nix fmt
 
+# Alias for format
+lint-fix: format
+
 # Run all tests
 test:
 	uv run pytest
@@ -36,7 +39,7 @@ gitleaks:
 
 # Update version in __init__.py
 update-version:
-	uv run scripts/update_version.py
+	uv run python scripts/update_version.py
 
 # Build package
 build:

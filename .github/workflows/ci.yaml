@@ -34,12 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.13"]
-        include:
-          - python-version: "3.11"
-            sync-extras: "--all-extras"
-          - python-version: "3.13"
-            sync-extras: "--all-extras"
+        python-version: ["python311", "python313"]
     env:
       STACKONE_API_KEY: ${{ secrets.STACKONE_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -52,17 +47,14 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Install dependencies
-        run: nix develop --command just install ${{ matrix.sync-extras }}
-
       - name: Run Lint
-        run: nix develop --command just lint
+        run: nix develop .#${{ matrix.python-version }} --command just lint
 
       - name: Run Ty
-        run: nix develop --command just ty
+        run: nix develop .#${{ matrix.python-version }} --command just ty
 
       - name: Run Tests
-        run: nix develop --command just test
+        run: nix develop .#${{ matrix.python-version }} --command just test
 
   coverage:
     runs-on: ubuntu-latest
@@ -78,9 +70,6 @@ jobs:
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
-
-      - name: Install dependencies
-        run: nix develop --command just install --all-extras
 
       - name: Run Tests with Coverage
         run: nix develop --command just coverage
