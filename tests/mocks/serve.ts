@@ -1,8 +1,11 @@
+#!/usr/bin/env bun run
 /**
  * Standalone HTTP server for MCP mock testing.
  * Imports createMcpApp from stackone-ai-node vendor submodule.
  *
  * Usage:
+ *   ./tests/mocks/serve.ts [port]
+ *   # or
  *   bun run tests/mocks/serve.ts [port]
  */
 import { Hono } from "hono";
