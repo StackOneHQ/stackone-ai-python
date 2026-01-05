@@ -337,20 +337,27 @@ For more examples, check out the [examples/](examples/) directory:
 
 ### Using Nix (Recommended)
 
-[Nix](https://nixos.org/) with flakes provides a consistent development environment:
+This project includes a Nix flake for reproducible development environments. All development tools are defined in [flake.nix](./flake.nix) and provided via Nix.
+
+#### Installing Nix
 
 ```bash
-# Enter development environment (auto-installs dependencies and git hooks)
-nix develop
+# Install Nix with flakes enabled (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf -L https://artifacts.nixos.org/experimental-installer | \
+  sh -s -- install
 
-# Or with direnv (recommended for automatic activation)
+# If flakes are not enabled, enable them with:
+mkdir -p ~/.config/nix && echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+```
+
+#### Activating the Development Environment
+
+```bash
+# Automatic activation with direnv (recommended)
 direnv allow
 
-# Format code
-nix fmt
-
-# Run checks
-nix flake check
+# Or manual activation
+nix develop
 ```
 
 The Nix development environment includes:
