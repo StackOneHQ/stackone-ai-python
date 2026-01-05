@@ -1,4 +1,4 @@
-#!/usr/bin/env bun run
+#!/usr/bin/env -S bun run
 /**
  * Standalone HTTP server for MCP mock testing.
  * Imports createMcpApp from stackone-ai-node vendor submodule.
