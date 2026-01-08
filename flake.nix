@@ -120,15 +120,6 @@
                 uv sync --all-extras
               fi
 
-              # Install Node.js dependencies for MCP mock server (used in tests)
-              if [ -f vendor/stackone-ai-node/package.json ]; then
-                if [ ! -f vendor/stackone-ai-node/node_modules/.pnpm/lock.yaml ] || \
-                   [ vendor/stackone-ai-node/pnpm-lock.yaml -nt vendor/stackone-ai-node/node_modules/.pnpm/lock.yaml ]; then
-                  echo "📦 Installing MCP mock server dependencies..."
-                  (cd vendor/stackone-ai-node && pnpm install --frozen-lockfile)
-                fi
-              fi
-
               # Install git hooks
               ${config.pre-commit.installationScript}
             '';
