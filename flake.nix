@@ -81,7 +81,7 @@
               ty = {
                 enable = true;
                 name = "ty";
-                entry = "${pkgs.uv}/bin/uv run ty check";
+                entry = "${pkgs.ty}/bin/ty check";
                 files = "^stackone_ai/";
                 language = "system";
                 types = [ "python" ];
@@ -92,9 +92,9 @@
           devShells.default = pkgs.mkShell {
             buildInputs = with pkgs; [
               uv
+              ty
               just
               nixfmt-rfc-style
-              basedpyright
 
               # security
               gitleaks
