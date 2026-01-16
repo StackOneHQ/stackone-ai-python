@@ -1,5 +1,14 @@
 name: "Setup Nix"
-description: "Install Nix and configure Cachix"
+description: "Install Nix and configure cache"
+inputs:
+  tools:
+    description: 'Space-separated list of nixpkgs packages to install (e.g., "uv ty just")'
+    required: false
+    default: "uv ty just"
+  skip-uv-sync:
+    description: "Skip uv sync step (useful for jobs that do not need Python dependencies)"
+    required: false
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -8,12 +17,34 @@ runs:
       with:
         github_access_token: ${{ github.token }}
 
-    - name: Setup Cachix (numtide)
-      uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
-      with:
-        name: numtide
-        authToken: ""
-
-    - name: Load Nix development environment
+    - name: Install tools from nixpkgs
       shell: bash
-      run: nix develop --command true
+      run: |
+        tools="${{ inputs.tools }}"
+        packages=""
+        for tool in $tools; do
+          packages="$packages nixpkgs#$tool"
+        done
+        nix profile install --inputs-from . $packages
+
+    - name: Initialise git submodules
+      if: inputs.skip-uv-sync != 'true'
+      shell: bash
+      run: |
+        # Only initialise if submodules exist but are not yet checked out
+        if [ -f .gitmodules ] && [ ! -f vendor/stackone-ai-node/package.json ]; then
+          git submodule update --init --recursive
+        fi
+
+    - name: Install Python dependencies
+      if: inputs.skip-uv-sync != 'true'
+      shell: bash
+      run: uv sync --all-extras
+
+    - name: Install MCP mock server dependencies
+      if: inputs.skip-uv-sync != 'true'
+      shell: bash
+      run: |
+        if [ -f vendor/stackone-ai-node/package.json ]; then
+          cd vendor/stackone-ai-node && pnpm install --frozen-lockfile
+        fi
