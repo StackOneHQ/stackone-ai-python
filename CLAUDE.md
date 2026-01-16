@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **git-workflow**             | All files           | Commit conventions, branch strategy, PR guidelines |
 | **development-workflow**     | All files           | Code style, file naming, project conventions       |
 | **release-please-standards** | All files           | Release versioning with release-please             |
+| **nix-workflow**             | All files           | Nix development environment and CI configuration   |
 | **no-relative-imports**      | `**/*.py`           | Enforce absolute imports in Python files           |
 | **package-installation**     | `**/pyproject.toml` | UV package management standards                    |
 | **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
