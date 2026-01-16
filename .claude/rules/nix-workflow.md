@@ -77,21 +77,6 @@ ci:
       run: just lint
 ```
 
-## Build Flags
-
-Always use these flags when running Nix build commands locally:
-
-```bash
---print-build-logs --show-trace
-```
-
-Example:
-
-```bash
-nix build --print-build-logs --show-trace
-nix flake check --print-build-logs --show-trace
-```
-
 ## Notes
 
 - The project uses flake-parts for modular flake configuration
