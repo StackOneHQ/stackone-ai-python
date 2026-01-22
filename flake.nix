@@ -116,7 +116,7 @@
               # Install Python dependencies only if .venv is missing or uv.lock is newer
               if [ ! -d .venv ] || [ uv.lock -nt .venv ]; then
                 echo "📦 Installing Python dependencies..."
-                uv sync --all-extras
+                uv sync --all-extras --locked
               fi
 
               # Install git hooks
