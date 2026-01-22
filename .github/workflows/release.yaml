@@ -57,10 +57,6 @@ jobs:
         with:
           skip-uv-sync: "true"
 
-      - name: Update version in __init__.py
-        if: ${{ steps.release.outputs.release_created }}
-        run: nix develop --command just update-version
-
       - name: Build and publish package
         if: ${{ steps.release.outputs.release_created }}
         env:

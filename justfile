@@ -34,10 +34,6 @@ ty:
 gitleaks:
 	gitleaks detect --source . --config .gitleaks.toml
 
-# Update version in __init__.py
-update-version:
-	uv run scripts/update_version.py
-
 # Build package
 build:
 	uv build
