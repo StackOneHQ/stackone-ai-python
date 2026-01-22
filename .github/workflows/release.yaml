@@ -28,7 +28,7 @@ jobs:
         if: ${{ steps.release.outputs.release_created }}
         uses: ./.github/actions/setup-nix
         with:
-          skip-mock-server: "true"
+          skip-uv-sync: "true"
 
       - name: Update version in __init__.py
         if: ${{ steps.release.outputs.release_created }}
