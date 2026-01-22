@@ -23,7 +23,7 @@ from stackone_ai.models import Tools
 
 def _ensure_langgraph() -> None:
     try:
-        from langgraph import prebuilt as _  # noqa: F401  # ty: ignore[unresolved-import]
+        from langgraph import prebuilt as _  # noqa: F401
     except Exception as e:  # pragma: no cover
         raise ImportError(
             "LangGraph is not installed. Install with `pip install langgraph` or "
@@ -45,7 +45,7 @@ def to_tool_node(tools: Tools | Sequence[BaseTool], **kwargs: Any) -> Any:
     for inclusion in a graph.
     """
     _ensure_langgraph()
-    from langgraph.prebuilt import ToolNode  # ty: ignore[unresolved-import]
+    from langgraph.prebuilt import ToolNode
 
     langchain_tools = _to_langchain_tools(tools)
     return ToolNode(langchain_tools, **kwargs)
@@ -58,7 +58,7 @@ def to_tool_executor(tools: Tools | Sequence[BaseTool], **kwargs: Any) -> Any:
     This function now returns a ToolNode for compatibility.
     """
     _ensure_langgraph()
-    from langgraph.prebuilt import ToolNode  # ty: ignore[unresolved-import]
+    from langgraph.prebuilt import ToolNode
 
     langchain_tools = _to_langchain_tools(tools)
     return ToolNode(langchain_tools, **kwargs)
@@ -81,6 +81,6 @@ def create_react_agent(llm: Any, tools: Tools | Sequence[BaseTool], **kwargs: An
     `Tools` collection from this SDK.
     """
     _ensure_langgraph()
-    from langgraph.prebuilt import create_react_agent as _create  # ty: ignore[unresolved-import]
+    from langgraph.prebuilt import create_react_agent as _create  # ty: ignore[deprecated]
 
-    return _create(llm, _to_langchain_tools(tools), **kwargs)
+    return _create(llm, _to_langchain_tools(tools), **kwargs)  # ty: ignore[deprecated]

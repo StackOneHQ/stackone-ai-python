@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, ClassVar, TypeAlias, cast
 from urllib.parse import quote
@@ -196,7 +196,7 @@ class StackOneTool(BaseModel):
             StackOneAPIError: If the API request fails
             ValueError: If the arguments are invalid
         """
-        datetime.now(UTC)
+        datetime.now(timezone.utc)
         feedback_options: JsonDict = {}
         result_payload: JsonDict | None = None
         response_status: int | None = None
@@ -266,7 +266,7 @@ class StackOneTool(BaseModel):
             status = "error"
             raise StackOneError(f"Request failed: {exc}") from exc
         finally:
-            datetime.now(UTC)
+            datetime.now(timezone.utc)
             metadata: JsonDict = {
                 "http_method": self._execute_config.method,
                 "url": url_used,
