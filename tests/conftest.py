@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import socket
 import subprocess
 import time
@@ -61,30 +60,16 @@ def mcp_mock_server() -> Generator[str, None, None]:
     if not vendor_dir.exists():
         pytest.skip("stackone-ai-node submodule not found. Run 'git submodule update --init'")
 
-    # Check for bun runtime
-    bun_path = shutil.which("bun")
-    if not bun_path:
-        pytest.skip("bun not found. Install via Nix flake.")
-
+    # find port
     port = _find_free_port()
     base_url = f"http://localhost:{port}"
-
-    # Install dependencies if needed
-    node_modules = vendor_dir / "node_modules"
-    if not node_modules.exists():
-        subprocess.run(
-            [bun_path, "install"],
-            cwd=vendor_dir,
-            check=True,
-            capture_output=True,
-        )
 
     # Start the server from project root
     env = os.environ.copy()
     env["PORT"] = str(port)
 
     process = subprocess.Popen(
-        [bun_path, "run", str(serve_script)],
+        [str(serve_script)],
         cwd=project_root,
         env=env,
         stdout=subprocess.PIPE,
