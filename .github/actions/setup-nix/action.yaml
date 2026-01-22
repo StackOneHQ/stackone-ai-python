@@ -9,10 +9,6 @@ inputs:
     description: "Skip uv sync step (useful for jobs that do not need Python dependencies)"
     required: false
     default: "false"
-  skip-mock-server:
-    description: "Skip MCP mock server dependencies installation (useful for jobs that do not run tests)"
-    required: false
-    default: "false"
 runs:
   using: "composite"
   steps:
@@ -46,7 +42,7 @@ runs:
       run: uv sync --all-extras
 
     - name: Install MCP mock server dependencies
-      if: inputs.skip-uv-sync != 'true' && inputs.skip-mock-server != 'true'
+      if: inputs.skip-uv-sync != 'true'
       shell: bash
       run: |
         if [ -f vendor/stackone-ai-node/package.json ]; then
