@@ -39,7 +39,6 @@
             projectRootFile = "flake.nix";
             programs = {
               nixfmt.enable = true;
-              nixfmt.package = pkgs.nixfmt-rfc-style;
               ruff-check.enable = true;
               ruff-format.enable = true;
             };
@@ -94,7 +93,7 @@
               uv
               ty
               just
-              nixfmt-rfc-style
+              nixfmt
 
               # security
               gitleaks
