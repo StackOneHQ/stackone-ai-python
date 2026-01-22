@@ -19,6 +19,33 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # Update uv.lock when release PR is created/updated
+      - name: Checkout repository (for PR update)
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+
+      - name: Setup Nix (for PR update)
+        if: ${{ steps.release.outputs.pr }}
+        uses: ./.github/actions/setup-nix
+        with:
+          skip-uv-sync: "true"
+
+      - name: Update uv.lock
+        if: ${{ steps.release.outputs.pr }}
+        run: |
+          nix develop --command uv lock
+          if git diff --quiet uv.lock; then
+            echo "uv.lock is already up to date"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add uv.lock
+            git commit -m "chore: update uv.lock"
+            git push
+          fi
+
       # Only release to PyPI when a new release is created
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -28,7 +55,7 @@ jobs:
         if: ${{ steps.release.outputs.release_created }}
         uses: ./.github/actions/setup-nix
         with:
-          skip-mock-server: "true"
+          skip-uv-sync: "true"
 
       - name: Update version in __init__.py
         if: ${{ steps.release.outputs.release_created }}
