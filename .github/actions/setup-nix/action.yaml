@@ -43,7 +43,7 @@ runs:
     - name: Install Python dependencies
       if: inputs.skip-uv-sync != 'true'
       shell: bash
-      run: uv sync --all-extras
+      run: uv sync --all-extras --locked
 
     - name: Install MCP mock server dependencies
       if: inputs.skip-uv-sync != 'true' && inputs.skip-mock-server != 'true'
