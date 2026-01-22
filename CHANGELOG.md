@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.1.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.0.0...stackone-ai-v2.1.0) (2026-01-22)
+
+
+### Features
+
+* **nix:** integrate uv2nix for Python dependency management ([#88](https://github.com/StackOneHQ/stackone-ai-python/issues/88)) ([ee67062](https://github.com/StackOneHQ/stackone-ai-python/commit/ee67062d1a6628c9b549f2ad69c0c1d7bdde6d97))
+
+
+### Bug Fixes
+
+* **ci:** add submodules checkout to coverage job ([#85](https://github.com/StackOneHQ/stackone-ai-python/issues/85)) ([4cf907a](https://github.com/StackOneHQ/stackone-ai-python/commit/4cf907a49ac288f368ebbfa3a5dc59a0194bf54a))
+
+
+### Documentation
+
+* deepwiki badge ([#97](https://github.com/StackOneHQ/stackone-ai-python/issues/97)) ([d8b0234](https://github.com/StackOneHQ/stackone-ai-python/commit/d8b02346b6a77377b7c0356e636edcf2eac47096))
+* **readme:** improve Nix development environment setup instructions ([#94](https://github.com/StackOneHQ/stackone-ai-python/issues/94)) ([2d6f6c2](https://github.com/StackOneHQ/stackone-ai-python/commit/2d6f6c224d1119a5a0254934ff542a0572f44c06))
+* **readme:** reorganise installation section ([#72](https://github.com/StackOneHQ/stackone-ai-python/issues/72)) ([3cde479](https://github.com/StackOneHQ/stackone-ai-python/commit/3cde4794739e95479409396adc3b6e3b01eb3d33))
+* **rules:** add nix-workflow rule ([#106](https://github.com/StackOneHQ/stackone-ai-python/issues/106)) ([b10c164](https://github.com/StackOneHQ/stackone-ai-python/commit/b10c164142ede3ce37b96a27b0e73452d6de50e6))
+
 ## [2.0.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v0.3.4...stackone-ai-v2.0.0) (2025-12-29)
 
 
