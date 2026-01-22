@@ -8,14 +8,7 @@
   "include-v-in-tag": true,
   "packages": {
     ".": {
-      "package-name": "stackone-ai",
-      "extra-files": [
-        {
-          "type": "generic",
-          "path": "uv.lock",
-          "glob": false
-        }
-      ]
+      "package-name": "stackone-ai"
     }
   },
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
