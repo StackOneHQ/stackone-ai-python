@@ -16,21 +16,9 @@ updates:
       - dependencies
       - python
     groups:
-      dev-dependencies:
+      python-minor-patch:
         patterns:
-          - "pytest*"
-          - "ruff"
-          - "ty"
-          - "pre-commit"
-        update-types:
-          - minor
-          - patch
-      ai-frameworks:
-        patterns:
-          - "openai*"
-          - "langchain*"
-          - "crewai*"
-          - "mcp*"
+          - "*"
         update-types:
           - minor
           - patch
