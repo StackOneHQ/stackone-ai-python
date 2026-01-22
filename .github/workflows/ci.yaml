@@ -26,20 +26,18 @@ jobs:
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
+        with:
+          tools: gitleaks
+          skip-uv-sync: "true"
 
       - name: Run Gitleaks
-        run: nix develop --command just gitleaks
+        run: gitleaks detect --source . --config .gitleaks.toml
 
   ci:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.13"]
-        include:
-          - python-version: "3.11"
-            sync-extras: "--all-extras"
-          - python-version: "3.13"
-            sync-extras: "--all-extras"
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -48,18 +46,17 @@ jobs:
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
-
-      - name: Install dependencies
-        run: nix develop --command just install ${{ matrix.sync-extras }}
+        with:
+          tools: uv ty just bun pnpm_10 typescript-go
 
       - name: Run Lint
-        run: nix develop --command just lint
+        run: just lint
 
       - name: Run Ty
-        run: nix develop --command just ty
+        run: just ty
 
       - name: Run Tests
-        run: nix develop --command just test
+        run: just test
 
   coverage:
     runs-on: ubuntu-latest
@@ -72,12 +69,11 @@ jobs:
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
-
-      - name: Install dependencies
-        run: nix develop --command just install --all-extras
+        with:
+          tools: uv just bun pnpm_10 typescript-go
 
       - name: Run Tests with Coverage
-        run: nix develop --command just coverage
+        run: just coverage
 
       - name: Create Coverage Badge
         uses: jaywcjlove/coverage-badges-cli@4e8975aa2628e3329126e7eee36724d07ed86fda # v2.2.0
