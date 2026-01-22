@@ -16,7 +16,7 @@ devShells.default = pkgs.mkShellNoCC {
     uv
     ty
     just
-    nixfmt-rfc-style
+    nixfmt
 
     # your new tool here
     new-tool
