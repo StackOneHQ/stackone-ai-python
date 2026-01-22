@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.1.0...stackone-ai-v2.1.1) (2026-01-22)
+
+
+### Bug Fixes
+
+* **ci:** skip mock server install in release workflow [ENG-11910] ([#111](https://github.com/StackOneHQ/stackone-ai-python/issues/111)) ([377d766](https://github.com/StackOneHQ/stackone-ai-python/commit/377d766a276b444e84fee5af95f3d56db7e0b89b))
+
 ## [2.1.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.0.0...stackone-ai-v2.1.0) (2026-01-22)
 
 
