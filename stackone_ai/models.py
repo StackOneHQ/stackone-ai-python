@@ -530,10 +530,10 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def meta_tools(self, hybrid_alpha: float | None = None) -> Tools:
-        """Return meta tools for tool discovery and execution
+    def utility_tools(self, hybrid_alpha: float | None = None) -> Tools:
+        """Return utility tools for tool discovery and execution
 
-        Meta tools enable dynamic tool discovery and execution based on natural language queries
+        Utility tools enable dynamic tool discovery and execution based on natural language queries
         using hybrid BM25 + TF-IDF search.
 
         Args:
@@ -543,22 +543,22 @@ class Tools:
                 (10.8% improvement in validation testing).
 
         Returns:
-            Tools collection containing meta_search_tools and meta_execute_tool
+            Tools collection containing tool_search and tool_execute
 
         Note:
             This feature is in beta and may change in future versions
         """
-        from stackone_ai.meta_tools import (
+        from stackone_ai.utility_tools import (
             ToolIndex,
-            create_meta_execute_tool,
-            create_meta_search_tools,
+            create_tool_execute,
+            create_tool_search,
         )
 
         # Create search index with hybrid search
         index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
 
-        # Create meta tools
-        filter_tool = create_meta_search_tools(index)
-        execute_tool = create_meta_execute_tool(self)
+        # Create utility tools
+        filter_tool = create_tool_search(index)
+        execute_tool = create_tool_execute(self)
 
         return Tools([filter_tool, execute_tool])

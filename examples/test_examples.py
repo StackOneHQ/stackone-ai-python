@@ -30,7 +30,7 @@ OPTIONAL_DEPENDENCIES = {
     "index.py": ["mcp"],
     "file_uploads.py": ["mcp"],
     "stackone_account_ids.py": ["mcp"],
-    "meta_tools_example.py": ["mcp"],
+    "utility_tools_example.py": ["mcp"],
     "mcp_server.py": ["mcp"],
 }
 

@@ -281,16 +281,16 @@ result = crew.kickoff()
 
 ## Feedback Collection
 
-The SDK includes a feedback collection tool (`meta_collect_tool_feedback`) that allows users to submit feedback about their experience with StackOne tools. This tool is automatically included in the toolset and is designed to be invoked by AI agents after user permission.
+The SDK includes a feedback collection tool (`tool_feedback`) that allows users to submit feedback about their experience with StackOne tools. This tool is automatically included in the toolset and is designed to be invoked by AI agents after user permission.
 
 ```python
 from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 
-# Get the feedback tool (included with "meta_*" pattern or all tools)
-tools = toolset.fetch_tools(actions=["meta_*"])
-feedback_tool = tools.get_tool("meta_collect_tool_feedback")
+# Get the feedback tool (included with "tool_*" pattern or all tools)
+tools = toolset.fetch_tools(actions=["tool_*"])
+feedback_tool = tools.get_tool("tool_feedback")
 
 # Submit feedback (typically invoked by AI after user consent)
 result = feedback_tool.call(
@@ -305,23 +305,23 @@ result = feedback_tool.call(
 - "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
 - Only call the tool after the user explicitly agrees.
 
-## Meta Tools (Beta)
+## Utility Tools (Beta)
 
-Meta tools enable dynamic tool discovery and execution without hardcoding tool names.
+Utility tools enable dynamic tool discovery and execution without hardcoding tool names.
 
 ### Basic Usage
 
 ```python
-# Get meta tools for dynamic discovery
+# Get utility tools for dynamic discovery
 tools = toolset.fetch_tools(actions=["hris_*"])
-meta_tools = tools.meta_tools()
+utility_tools = tools.utility_tools()
 
 # Search for relevant tools using natural language
-filter_tool = meta_tools.get_tool("meta_search_tools")
+filter_tool = utility_tools.get_tool("tool_search")
 results = filter_tool.call(query="manage employees", limit=5)
 
 # Execute discovered tools dynamically
-execute_tool = meta_tools.get_tool("meta_execute_tool")
+execute_tool = utility_tools.get_tool("tool_execute")
 result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 ```
 
@@ -334,7 +334,7 @@ For more examples, check out the [examples/](examples/) directory:
 - [OpenAI Integration](examples/openai_integration.py)
 - [LangChain Integration](examples/langchain_integration.py)
 - [CrewAI Integration](examples/crewai_integration.py)
-- [Meta Tools](examples/meta_tools_example.py)
+- [Utility Tools](examples/utility_tools_example.py)
 
 ## Development
 
