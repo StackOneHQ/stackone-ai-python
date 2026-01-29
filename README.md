@@ -19,7 +19,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
   - Provider and action filtering
   - Multi-account support
-- **Meta Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- **Utility Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
