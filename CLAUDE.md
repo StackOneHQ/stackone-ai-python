@@ -94,7 +94,7 @@ toolset = StackOneToolSet(
 
 ### Type Safety
 
-- Full type annotations required (Python 3.11+)
+- Full type annotations required (Python 3.10+)
 - Strict ty configuration
 - Use generics for better IDE support
 
@@ -108,7 +108,7 @@ toolset = StackOneToolSet(
 
 1. **Dependencies**: See `package-installation` rule for uv dependency management
 2. **Pre-commit**: Hooks configured for ruff and ty - run on all commits
-3. **Python Version**: Requires Python >=3.11
+3. **Python Version**: Requires Python >=3.10
 4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
 5. **File Uploads**: Binary parameters auto-detected from OpenAPI specs
 6. **Context Window**: Tool loading warns when loading all tools (large context)

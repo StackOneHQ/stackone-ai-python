@@ -28,7 +28,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 
 ## Installation
 
