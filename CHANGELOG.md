@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.3.0...stackone-ai-v2.3.1) (2026-01-29)
+
+
+### Documentation
+
+* fix Python version requirement to 3.10+ ([#131](https://github.com/StackOneHQ/stackone-ai-python/issues/131)) ([ef2b4e3](https://github.com/StackOneHQ/stackone-ai-python/commit/ef2b4e3d06290d4fdc638bc66eec0c48b177c4f0))
+
 ## [2.3.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.1.1...stackone-ai-v2.3.0) (2026-01-29)
 
 
