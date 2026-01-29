@@ -223,7 +223,7 @@ class TestFeedbackToolExecution:
         result = tool.call(
             feedback="Testing the .call() method interface.",
             account_id="acc_test004",
-            tool_names=["meta_collect_tool_feedback"],
+            tool_names=["tool_feedback"],
         )
 
         assert result == api_response
@@ -354,13 +354,13 @@ class TestFeedbackToolExecution:
         feedback_tool = create_feedback_tool(api_key="test_key")
 
         assert feedback_tool is not None
-        assert feedback_tool.name == "meta_collect_tool_feedback"
+        assert feedback_tool.name == "tool_feedback"
         assert "feedback" in feedback_tool.description.lower()
 
         # Test OpenAI format
         openai_format = feedback_tool.to_openai_function()
         assert openai_format["type"] == "function"
-        assert openai_format["function"]["name"] == "meta_collect_tool_feedback"
+        assert openai_format["function"]["name"] == "tool_feedback"
         assert "feedback" in openai_format["function"]["parameters"]["properties"]
         assert "account_id" in openai_format["function"]["parameters"]["properties"]
         assert "tool_names" in openai_format["function"]["parameters"]["properties"]

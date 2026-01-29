@@ -160,7 +160,7 @@ def create_feedback_tool(
     Returns:
         FeedbackTool configured for feedback collection
     """
-    name = "meta_collect_tool_feedback"
+    name = "tool_feedback"
     description = (
         "Collects user feedback on StackOne tool performance. "
         'First ask the user, "Are you ok with sending feedback to StackOne?" '

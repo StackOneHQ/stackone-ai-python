@@ -1,4 +1,4 @@
-"""Meta tools for dynamic tool discovery and execution"""
+"""Utility tools for dynamic tool discovery and execution"""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from stackone_ai.models import Tools
 
 
-class MetaToolSearchResult(BaseModel):
-    """Result from meta_search_tools"""
+class ToolSearchResult(BaseModel):
+    """Result from tool_search"""
 
     name: str
     description: str
@@ -93,7 +93,7 @@ class ToolIndex:
         self.tfidf_index = TfidfIndex()
         self.tfidf_index.build(tfidf_docs)
 
-    def search(self, query: str, limit: int = 5, min_score: float = 0.0) -> list[MetaToolSearchResult]:
+    def search(self, query: str, limit: int = 5, min_score: float = 0.0) -> list[ToolSearchResult]:
         """Search for relevant tools using hybrid BM25 + TF-IDF
 
         Args:
@@ -158,7 +158,7 @@ class ToolIndex:
                 continue
 
             search_results.append(
-                MetaToolSearchResult(
+                ToolSearchResult(
                     name=tool.name,
                     description=tool.description,
                     score=score,
@@ -171,16 +171,16 @@ class ToolIndex:
         return search_results
 
 
-def create_meta_search_tools(index: ToolIndex) -> StackOneTool:
-    """Create the meta_search_tools tool
+def create_tool_search(index: ToolIndex) -> StackOneTool:
+    """Create the tool_search tool
 
     Args:
         index: Tool search index
 
     Returns:
-        Meta tool for searching relevant tools
+        Utility tool for searching relevant tools
     """
-    name = "meta_search_tools"
+    name = "tool_search"
     description = (
         f"Searches for relevant tools based on a natural language query using hybrid BM25 + TF-IDF search "
         f"(alpha={index.hybrid_alpha}). This tool should be called first to discover available tools "
@@ -241,20 +241,20 @@ def create_meta_search_tools(index: ToolIndex) -> StackOneTool:
     execute_config = ExecuteConfig(
         name=name,
         method="POST",
-        url="",  # Meta tools don't make HTTP requests
+        url="",  # Utility tools don't make HTTP requests
         headers={},
     )
 
     # Create a wrapper class that delegates execute to our custom function
-    class MetaSearchTool(StackOneTool):
-        """Meta tool for searching relevant tools"""
+    class ToolSearchTool(StackOneTool):
+        """Utility tool for searching relevant tools"""
 
         def __init__(self) -> None:
             super().__init__(
                 description=description,
                 parameters=parameters,
                 _execute_config=execute_config,
-                _api_key="",  # Meta tools don't need API key
+                _api_key="",  # Utility tools don't need API key
                 _account_id=None,
             )
 
@@ -263,22 +263,22 @@ def create_meta_search_tools(index: ToolIndex) -> StackOneTool:
         ) -> JsonDict:
             return execute_filter(arguments)
 
-    return MetaSearchTool()
+    return ToolSearchTool()
 
 
-def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
-    """Create the meta_execute_tool
+def create_tool_execute(tools_collection: Tools) -> StackOneTool:
+    """Create the tool_execute tool
 
     Args:
         tools_collection: Collection of tools to execute from
 
     Returns:
-        Meta tool for executing discovered tools
+        Utility tool for executing discovered tools
     """
-    name = "meta_execute_tool"
+    name = "tool_execute"
     description = (
         "Executes a tool by name with the provided parameters. "
-        "Use this after discovering tools with meta_search_tools."
+        "Use this after discovering tools with tool_search."
     )
 
     parameters = ToolParameters(
@@ -322,20 +322,20 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
     execute_config = ExecuteConfig(
         name=name,
         method="POST",
-        url="",  # Meta tools don't make HTTP requests
+        url="",  # Utility tools don't make HTTP requests
         headers={},
     )
 
     # Create a wrapper class that delegates execute to our custom function
-    class MetaExecuteTool(StackOneTool):
-        """Meta tool for executing discovered tools"""
+    class ToolExecuteTool(StackOneTool):
+        """Utility tool for executing discovered tools"""
 
         def __init__(self) -> None:
             super().__init__(
                 description=description,
                 parameters=parameters,
                 _execute_config=execute_config,
-                _api_key="",  # Meta tools don't need API key
+                _api_key="",  # Utility tools don't need API key
                 _account_id=None,
             )
 
@@ -344,4 +344,4 @@ def create_meta_execute_tool(tools_collection: Tools) -> StackOneTool:
         ) -> JsonDict:
             return execute_tool(arguments)
 
-    return MetaExecuteTool()
+    return ToolExecuteTool()

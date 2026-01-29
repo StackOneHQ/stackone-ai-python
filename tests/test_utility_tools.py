@@ -1,4 +1,4 @@
-"""Tests for meta tools functionality"""
+"""Tests for utility tools functionality"""
 
 import httpx
 import pytest
@@ -7,12 +7,12 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from stackone_ai import StackOneTool, Tools
-from stackone_ai.meta_tools import (
-    ToolIndex,
-    create_meta_execute_tool,
-    create_meta_search_tools,
-)
 from stackone_ai.models import ExecuteConfig, ToolParameters
+from stackone_ai.utility_tools import (
+    ToolIndex,
+    create_tool_execute,
+    create_tool_search,
+)
 
 # Hypothesis strategies for PBT
 # Score threshold strategy
@@ -236,15 +236,15 @@ class TestToolIndex:
         assert len(results) <= len(tools)
 
 
-class TestMetaSearchTool:
-    """Test the meta_search_tools functionality"""
+class TestToolSearch:
+    """Test the tool_search functionality"""
 
     def test_filter_tool_creation(self, sample_tools):
         """Test creating the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_search_tools(index)
+        filter_tool = create_tool_search(index)
 
-        assert filter_tool.name == "meta_search_tools"
+        assert filter_tool.name == "tool_search"
         assert "natural language query" in filter_tool.description.lower()
 
     def test_filter_tool_execute_with_json_string(self, sample_tools):
@@ -252,7 +252,7 @@ class TestMetaSearchTool:
         import json
 
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_search_tools(index)
+        filter_tool = create_tool_search(index)
 
         # Execute with JSON string
         json_input = json.dumps({"query": "employee", "limit": 2, "minScore": 0.0})
@@ -265,7 +265,7 @@ class TestMetaSearchTool:
     def test_filter_tool_execute(self, sample_tools):
         """Test executing the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_search_tools(index)
+        filter_tool = create_tool_search(index)
 
         # Execute with a query
         result = filter_tool.execute(
@@ -290,7 +290,7 @@ class TestMetaSearchTool:
     def test_filter_tool_call(self, sample_tools):
         """Test calling the filter tool with call method"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_meta_search_tools(index)
+        filter_tool = create_tool_search(index)
 
         # Call with kwargs
         result = filter_tool.call(query="candidate", limit=2)
@@ -299,19 +299,19 @@ class TestMetaSearchTool:
         assert len(result["tools"]) <= 2
 
 
-class TestMetaExecuteTool:
-    """Test the meta_execute_tool functionality"""
+class TestToolExecute:
+    """Test the tool_execute functionality"""
 
     def test_execute_tool_creation(self, tools_collection):
         """Test creating the execute tool"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_tool_execute(tools_collection)
 
-        assert execute_tool.name == "meta_execute_tool"
+        assert execute_tool.name == "tool_execute"
         assert "executes a tool" in execute_tool.description.lower()
 
     def test_execute_tool_missing_name(self, tools_collection):
         """Test execute tool with missing tool name"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_tool_execute(tools_collection)
 
         with pytest.raises(ValueError, match="toolName is required"):
             execute_tool.execute({"params": {}})
@@ -320,7 +320,7 @@ class TestMetaExecuteTool:
         """Test execute tool with JSON string input."""
         import json
 
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_tool_execute(tools_collection)
 
         # Execute with JSON string - should raise ValueError for invalid tool
         json_input = json.dumps({"toolName": "nonexistent_tool", "params": {}})
@@ -329,7 +329,7 @@ class TestMetaExecuteTool:
 
     def test_execute_tool_invalid_name(self, tools_collection):
         """Test execute tool with invalid tool name"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_tool_execute(tools_collection)
 
         with pytest.raises(ValueError, match="Tool 'invalid_tool' not found"):
             execute_tool.execute(
@@ -342,14 +342,14 @@ class TestMetaExecuteTool:
     @respx.mock
     def test_execute_tool_call(self, tools_collection):
         """Test calling the execute tool with call method"""
-        execute_tool = create_meta_execute_tool(tools_collection)
+        execute_tool = create_tool_execute(tools_collection)
 
         # Mock the actual tool execution
         route = respx.get("https://api.example.com/hibob/employee").mock(
             return_value=httpx.Response(200, json={"success": True, "employees": []})
         )
 
-        # Call the meta execute tool
+        # Call the tool_execute tool
         result = execute_tool.call(toolName="hibob_list_employee", params={"limit": 10})
 
         assert result == {"success": True, "employees": []}
@@ -357,27 +357,27 @@ class TestMetaExecuteTool:
         assert route.calls[0].response.status_code == 200
 
 
-class TestToolsMetaTools:
-    """Test the meta_tools method on Tools collection"""
+class TestToolsUtilityTools:
+    """Test the utility_tools method on Tools collection"""
 
-    def test_meta_tools_creation(self, tools_collection):
-        """Test creating meta tools from a Tools collection"""
-        meta_tools = tools_collection.meta_tools()
+    def test_utility_tools_creation(self, tools_collection):
+        """Test creating utility tools from a Tools collection"""
+        utility_tools = tools_collection.utility_tools()
 
-        assert isinstance(meta_tools, Tools)
-        assert len(meta_tools) == 2
+        assert isinstance(utility_tools, Tools)
+        assert len(utility_tools) == 2
 
         # Check tool names
-        tool_names = [tool.name for tool in meta_tools.tools]
-        assert "meta_search_tools" in tool_names
-        assert "meta_execute_tool" in tool_names
+        tool_names = [tool.name for tool in utility_tools.tools]
+        assert "tool_search" in tool_names
+        assert "tool_execute" in tool_names
 
-    def test_meta_tools_functionality(self, tools_collection):
-        """Test that meta tools work correctly"""
-        meta_tools = tools_collection.meta_tools()
+    def test_utility_tools_functionality(self, tools_collection):
+        """Test that utility tools work correctly"""
+        utility_tools = tools_collection.utility_tools()
 
         # Get the filter tool
-        filter_tool = meta_tools.get_tool("meta_search_tools")
+        filter_tool = utility_tools.get_tool("tool_search")
         assert filter_tool is not None
 
         # Search for tools
@@ -475,14 +475,14 @@ class TestHybridSearch:
             f"Balanced results: {[r.name for r in results_balanced]}"
         )
 
-    def test_meta_tools_with_custom_alpha(self, sample_tools):
-        """Test that meta_tools() accepts hybrid_alpha parameter"""
+    def test_utility_tools_with_custom_alpha(self, sample_tools):
+        """Test that utility_tools() accepts hybrid_alpha parameter"""
         tools_collection = Tools(sample_tools)
 
-        # Create meta tools with custom alpha
-        meta_tools = tools_collection.meta_tools(hybrid_alpha=0.3)
+        # Create utility tools with custom alpha
+        utility_tools = tools_collection.utility_tools(hybrid_alpha=0.3)
 
-        filter_tool = meta_tools.get_tool("meta_search_tools")
+        filter_tool = utility_tools.get_tool("tool_search")
         assert filter_tool is not None
 
         # Check that description mentions the alpha value

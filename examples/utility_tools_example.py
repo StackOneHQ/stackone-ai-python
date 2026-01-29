@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Example demonstrating meta tools for dynamic tool discovery and execution.
+Example demonstrating utility tools for dynamic tool discovery and execution.
 
-Meta tools allow AI agents to search for relevant tools based on natural language queries
+Utility tools allow AI agents to search for relevant tools based on natural language queries
 and execute them dynamically without hardcoding tool names.
 """
 
@@ -16,8 +16,8 @@ from stackone_ai import StackOneToolSet
 load_dotenv()
 
 
-def example_meta_tools_basic():
-    """Basic example of using meta tools for tool discovery"""
+def example_utility_tools_basic():
+    """Basic example of using utility tools for tool discovery"""
     print("Example 1: Dynamic tool discovery\n")
 
     # Initialize StackOne toolset
@@ -27,11 +27,11 @@ def example_meta_tools_basic():
     all_tools = toolset.fetch_tools(actions=["bamboohr_*"])
     print(f"Total BambooHR tools available: {len(all_tools)}")
 
-    # Get meta tools for dynamic discovery
-    meta_tools = all_tools.meta_tools()
+    # Get utility tools for dynamic discovery
+    utility_tools = all_tools.utility_tools()
 
     # Get the filter tool to search for relevant tools
-    filter_tool = meta_tools.get_tool("meta_search_tools")
+    filter_tool = utility_tools.get_tool("tool_search")
     if filter_tool:
         # Search for employee management tools
         result = filter_tool.call(query="manage employees create update list", limit=5, minScore=0.0)
@@ -43,7 +43,7 @@ def example_meta_tools_basic():
     print()
 
 
-def example_meta_tools_with_execution():
+def example_utility_tools_with_execution():
     """Example of discovering and executing tools dynamically"""
     print("Example 2: Dynamic tool execution\n")
 
@@ -52,11 +52,11 @@ def example_meta_tools_with_execution():
 
     # Get all tools using MCP-backed fetch_tools()
     all_tools = toolset.fetch_tools()
-    meta_tools = all_tools.meta_tools()
+    utility_tools = all_tools.utility_tools()
 
     # Step 1: Search for relevant tools
-    filter_tool = meta_tools.get_tool("meta_search_tools")
-    execute_tool = meta_tools.get_tool("meta_execute_tool")
+    filter_tool = utility_tools.get_tool("tool_search")
+    execute_tool = utility_tools.get_tool("tool_execute")
 
     if filter_tool and execute_tool:
         # Find tools for listing employees
@@ -81,8 +81,8 @@ def example_meta_tools_with_execution():
 
 
 def example_with_openai():
-    """Example of using meta tools with OpenAI"""
-    print("Example 3: Using meta tools with OpenAI\n")
+    """Example of using utility tools with OpenAI"""
+    print("Example 3: Using utility tools with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -93,20 +93,20 @@ def example_with_openai():
         # Initialize StackOne toolset
         toolset = StackOneToolSet()
 
-        # Get BambooHR tools and their meta tools using MCP-backed fetch_tools()
+        # Get BambooHR tools and their utility tools using MCP-backed fetch_tools()
         bamboohr_tools = toolset.fetch_tools(actions=["bamboohr_*"])
-        meta_tools = bamboohr_tools.meta_tools()
+        utility_tools = bamboohr_tools.utility_tools()
 
         # Convert to OpenAI format
-        openai_tools = meta_tools.to_openai()
+        openai_tools = utility_tools.to_openai()
 
-        # Create a chat completion with meta tools
+        # Create a chat completion with utility tools
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an HR assistant. Use meta_search_tools to find appropriate tools, then meta_execute_tool to execute them.",
+                    "content": "You are an HR assistant. Use tool_search to find appropriate tools, then tool_execute to execute them.",
                 },
                 {"role": "user", "content": "Can you help me find tools for managing employee records?"},
             ],
@@ -145,12 +145,12 @@ def example_with_langchain():
         tools = toolset.fetch_tools(actions=["bamboohr_list_*"])
         langchain_tools = tools.to_langchain()
 
-        # Get meta tools as well
-        meta_tools = tools.meta_tools()
-        langchain_meta_tools = meta_tools.to_langchain()
+        # Get utility tools as well
+        utility_tools = tools.utility_tools()
+        langchain_utility_tools = utility_tools.to_langchain()
 
         # Combine all tools
-        all_langchain_tools = list(langchain_tools) + list(langchain_meta_tools)
+        all_langchain_tools = list(langchain_tools) + list(langchain_utility_tools)
 
         print(f"Available tools for LangChain: {len(all_langchain_tools)}")
         for tool in all_langchain_tools:
@@ -163,7 +163,7 @@ def example_with_langchain():
             [
                 (
                     "system",
-                    "You are an HR assistant. Use the meta tools to discover and execute relevant tools.",
+                    "You are an HR assistant. Use the utility tools to discover and execute relevant tools.",
                 ),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
@@ -190,13 +190,13 @@ def example_with_langchain():
 def main():
     """Run all examples"""
     print("=" * 60)
-    print("StackOne AI SDK - Meta Tools Examples")
+    print("StackOne AI SDK - Utility Tools Examples")
     print("=" * 60)
     print()
 
     # Basic examples that work without external APIs
-    example_meta_tools_basic()
-    example_meta_tools_with_execution()
+    example_utility_tools_basic()
+    example_utility_tools_with_execution()
 
     # Examples that require OpenAI API
     if os.getenv("OPENAI_API_KEY"):
