@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.1.1...stackone-ai-v2.3.0) (2026-01-29)
+
+
+### Bug Fixes
+
+* **nix:** replace deprecated nixfmt-rfc-style with nixfmt ([#114](https://github.com/StackOneHQ/stackone-ai-python/issues/114)) ([10627b4](https://github.com/StackOneHQ/stackone-ai-python/commit/10627b441745806f3b57a7b1cdba296ef722b00f))
+
+
+### Miscellaneous Chores
+
+* trigger release 2.3.0 ([#130](https://github.com/StackOneHQ/stackone-ai-python/issues/130)) ([a28d0a6](https://github.com/StackOneHQ/stackone-ai-python/commit/a28d0a6fbcf703dd640d3255fa4171046ea225c7))
+
 ## [2.1.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.1.0...stackone-ai-v2.1.1) (2026-01-22)
 
 
