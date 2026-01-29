@@ -8,6 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Skills** (`.claude/skills/`): Manually invoked for specific integrations.
 - **Cursor rules** (`.cursor/rules/`): Symlinks to `.claude/rules/` for consistency.
 
+## Available Skills
+
+| Skill              | Usage                       | Description                                        |
+| ------------------ | --------------------------- | -------------------------------------------------- |
+| **release-please** | `/release-please <version>` | Trigger a release-please PR for a specific version |
+
 ## Available Rules
 
 | Rule                         | Applies To          | Description                                        |
