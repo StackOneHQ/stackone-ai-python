@@ -17,7 +17,7 @@ This rule provides code style guidelines and project conventions for the StackOn
 ## Type Annotations
 
 - Full type annotations required for all public APIs
-- Use Python 3.11+ typing features
+- Use Python 3.10+ typing features
 - Run `just ty` to verify type correctness
 - Strict ty configuration is enforced
 
