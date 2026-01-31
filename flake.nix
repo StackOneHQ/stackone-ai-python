@@ -22,20 +22,10 @@
         "aarch64-darwin"
       ];
 
-      imports = [
-        git-hooks.flakeModule
-        treefmt-nix.flakeModule
-      ];
-
       perSystem =
-        {
-          config,
-          pkgs,
-          ...
-        }:
-        {
-          # Treefmt configuration for formatting
-          treefmt = {
+        { pkgs, system, ... }:
+        let
+          treefmtEval = treefmt-nix.lib.evalModule pkgs {
             projectRootFile = "flake.nix";
             programs = {
               nixfmt.enable = true;
@@ -62,10 +52,9 @@
             };
           };
 
-          # Git hooks configuration
-          pre-commit = {
-            check.enable = false; # Skip check in flake (ty needs Python env)
-            settings.hooks = {
+          pre-commit-check = git-hooks.lib.${system}.run {
+            src = ./.;
+            hooks = {
               gitleaks = {
                 enable = true;
                 name = "gitleaks";
@@ -75,7 +64,7 @@
               };
               treefmt = {
                 enable = true;
-                package = config.treefmt.build.wrapper;
+                package = treefmtEval.config.build.wrapper;
               };
               ty = {
                 enable = true;
@@ -87,6 +76,9 @@
               };
             };
           };
+        in
+        {
+          formatter = treefmtEval.config.build.wrapper;
 
           devShells.default = pkgs.mkShellNoCC {
             buildInputs = with pkgs; [
@@ -120,7 +112,7 @@
               fi
 
               # Install git hooks
-              ${config.pre-commit.installationScript}
+              ${pre-commit-check.shellHook}
             '';
           };
         };
