@@ -27,26 +27,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
 | **examples-standards**       | `examples/**/*`     | Example requirements and organization              |
 
+## Available Skills
+
+| Skill             | Description                                  |
+| ----------------- | -------------------------------------------- |
+| **just-commands** | Available just commands (dynamically loaded) |
+
 ## Project Overview
 
-StackOne AI SDK is a Python library that provides a unified interface for accessing various SaaS tools through AI-friendly APIs. It acts as a bridge between AI applications and multiple SaaS platforms (HRIS, CRM, ATS, LMS, Marketing, etc.) with support for OpenAI, LangChain, CrewAI, and Model Context Protocol (MCP).
-
-## Essential Development Commands
-
-```bash
-# Setup and installation
-just install           # Install dependencies and pre-commit hooks
-
-# Code quality
-just lint             # Run ruff linting
-just lint-fix         # Auto-fix linting issues
-just ty               # Run type checking
-
-# Testing
-just test             # Run all tests
-just test-tools       # Run tool-specific tests
-just test-examples    # Run example tests
-```
+StackOne AI SDK is a Python library that provides a unified interface for accessing various SaaS tools through AI-friendly APIs with support for OpenAI, LangChain, CrewAI, and Model Context Protocol (MCP).
 
 ## Code Architecture
 
