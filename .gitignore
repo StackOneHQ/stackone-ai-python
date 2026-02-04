@@ -20,3 +20,4 @@ build/
 
 # Agent skills (managed by Nix via agent-skills-nix)
 .claude/skills
+.agents/skills
