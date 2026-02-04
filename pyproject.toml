@@ -4,27 +4,25 @@ version = "2.3.1"
 description = "agents performing actions on your SaaS"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [
-    { name = "StackOne", email = "support@stackone.com" }
-]
+authors = [{ name = "StackOne", email = "support@stackone.com" }]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Libraries :: Python Modules",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "pydantic>=2.10.6",
-    "httpx>=0.28.0",
-    "langchain-core>=0.1.0",
-    "bm25s>=0.2.2",
-    "numpy>=1.24.0",
-    "typing-extensions>=4.0.0",
+  "pydantic>=2.10.6",
+  "httpx>=0.28.0",
+  "langchain-core>=0.1.0",
+  "bm25s>=0.2.2",
+  "numpy>=1.24.0",
+  "typing-extensions>=4.0.0",
 ]
 
 [build-system]
@@ -38,36 +36,34 @@ packages = ["stackone_ai"]
 "stackone_ai/py.typed" = "stackone_ai/py.typed"
 
 [project.optional-dependencies]
-mcp = [
-    "mcp>=1.3.0",
-]
+mcp = ["mcp>=1.3.0"]
 examples = [
-    "crewai>=0.102.0",
-    "langchain-openai>=0.3.6",
-    "langgraph>=0.2.0",
-    "openai>=1.63.2",
-    "python-dotenv>=1.0.1",
+  "crewai>=0.102.0",
+  "langchain-openai>=0.3.6",
+  "langgraph>=0.2.0",
+  "openai>=1.63.2",
+  "python-dotenv>=1.0.1",
 ]
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.141.1",
-    "pytest>=8.3.4",
-    "pytest-asyncio>=0.25.3",
-    "pytest-cov>=6.0.0",
-    "pytest-snapshot>=0.9.0",
-    "respx>=0.22.0",
-    "ruff>=0.9.6",
-    "stackone-ai",
-    "ty>=0.0.3",
+  "hypothesis>=6.141.1",
+  "pytest>=8.3.4",
+  "pytest-asyncio>=0.25.3",
+  "pytest-cov>=6.0.0",
+  "pytest-snapshot>=0.9.0",
+  "respx>=0.22.0",
+  "ruff>=0.9.6",
+  "stackone-ai",
+  "ty>=0.0.3",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
-    "asyncio: mark test as async",
-    "integration: mark test as integration test requiring MCP mock server",
+  "asyncio: mark test as async",
+  "integration: mark test as integration test requiring MCP mock server",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -82,30 +78,27 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
+  "E", # pycodestyle errors
+  "W", # pycodestyle warnings
+  "F", # pyflakes
+  "I", # isort
+  "B", # flake8-bugbear
+  "C4", # flake8-comprehensions
+  "UP", # pyupgrade
 ]
 
 [tool.coverage.run]
 source = ["stackone_ai"]
 branch = true
-omit = [
-    "stackone_ai/__init__.py",
-    "**/py.typed",
-]
+omit = ["stackone_ai/__init__.py", "**/py.typed"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise NotImplementedError",
-    "if TYPE_CHECKING:",
-    "if typing.TYPE_CHECKING:",
+  "pragma: no cover",
+  "def __repr__",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+  "if typing.TYPE_CHECKING:",
 ]
 
 [tool.coverage.json]
