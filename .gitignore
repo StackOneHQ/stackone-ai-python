@@ -17,3 +17,7 @@ build/
 
 # Git hooks (managed by Nix)
 .pre-commit-config.yaml
+
+# Agent skills (managed by Nix via agent-skills-nix)
+.claude/skills
+.agents/skills
