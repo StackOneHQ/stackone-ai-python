@@ -101,6 +101,18 @@ class StackOneTool(BaseModel):
         "feedback_metadata",
     }
 
+    @property
+    def connector(self) -> str:
+        """Extract connector from tool name.
+
+        Tool names follow the format: {connector}_{action}_{entity}
+        e.g., 'bamboohr_create_employee' -> 'bamboohr'
+
+        Returns:
+            Connector name in lowercase
+        """
+        return self.name.split("_")[0].lower()
+
     def __init__(
         self,
         description: str,
@@ -516,6 +528,35 @@ class Tools:
             if isinstance(account_id, str):
                 return account_id
         return None
+
+    def get_connectors(self) -> set[str]:
+        """Get unique connector names from all tools.
+
+        Returns:
+            Set of connector names (lowercase)
+
+        Example:
+            tools = toolset.fetch_tools()
+            connectors = tools.get_connectors()
+            # {'bamboohr', 'hibob', 'slack', ...}
+        """
+        return {tool.connector for tool in self.tools}
+
+    def filter_by_connector(self, connectors: list[str] | set[str]) -> Tools:
+        """Filter tools by connector names.
+
+        Args:
+            connectors: List or set of connector names to include (case-insensitive)
+
+        Returns:
+            New Tools collection containing only tools from specified connectors
+
+        Example:
+            hr_tools = tools.filter_by_connector(['bamboohr', 'hibob'])
+        """
+        connector_set = {c.lower() for c in connectors}
+        filtered = [t for t in self.tools if t.connector in connector_set]
+        return Tools(filtered)
 
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format

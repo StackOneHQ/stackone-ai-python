@@ -297,8 +297,8 @@ class StackOneToolSet:
         """Search for and fetch tools using semantic search.
 
         This method uses the StackOne semantic search API (84% Hit@5 accuracy)
-        to find relevant tools based on natural language queries, then fetches
-        those tools via MCP.
+        to find relevant tools based on natural language queries. It optimizes
+        results by filtering to only connectors available in linked accounts.
 
         Args:
             query: Natural language description of needed functionality
@@ -310,7 +310,7 @@ class StackOneToolSet:
             fallback_to_local: If True, fall back to local BM25+TF-IDF search on API failure
 
         Returns:
-            Tools collection with semantically matched tools
+            Tools collection with semantically matched tools from linked accounts
 
         Raises:
             SemanticSearchError: If the API call fails and fallback_to_local is False
@@ -334,17 +334,43 @@ class StackOneToolSet:
             )
         """
         try:
-            action_names = self.semantic_client.search_action_names(
-                query=query,
-                connector=connector,
-                top_k=top_k,
-                min_score=min_score,
-            )
+            # Step 1: Fetch all tools to get available connectors from linked accounts
+            all_tools = self.fetch_tools(account_ids=account_ids)
+            available_connectors = all_tools.get_connectors()
 
-            if not action_names:
+            if not available_connectors:
                 return Tools([])
 
-            return self.fetch_tools(actions=action_names, account_ids=account_ids)
+            # Step 2: Over-fetch from semantic API to account for connector filtering
+            # We fetch 3x to ensure we get enough results after filtering
+            over_fetch_multiplier = 3
+            over_fetch_k = top_k * over_fetch_multiplier
+
+            response = self.semantic_client.search(
+                query=query,
+                connector=connector,
+                top_k=over_fetch_k,
+            )
+
+            # Step 3: Filter results to only available connectors and min_score
+            filtered_results = [
+                r
+                for r in response.results
+                if r.connector_key.lower() in available_connectors and r.similarity_score >= min_score
+            ][:top_k]  # Take only top_k after filtering
+
+            if not filtered_results:
+                return Tools([])
+
+            # Step 4: Get matching tools from already-fetched tools
+            action_names = {r.action_name for r in filtered_results}
+            matched_tools = [t for t in all_tools if t.name in action_names]
+
+            # Sort matched tools by semantic search score order
+            action_order = {r.action_name: i for i, r in enumerate(filtered_results)}
+            matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
+
+            return Tools(matched_tools)
 
         except SemanticSearchError:
             if not fallback_to_local:
@@ -373,6 +399,7 @@ class StackOneToolSet:
         query: str,
         *,
         connector: str | None = None,
+        available_connectors: set[str] | None = None,
         top_k: int = 10,
         min_score: float = 0.0,
     ) -> list[SemanticSearchResult]:
@@ -383,7 +410,10 @@ class StackOneToolSet:
 
         Args:
             query: Natural language description of needed functionality
-            connector: Optional provider/connector filter
+            connector: Optional provider/connector filter (single connector)
+            available_connectors: Optional set of connectors to filter results by.
+                If provided, only returns results for these connectors (over-fetches
+                from API to ensure enough results after filtering).
             top_k: Maximum number of results (default: 10)
             min_score: Minimum similarity score threshold 0-1 (default: 0.0)
 
@@ -396,16 +426,36 @@ class StackOneToolSet:
             for r in results:
                 print(f"{r.action_name}: {r.similarity_score:.2f}")
 
+            # Filter by available connectors from linked accounts
+            tools = toolset.fetch_tools()
+            results = toolset.search_action_names(
+                "create employee",
+                available_connectors=tools.get_connectors(),
+                top_k=5
+            )
+
             # Then fetch specific high-scoring actions
             selected = [r.action_name for r in results if r.similarity_score > 0.7]
             tools = toolset.fetch_tools(actions=selected)
         """
+        # Over-fetch if filtering by available_connectors
+        fetch_k = top_k * 3 if available_connectors else top_k
+
         response = self.semantic_client.search(
             query=query,
             connector=connector,
-            top_k=top_k,
+            top_k=fetch_k,
         )
-        return [r for r in response.results if r.similarity_score >= min_score]
+
+        # Filter by min_score
+        results = [r for r in response.results if r.similarity_score >= min_score]
+
+        # Filter by available connectors if provided
+        if available_connectors:
+            connector_set = {c.lower() for c in available_connectors}
+            results = [r for r in results if r.connector_key.lower() in connector_set]
+
+        return results[:top_k]
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

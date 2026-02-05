@@ -241,21 +241,47 @@ class TestSemanticSearchIntegration:
         # Same instance on second access
         assert toolset.semantic_client is client
 
-    @patch.object(SemanticSearchClient, "search_action_names")
+    @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
     def test_toolset_search_tools(
         self,
         mock_fetch: MagicMock,
         mock_search: MagicMock,
     ) -> None:
-        """Test toolset.search_tools() method."""
+        """Test toolset.search_tools() method with connector filtering."""
         from stackone_ai import StackOneToolSet
         from stackone_ai.toolset import _McpToolDefinition
 
-        # Mock semantic search to return action names
-        mock_search.return_value = ["bamboohr_create_employee", "hibob_create_employee"]
+        # Mock semantic search to return results (including some for unavailable connectors)
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="bamboohr_create_employee",
+                    connector_key="bamboohr",
+                    similarity_score=0.95,
+                    label="Create Employee",
+                    description="Creates a new employee",
+                ),
+                SemanticSearchResult(
+                    action_name="workday_create_worker",
+                    connector_key="workday",  # User doesn't have this connector
+                    similarity_score=0.90,
+                    label="Create Worker",
+                    description="Creates a new worker",
+                ),
+                SemanticSearchResult(
+                    action_name="hibob_create_employee",
+                    connector_key="hibob",
+                    similarity_score=0.85,
+                    label="Create Employee",
+                    description="Creates a new employee",
+                ),
+            ],
+            total_count=3,
+            query="create employee",
+        )
 
-        # Mock MCP fetch to return tools using actual dataclass
+        # Mock MCP fetch to return only bamboohr and hibob tools (user's linked accounts)
         mock_fetch.return_value = [
             _McpToolDefinition(
                 name="bamboohr_create_employee",
@@ -277,12 +303,17 @@ class TestSemanticSearchIntegration:
         toolset = StackOneToolSet(api_key="test-key")
         tools = toolset.search_tools("create employee", top_k=5)
 
-        # Should only return the 2 matching tools
+        # Should only return tools for available connectors (bamboohr, hibob)
+        # workday_create_worker should be filtered out
         assert len(tools) == 2
         tool_names = [t.name for t in tools]
         assert "bamboohr_create_employee" in tool_names
         assert "hibob_create_employee" in tool_names
-        assert "bamboohr_list_employees" not in tool_names
+        assert "workday_create_worker" not in tool_names  # Filtered out - connector not available
+
+        # Results should be sorted by semantic score
+        assert tools[0].name == "bamboohr_create_employee"  # score 0.95
+        assert tools[1].name == "hibob_create_employee"  # score 0.85
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
@@ -335,7 +366,7 @@ class TestSemanticSearchIntegration:
         # Without semantic search - should use local search
         # Patch ToolIndex in utility_tools module where it's imported
         with (
-            patch("stackone_ai.utility_tools.ToolIndex") as mock_index_class,
+            patch("stackone_ai.utility_tools.ToolIndex"),
             patch("stackone_ai.utility_tools.create_tool_search") as mock_create_search,
             patch("stackone_ai.utility_tools.create_tool_execute") as mock_create_execute,
         ):
@@ -484,3 +515,269 @@ class TestSemanticToolSearch:
         assert "limit" in props
         assert "minScore" in props
         assert "connector" in props
+
+
+class TestConnectorProperty:
+    """Tests for StackOneTool.connector property."""
+
+    def test_connector_extracts_from_name(self) -> None:
+        """Test that connector is extracted from tool name."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters
+
+        execute_config = ExecuteConfig(
+            name="bamboohr_create_employee",
+            method="POST",
+            url="https://api.example.com",
+            headers={},
+        )
+        tool = StackOneTool(
+            description="Creates employee",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=execute_config,
+            _api_key="test-key",
+        )
+
+        assert tool.connector == "bamboohr"
+
+    def test_connector_is_lowercase(self) -> None:
+        """Test that connector is always lowercase."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters
+
+        execute_config = ExecuteConfig(
+            name="BambooHR_Create_Employee",
+            method="POST",
+            url="https://api.example.com",
+            headers={},
+        )
+        tool = StackOneTool(
+            description="Creates employee",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=execute_config,
+            _api_key="test-key",
+        )
+
+        assert tool.connector == "bamboohr"
+
+    def test_connector_with_single_word_name(self) -> None:
+        """Test connector extraction with single-word tool name."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters
+
+        execute_config = ExecuteConfig(
+            name="utility",
+            method="POST",
+            url="https://api.example.com",
+            headers={},
+        )
+        tool = StackOneTool(
+            description="Utility tool",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=execute_config,
+            _api_key="test-key",
+        )
+
+        assert tool.connector == "utility"
+
+
+class TestToolsConnectorHelpers:
+    """Tests for Tools.get_connectors() and filter_by_connector()."""
+
+    def test_get_connectors(self) -> None:
+        """Test getting unique connectors from tools collection."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters, Tools
+
+        def make_tool(name: str) -> StackOneTool:
+            return StackOneTool(
+                description=f"Tool {name}",
+                parameters=ToolParameters(type="object", properties={}),
+                _execute_config=ExecuteConfig(name=name, method="POST", url="", headers={}),
+                _api_key="test-key",
+            )
+
+        tools = Tools([
+            make_tool("bamboohr_create_employee"),
+            make_tool("bamboohr_list_employees"),
+            make_tool("hibob_create_employee"),
+            make_tool("slack_send_message"),
+        ])
+
+        connectors = tools.get_connectors()
+
+        assert connectors == {"bamboohr", "hibob", "slack"}
+
+    def test_get_connectors_empty(self) -> None:
+        """Test get_connectors with empty tools collection."""
+        from stackone_ai.models import Tools
+
+        tools = Tools([])
+        assert tools.get_connectors() == set()
+
+    def test_filter_by_connector(self) -> None:
+        """Test filtering tools by connector."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters, Tools
+
+        def make_tool(name: str) -> StackOneTool:
+            return StackOneTool(
+                description=f"Tool {name}",
+                parameters=ToolParameters(type="object", properties={}),
+                _execute_config=ExecuteConfig(name=name, method="POST", url="", headers={}),
+                _api_key="test-key",
+            )
+
+        tools = Tools([
+            make_tool("bamboohr_create_employee"),
+            make_tool("bamboohr_list_employees"),
+            make_tool("hibob_create_employee"),
+            make_tool("slack_send_message"),
+        ])
+
+        # Filter by single connector
+        bamboo_tools = tools.filter_by_connector(["bamboohr"])
+        assert len(bamboo_tools) == 2
+        assert all(t.connector == "bamboohr" for t in bamboo_tools)
+
+        # Filter by multiple connectors
+        hr_tools = tools.filter_by_connector(["bamboohr", "hibob"])
+        assert len(hr_tools) == 3
+        assert all(t.connector in {"bamboohr", "hibob"} for t in hr_tools)
+
+    def test_filter_by_connector_case_insensitive(self) -> None:
+        """Test that filter_by_connector is case-insensitive."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters, Tools
+
+        tool = StackOneTool(
+            description="Creates employee",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                name="bamboohr_create_employee", method="POST", url="", headers={}
+            ),
+            _api_key="test-key",
+        )
+        tools = Tools([tool])
+
+        # Should match regardless of case
+        assert len(tools.filter_by_connector(["BambooHR"])) == 1
+        assert len(tools.filter_by_connector(["BAMBOOHR"])) == 1
+        assert len(tools.filter_by_connector(["bamboohr"])) == 1
+
+    def test_filter_by_connector_returns_new_tools(self) -> None:
+        """Test that filter_by_connector returns a new Tools instance."""
+        from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters, Tools
+
+        tool = StackOneTool(
+            description="Creates employee",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(
+                name="bamboohr_create_employee", method="POST", url="", headers={}
+            ),
+            _api_key="test-key",
+        )
+        tools = Tools([tool])
+
+        filtered = tools.filter_by_connector(["bamboohr"])
+
+        assert filtered is not tools
+        assert isinstance(filtered, Tools)
+
+
+class TestSearchActionNamesWithAvailableConnectors:
+    """Tests for search_action_names with available_connectors parameter."""
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_filters_by_available_connectors(self, mock_search: MagicMock) -> None:
+        """Test that results are filtered by available connectors."""
+        from stackone_ai import StackOneToolSet
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="bamboohr_create_employee",
+                    connector_key="bamboohr",
+                    similarity_score=0.95,
+                    label="Create Employee",
+                    description="Creates employee",
+                ),
+                SemanticSearchResult(
+                    action_name="workday_create_worker",
+                    connector_key="workday",
+                    similarity_score=0.90,
+                    label="Create Worker",
+                    description="Creates worker",
+                ),
+                SemanticSearchResult(
+                    action_name="hibob_create_employee",
+                    connector_key="hibob",
+                    similarity_score=0.85,
+                    label="Create Employee",
+                    description="Creates employee",
+                ),
+            ],
+            total_count=3,
+            query="create employee",
+        )
+
+        toolset = StackOneToolSet(api_key="test-key")
+        results = toolset.search_action_names(
+            "create employee",
+            available_connectors={"bamboohr", "hibob"},
+            top_k=10,
+        )
+
+        # workday should be filtered out
+        assert len(results) == 2
+        action_names = [r.action_name for r in results]
+        assert "bamboohr_create_employee" in action_names
+        assert "hibob_create_employee" in action_names
+        assert "workday_create_worker" not in action_names
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_over_fetches_when_filtering(self, mock_search: MagicMock) -> None:
+        """Test that API is called with 3x top_k when filtering by connectors."""
+        from stackone_ai import StackOneToolSet
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[],
+            total_count=0,
+            query="test",
+        )
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.search_action_names(
+            "test",
+            available_connectors={"bamboohr"},
+            top_k=5,
+        )
+
+        # Should over-fetch by 3x
+        mock_search.assert_called_once()
+        call_kwargs = mock_search.call_args.kwargs
+        assert call_kwargs["top_k"] == 15  # 5 * 3
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_respects_top_k_after_filtering(self, mock_search: MagicMock) -> None:
+        """Test that results are limited to top_k after filtering."""
+        from stackone_ai import StackOneToolSet
+
+        # Return more results than top_k
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name=f"bamboohr_action_{i}",
+                    connector_key="bamboohr",
+                    similarity_score=0.9 - i * 0.1,
+                    label=f"Action {i}",
+                    description=f"Action {i}",
+                )
+                for i in range(10)
+            ],
+            total_count=10,
+            query="test",
+        )
+
+        toolset = StackOneToolSet(api_key="test-key")
+        results = toolset.search_action_names(
+            "test",
+            available_connectors={"bamboohr"},
+            top_k=3,
+        )
+
+        assert len(results) == 3
