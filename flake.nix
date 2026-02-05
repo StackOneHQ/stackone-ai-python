@@ -101,20 +101,10 @@
 
           # Agent skills bundle and targets
           bundle = agentLib.mkBundle { inherit pkgs selection; };
-          localTargets = {
-            claude = {
-              dest = ".claude/skills";
-              structure = "symlink-tree";
-              enable = true;
-              systems = [ ];
-            };
-            agents = {
-              dest = ".agents/skills";
-              structure = "symlink-tree";
-              enable = true;
-              systems = [ ];
-            };
-          };
+          # Use symlink-tree instead of copy-tree for skills
+          localTargets = inputs.nixpkgs.lib.mapAttrs (
+            _: t: t // { structure = "symlink-tree"; }
+          ) agentLib.defaultLocalTargets;
         in
         {
           formatter = treefmtEval.config.build.wrapper;
