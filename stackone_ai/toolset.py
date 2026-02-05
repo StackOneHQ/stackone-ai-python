@@ -18,6 +18,11 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
 )
+from stackone_ai.semantic_search import (
+    SemanticSearchClient,
+    SemanticSearchError,
+    SemanticSearchResult,
+)
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
@@ -251,6 +256,7 @@ class StackOneToolSet:
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
+        self._semantic_client: SemanticSearchClient | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -263,6 +269,143 @@ class StackOneToolSet:
         """
         self._account_ids = account_ids
         return self
+
+    @property
+    def semantic_client(self) -> SemanticSearchClient:
+        """Lazy initialization of semantic search client.
+
+        Returns:
+            SemanticSearchClient instance configured with the toolset's API key and base URL
+        """
+        if self._semantic_client is None:
+            self._semantic_client = SemanticSearchClient(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+        return self._semantic_client
+
+    def search_tools(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        top_k: int = 10,
+        min_score: float = 0.0,
+        account_ids: list[str] | None = None,
+        fallback_to_local: bool = True,
+    ) -> Tools:
+        """Search for and fetch tools using semantic search.
+
+        This method uses the StackOne semantic search API (84% Hit@5 accuracy)
+        to find relevant tools based on natural language queries, then fetches
+        those tools via MCP.
+
+        Args:
+            query: Natural language description of needed functionality
+                (e.g., "create employee", "send a message")
+            connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
+            top_k: Maximum number of tools to return (default: 10)
+            min_score: Minimum similarity score threshold 0-1 (default: 0.0)
+            account_ids: Optional account IDs (uses set_accounts() if not provided)
+            fallback_to_local: If True, fall back to local BM25+TF-IDF search on API failure
+
+        Returns:
+            Tools collection with semantically matched tools
+
+        Raises:
+            SemanticSearchError: If the API call fails and fallback_to_local is False
+
+        Examples:
+            # Basic semantic search
+            tools = toolset.search_tools("manage employee records", top_k=5)
+
+            # Filter by connector
+            tools = toolset.search_tools(
+                "create time off request",
+                connector="bamboohr",
+                min_score=0.5
+            )
+
+            # With account filtering
+            tools = toolset.search_tools(
+                "send message",
+                account_ids=["acc-123"],
+                top_k=3
+            )
+        """
+        try:
+            action_names = self.semantic_client.search_action_names(
+                query=query,
+                connector=connector,
+                top_k=top_k,
+                min_score=min_score,
+            )
+
+            if not action_names:
+                return Tools([])
+
+            return self.fetch_tools(actions=action_names, account_ids=account_ids)
+
+        except SemanticSearchError:
+            if not fallback_to_local:
+                raise
+
+            # Fallback to local search
+            all_tools = self.fetch_tools(account_ids=account_ids)
+            utility = all_tools.utility_tools()
+            search_tool = utility.get_tool("tool_search")
+
+            if search_tool:
+                result = search_tool.execute(
+                    {
+                        "query": query,
+                        "limit": top_k,
+                        "minScore": min_score,
+                    }
+                )
+                matched_names = [t["name"] for t in result.get("tools", [])]
+                return Tools([t for t in all_tools if t.name in matched_names])
+
+            return all_tools
+
+    def search_action_names(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        top_k: int = 10,
+        min_score: float = 0.0,
+    ) -> list[SemanticSearchResult]:
+        """Search for action names without fetching tools.
+
+        Useful when you need to inspect search results before fetching,
+        or when building custom filtering logic.
+
+        Args:
+            query: Natural language description of needed functionality
+            connector: Optional provider/connector filter
+            top_k: Maximum number of results (default: 10)
+            min_score: Minimum similarity score threshold 0-1 (default: 0.0)
+
+        Returns:
+            List of SemanticSearchResult with action names, scores, and metadata
+
+        Example:
+            # Inspect results before fetching
+            results = toolset.search_action_names("manage employees", top_k=10)
+            for r in results:
+                print(f"{r.action_name}: {r.similarity_score:.2f}")
+
+            # Then fetch specific high-scoring actions
+            selected = [r.action_name for r in results if r.similarity_score > 0.7]
+            tools = toolset.fetch_tools(actions=selected)
+        """
+        response = self.semantic_client.search(
+            query=query,
+            connector=connector,
+            top_k=top_k,
+        )
+        return [r for r in response.results if r.similarity_score >= min_score]
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

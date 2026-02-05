@@ -6,7 +6,10 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, ClassVar, TypeAlias, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias, cast
+
+if TYPE_CHECKING:
+    from stackone_ai.semantic_search import SemanticSearchClient
 from urllib.parse import quote
 
 import httpx
@@ -530,34 +533,65 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def utility_tools(self, hybrid_alpha: float | None = None) -> Tools:
+    def utility_tools(
+        self,
+        hybrid_alpha: float | None = None,
+        use_semantic_search: bool = False,
+        semantic_client: SemanticSearchClient | None = None,
+    ) -> Tools:
         """Return utility tools for tool discovery and execution
 
-        Utility tools enable dynamic tool discovery and execution based on natural language queries
-        using hybrid BM25 + TF-IDF search.
+        Utility tools enable dynamic tool discovery and execution based on natural language queries.
+        By default, uses local hybrid BM25 + TF-IDF search. Optionally, can use cloud-based
+        semantic search for higher accuracy (84% Hit@5 vs 21% for local search).
 
         Args:
-            hybrid_alpha: Weight for BM25 in hybrid search (0-1). If not provided, uses
-                ToolIndex.DEFAULT_HYBRID_ALPHA (0.2), which gives more weight to BM25 scoring
-                and has been shown to provide better tool discovery accuracy
-                (10.8% improvement in validation testing).
+            hybrid_alpha: Weight for BM25 in hybrid search (0-1). Only used when
+                use_semantic_search=False. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2),
+                which gives more weight to BM25 scoring.
+            use_semantic_search: If True, use cloud-based semantic search instead of local
+                BM25+TF-IDF search. Requires semantic_client to be provided.
+            semantic_client: SemanticSearchClient instance. Required when use_semantic_search=True.
+                Can be obtained from StackOneToolSet.semantic_client.
 
         Returns:
             Tools collection containing tool_search and tool_execute
 
+        Raises:
+            ValueError: If use_semantic_search=True but semantic_client is not provided
+
         Note:
             This feature is in beta and may change in future versions
+
+        Example:
+            # Local search (default)
+            utility = tools.utility_tools()
+
+            # Semantic search (requires toolset)
+            from stackone_ai import StackOneToolSet
+            toolset = StackOneToolSet()
+            tools = toolset.fetch_tools()
+            utility = tools.utility_tools(
+                use_semantic_search=True,
+                semantic_client=toolset.semantic_client,
+            )
         """
-        from stackone_ai.utility_tools import (
-            ToolIndex,
-            create_tool_execute,
-            create_tool_search,
-        )
+        from stackone_ai.utility_tools import create_tool_execute
 
-        # Create search index with hybrid search
+        if use_semantic_search:
+            if semantic_client is None:
+                raise ValueError("semantic_client is required when use_semantic_search=True")
+
+            from stackone_ai.utility_tools import create_semantic_tool_search
+
+            search_tool = create_semantic_tool_search(semantic_client)
+            execute_tool = create_tool_execute(self)
+            return Tools([search_tool, execute_tool])
+
+        # Default: local BM25+TF-IDF search
+        from stackone_ai.utility_tools import ToolIndex, create_tool_search
+
         index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
-
-        # Create utility tools
         filter_tool = create_tool_search(index)
         execute_tool = create_tool_execute(self)
 
