@@ -171,10 +171,12 @@ class LocalLambdaSearchClient:
         seen: dict[str, SemanticSearchResult] = {}
         for query in broad_queries:
             try:
-                data = self._invoke({
-                    "type": "search",
-                    "payload": {"query": query, "top_k": 500},
-                })
+                data = self._invoke(
+                    {
+                        "type": "search",
+                        "payload": {"query": query, "top_k": 500},
+                    }
+                )
                 for r in data.get("results", []):
                     name = r.get("action_name", "")
                     if name and name not in seen:

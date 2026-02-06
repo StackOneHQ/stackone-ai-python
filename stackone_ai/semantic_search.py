@@ -108,9 +108,7 @@ class SemanticSearchClient:
             data = response.json()
             return SemanticSearchResponse(**data)
         except httpx.HTTPStatusError as e:
-            raise SemanticSearchError(
-                f"API error: {e.response.status_code} - {e.response.text}"
-            ) from e
+            raise SemanticSearchError(f"API error: {e.response.status_code} - {e.response.text}") from e
         except httpx.RequestError as e:
             raise SemanticSearchError(f"Request failed: {e}") from e
         except Exception as e:

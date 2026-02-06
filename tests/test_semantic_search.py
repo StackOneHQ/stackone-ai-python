@@ -593,12 +593,14 @@ class TestToolsConnectorHelpers:
                 _api_key="test-key",
             )
 
-        tools = Tools([
-            make_tool("bamboohr_create_employee"),
-            make_tool("bamboohr_list_employees"),
-            make_tool("hibob_create_employee"),
-            make_tool("slack_send_message"),
-        ])
+        tools = Tools(
+            [
+                make_tool("bamboohr_create_employee"),
+                make_tool("bamboohr_list_employees"),
+                make_tool("hibob_create_employee"),
+                make_tool("slack_send_message"),
+            ]
+        )
 
         connectors = tools.get_connectors()
 
@@ -623,12 +625,14 @@ class TestToolsConnectorHelpers:
                 _api_key="test-key",
             )
 
-        tools = Tools([
-            make_tool("bamboohr_create_employee"),
-            make_tool("bamboohr_list_employees"),
-            make_tool("hibob_create_employee"),
-            make_tool("slack_send_message"),
-        ])
+        tools = Tools(
+            [
+                make_tool("bamboohr_create_employee"),
+                make_tool("bamboohr_list_employees"),
+                make_tool("hibob_create_employee"),
+                make_tool("slack_send_message"),
+            ]
+        )
 
         # Filter by single connector
         bamboo_tools = tools.filter_by_connector(["bamboohr"])
@@ -647,9 +651,7 @@ class TestToolsConnectorHelpers:
         tool = StackOneTool(
             description="Creates employee",
             parameters=ToolParameters(type="object", properties={}),
-            _execute_config=ExecuteConfig(
-                name="bamboohr_create_employee", method="POST", url="", headers={}
-            ),
+            _execute_config=ExecuteConfig(name="bamboohr_create_employee", method="POST", url="", headers={}),
             _api_key="test-key",
         )
         tools = Tools([tool])
@@ -666,9 +668,7 @@ class TestToolsConnectorHelpers:
         tool = StackOneTool(
             description="Creates employee",
             parameters=ToolParameters(type="object", properties={}),
-            _execute_config=ExecuteConfig(
-                name="bamboohr_create_employee", method="POST", url="", headers={}
-            ),
+            _execute_config=ExecuteConfig(name="bamboohr_create_employee", method="POST", url="", headers={}),
             _api_key="test-key",
         )
         tools = Tools([tool])
