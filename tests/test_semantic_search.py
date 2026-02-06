@@ -317,6 +317,75 @@ class TestSemanticSearchIntegration:
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_toolset_search_tools_fallback(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test search_tools() fallback when semantic search fails."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        # Semantic search raises an error to trigger fallback
+        mock_search.side_effect = SemanticSearchError("API unavailable")
+
+        # Mock MCP fetch to return tools from multiple connectors
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            _McpToolDefinition(
+                name="bamboohr_list_employees",
+                description="Lists all employees in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            _McpToolDefinition(
+                name="workday_create_worker",
+                description="Creates a new worker in Workday",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        tools = toolset.search_tools("create employee", top_k=5, fallback_to_local=True)
+
+        # Should return results from the local BM25+TF-IDF fallback
+        assert len(tools) > 0
+        tool_names = [t.name for t in tools]
+        # Should only include tools for available connectors (bamboohr, workday)
+        for name in tool_names:
+            connector = name.split("_")[0]
+            assert connector in {"bamboohr", "workday"}
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_toolset_search_tools_fallback_disabled(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test search_tools() raises when fallback is disabled."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_search.side_effect = SemanticSearchError("API unavailable")
+        # Must provide tools so the flow reaches the semantic search call
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        with pytest.raises(SemanticSearchError):
+            toolset.search_tools("create employee", fallback_to_local=False)
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
     def test_toolset_search_action_names(
         self,
         mock_fetch: MagicMock,

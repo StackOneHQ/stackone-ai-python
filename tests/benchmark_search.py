@@ -204,7 +204,7 @@ class EvaluationTask:
     connector: str | None = None
 
 
-# 103 semantically-challenging evaluation queries
+# Semantically-challenging evaluation queries
 EVALUATION_TASKS: list[EvaluationTask] = [
     # ============ ALL CONNECTORS - SEMANTIC CHALLENGES ============
     # HR/HRIS - Natural language
