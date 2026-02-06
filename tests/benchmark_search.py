@@ -9,9 +9,8 @@ Expected results:
 Run with production API:
     STACKONE_API_KEY=xxx python tests/benchmark_search.py
 
-Run with local Lambda (ai-generation/apps/action_search):
-    # First, start the local Lambda:
-    #   cd ai-generation/apps/action_search && make run-local
+Run with local Lambda:
+    # First, start the local action_search Lambda
     # Then run benchmark:
     python tests/benchmark_search.py --local
 
@@ -33,7 +32,7 @@ import httpx
 from stackone_ai.semantic_search import SemanticSearchClient, SemanticSearchResponse, SemanticSearchResult
 from stackone_ai.utility_tools import ToolIndex
 
-# Default local Lambda URL (from ai-generation/apps/action_search docker-compose)
+# Default local Lambda URL
 DEFAULT_LOCAL_LAMBDA_URL = "http://localhost:4513/2015-03-31/functions/function/invocations"
 
 
@@ -51,13 +50,8 @@ class SearchClientProtocol(Protocol):
 class LocalLambdaSearchClient:
     """Client for local action_search Lambda.
 
-    This client connects to the local Lambda running via docker-compose
-    from ai-generation/apps/action_search.
-
     Usage:
-        # Start local Lambda first:
-        #   cd ai-generation/apps/action_search && make run-local
-
+        # Start the local action_search Lambda first
         client = LocalLambdaSearchClient()
         response = client.search("create employee", connector="bamboohr", top_k=5)
     """
@@ -214,7 +208,6 @@ class EvaluationTask:
 
 
 # 103 semantically-challenging evaluation queries
-# Ported from ai-generation/apps/action_search/tests/benchmark.integration.spec.ts
 EVALUATION_TASKS: list[EvaluationTask] = [
     # ============ ALL CONNECTORS - SEMANTIC CHALLENGES ============
     # HR/HRIS - Natural language
@@ -1212,7 +1205,7 @@ Examples:
   # Run with production API
   STACKONE_API_KEY=xxx python tests/benchmark_search.py
 
-  # Run with local Lambda (start it first: cd ai-generation/apps/action_search && make run-local)
+  # Run with local Lambda (start the local action_search Lambda first)
   python tests/benchmark_search.py --local
 
   # Run with custom local Lambda URL

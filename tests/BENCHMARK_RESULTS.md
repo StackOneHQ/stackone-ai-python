@@ -85,14 +85,9 @@ Hard queries that neither method handles well. Many are abbreviations, cross-dom
 Requires the action_search Lambda running locally:
 
 ```bash
-# Terminal 1: Start the Lambda
-cd ai-generation/apps/action_search
-cp .env.example .env
-# Edit .env: set USE_LOCAL_STORE=false and TURBOPUFFER_API_KEY=tpuf_xxx
-make run-local
+# Terminal 1: Start the local action_search Lambda
 
 # Terminal 2: Run benchmark
-cd stackone-ai-python
 uv run python tests/benchmark_search.py --local
 ```
 
