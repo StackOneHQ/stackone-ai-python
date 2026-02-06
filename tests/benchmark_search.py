@@ -1,10 +1,7 @@
 """
 Benchmark comparing local BM25+TF-IDF vs semantic search.
 
-Expected results:
-- Local BM25+TF-IDF: ~21% Hit@5
-- Semantic Search: ~84% Hit@5
-- Improvement: 4x
+Compares Hit@5 and MRR between local BM25+TF-IDF and semantic search.
 
 Run with production API:
     STACKONE_API_KEY=xxx python tests/benchmark_search.py

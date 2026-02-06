@@ -37,8 +37,7 @@ class SemanticSearchClient:
     """Client for StackOne semantic search API.
 
     This client provides access to the semantic search endpoint which uses
-    enhanced embeddings for 84% Hit@5 accuracy (compared to ~21% for local
-    BM25+TF-IDF search).
+    enhanced embeddings for higher accuracy than local BM25+TF-IDF search.
 
     Example:
         client = SemanticSearchClient(api_key="sk-xxx")

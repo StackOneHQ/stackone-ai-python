@@ -296,9 +296,9 @@ class StackOneToolSet:
     ) -> Tools:
         """Search for and fetch tools using semantic search.
 
-        This method uses the StackOne semantic search API (84% Hit@5 accuracy)
-        to find relevant tools based on natural language queries. It optimizes
-        results by filtering to only connectors available in linked accounts.
+        This method uses the StackOne semantic search API to find relevant tools
+        based on natural language queries. It optimizes results by filtering to
+        only connectors available in linked accounts.
 
         Args:
             query: Natural language description of needed functionality

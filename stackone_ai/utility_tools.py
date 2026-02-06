@@ -270,8 +270,8 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
 def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackOneTool:
     """Create a semantic search variant of tool_search.
 
-    Uses cloud semantic search API (84% Hit@5 accuracy) instead of
-    local BM25+TF-IDF (21% accuracy).
+    Uses cloud semantic search API instead of local BM25+TF-IDF for
+    improved natural language tool discovery.
 
     Args:
         semantic_client: Initialized SemanticSearchClient instance
@@ -287,7 +287,7 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
     name = "tool_search"
     description = (
         "Searches for relevant tools based on a natural language query using "
-        "semantic vector search (84% accuracy). Call this first to discover "
+        "semantic vector search. Call this first to discover "
         "available tools before executing them."
     )
 
