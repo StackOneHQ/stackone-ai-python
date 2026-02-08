@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.3.1...stackone-ai-v2.4.0) (2026-02-08)
+
+
+### Features
+
+* **skills:** add just-commands skill with dynamic context injection ([#133](https://github.com/StackOneHQ/stackone-ai-python/issues/133)) ([bf9f3fb](https://github.com/StackOneHQ/stackone-ai-python/commit/bf9f3fb46c4a6dbb55e76c83ceef0eb465b481fb))
+
 ## [2.3.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.3.0...stackone-ai-v2.3.1) (2026-01-29)
 
 
