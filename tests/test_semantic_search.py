@@ -448,12 +448,7 @@ class TestSemanticSearchIntegration:
             utility = tools.utility_tools()
             assert len(utility) == 2  # tool_search + tool_execute
 
-        # With semantic search - requires client
-        with pytest.raises(ValueError) as exc_info:
-            tools.utility_tools(use_semantic_search=True)
-        assert "semantic_client is required" in str(exc_info.value)
-
-        # With semantic search and client
+        # With semantic search - presence of semantic_client enables it
         mock_client = MagicMock(spec=SemanticSearchClient)
         with (
             patch("stackone_ai.utility_tools.create_semantic_tool_search") as mock_create,
@@ -465,7 +460,7 @@ class TestSemanticSearchIntegration:
             mock_execute_tool.name = "tool_execute"
             mock_create.return_value = mock_search_tool
             mock_create_execute.return_value = mock_execute_tool
-            utility = tools.utility_tools(use_semantic_search=True, semantic_client=mock_client)
+            utility = tools.utility_tools(semantic_client=mock_client)
             assert len(utility) == 2
             mock_create.assert_called_once_with(mock_client)
 

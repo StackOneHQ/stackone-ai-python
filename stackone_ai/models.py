@@ -577,29 +577,24 @@ class Tools:
     def utility_tools(
         self,
         hybrid_alpha: float | None = None,
-        use_semantic_search: bool = False,
         semantic_client: SemanticSearchClient | None = None,
     ) -> Tools:
         """Return utility tools for tool discovery and execution
 
         Utility tools enable dynamic tool discovery and execution based on natural language queries.
-        By default, uses local hybrid BM25 + TF-IDF search. Optionally, can use cloud-based
-        semantic search for higher accuracy on natural language queries.
+        By default, uses local hybrid BM25 + TF-IDF search. When a semantic_client is provided,
+        uses cloud-based semantic search for higher accuracy on natural language queries.
 
         Args:
             hybrid_alpha: Weight for BM25 in hybrid search (0-1). Only used when
-                use_semantic_search=False. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2),
+                semantic_client is not provided. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2),
                 which gives more weight to BM25 scoring.
-            use_semantic_search: If True, use cloud-based semantic search instead of local
-                BM25+TF-IDF search. Requires semantic_client to be provided.
-            semantic_client: SemanticSearchClient instance. Required when use_semantic_search=True.
+            semantic_client: SemanticSearchClient instance for cloud-based semantic search.
+                When provided, semantic search is used instead of local BM25+TF-IDF.
                 Can be obtained from StackOneToolSet.semantic_client.
 
         Returns:
             Tools collection containing tool_search and tool_execute
-
-        Raises:
-            ValueError: If use_semantic_search=True but semantic_client is not provided
 
         Note:
             This feature is in beta and may change in future versions
@@ -613,16 +608,12 @@ class Tools:
             toolset = StackOneToolSet()
             tools = toolset.fetch_tools()
             utility = tools.utility_tools(
-                use_semantic_search=True,
                 semantic_client=toolset.semantic_client,
             )
         """
         from stackone_ai.utility_tools import create_tool_execute
 
-        if use_semantic_search:
-            if semantic_client is None:
-                raise ValueError("semantic_client is required when use_semantic_search=True")
-
+        if semantic_client is not None:
             from stackone_ai.utility_tools import create_semantic_tool_search
 
             search_tool = create_semantic_tool_search(semantic_client)

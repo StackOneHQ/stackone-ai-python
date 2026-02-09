@@ -328,7 +328,7 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 
 ## Semantic Search
 
-Semantic search allows tool discovery using natural language instead of exact keyword matching. It understands intent and synonyms, so queries like "fire someone" or "check my to-do list" resolve to the right actions. Enable it via `toolset.search_tools(query)` or pass `use_semantic_search=True` to utility tools.
+Semantic search allows tool discovery using natural language instead of exact keyword matching. It understands intent and synonyms, so queries like "fire someone" or "check my to-do list" resolve to the right actions. Enable it via `toolset.search_tools(query)` or by passing a `semantic_client` to utility tools.
 
 ## Examples
 
