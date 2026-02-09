@@ -328,7 +328,7 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 
 ## Semantic Search
 
-Semantic search enables tool discovery using natural language instead of exact keyword matching. It understands intent and synonyms, so queries like "fire someone" or "check my to-do list" resolve to the right StackOne actions.
+Semantic search enables tool discovery using natural language instead of exact keyword matching. It understands intent and synonyms, so queries like "onboard new hire" or "check my to-do list" resolve to the right StackOne actions.
 
 **How it works:** Your query is matched against all StackOne actions using semantic vector search. Results are automatically filtered to only the connectors available in your linked accounts, so you only get tools you can actually use.
 
@@ -345,7 +345,6 @@ toolset = StackOneToolSet()
 tools = toolset.search_tools("manage employee records", top_k=5)
 
 # Use with any framework
-openai_tools = tools.to_openai()
 langchain_tools = tools.to_langchain()
 
 # Filter by connector
