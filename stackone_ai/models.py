@@ -542,22 +542,6 @@ class Tools:
         """
         return {tool.connector for tool in self.tools}
 
-    def filter_by_connector(self, connectors: list[str] | set[str]) -> Tools:
-        """Filter tools by connector names.
-
-        Args:
-            connectors: List or set of connector names to include (case-insensitive)
-
-        Returns:
-            New Tools collection containing only tools from specified connectors
-
-        Example:
-            hr_tools = tools.filter_by_connector(['bamboohr', 'hibob'])
-        """
-        connector_set = {c.lower() for c in connectors}
-        filtered = [t for t in self.tools if t.connector in connector_set]
-        return Tools(filtered)
-
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format
 
