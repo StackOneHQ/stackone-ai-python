@@ -4,7 +4,9 @@ import asyncio
 import base64
 import fnmatch
 import json
+import logging
 import os
+import re
 import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
@@ -24,6 +26,8 @@ from stackone_ai.semantic_search import (
     SemanticSearchResult,
 )
 
+logger = logging.getLogger("stackone.tools")
+
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
 except metadata.PackageNotFoundError:  # pragma: no cover - best-effort fallback when running from source
@@ -38,6 +42,19 @@ _RPC_PARAMETER_LOCATIONS = {
     "query": ParameterLocation.BODY,
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
+
+_VERSIONED_ACTION_RE = re.compile(r"^[a-z][a-z0-9]*_\d+(?:\.\d+)+_(.+)_global$")
+
+
+def _normalize_action_name(action_name: str) -> str:
+    """Convert semantic search API action name to MCP tool name.
+
+    API:  'calendly_1.0.0_calendly_create_scheduling_link_global'
+    MCP:  'calendly_create_scheduling_link'
+    """
+    match = _VERSIONED_ACTION_RE.match(action_name)
+    return match.group(1) if match else action_name
+
 
 T = TypeVar("T")
 
@@ -341,13 +358,10 @@ class StackOneToolSet:
             if not available_connectors:
                 return Tools([])
 
-            # Step 2: Fetch max results from semantic API, then filter client-side
-            semantic_api_max = 500
-
+            # Step 2: Fetch results from semantic API, then filter client-side
             response = self.semantic_client.search(
                 query=query,
                 connector=connector,
-                top_k=semantic_api_max,
             )
 
             # Step 3: Filter results to only available connectors and min_score
@@ -379,29 +393,34 @@ class StackOneToolSet:
                 # Re-sort by score after merging results from multiple calls
                 filtered_results.sort(key=lambda r: r.similarity_score, reverse=True)
 
-            # Apply top_k limit after all filtering and fallback
-            filtered_results = filtered_results[:top_k]
+            # Deduplicate by normalized MCP name (keep highest score first, already sorted)
+            seen_names: set[str] = set()
+            deduped: list[SemanticSearchResult] = []
+            for r in filtered_results:
+                norm = _normalize_action_name(r.action_name)
+                if norm not in seen_names:
+                    seen_names.add(norm)
+                    deduped.append(r)
+            filtered_results = deduped[:top_k]
 
             if not filtered_results:
                 return Tools([])
 
             # Step 4: Get matching tools from already-fetched tools
-            action_names = {r.action_name for r in filtered_results}
+            action_names = {_normalize_action_name(r.action_name) for r in filtered_results}
             matched_tools = [t for t in all_tools if t.name in action_names]
 
             # Sort matched tools by semantic search score order
-            action_order = {r.action_name: i for i, r in enumerate(filtered_results)}
+            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(filtered_results)}
             matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
 
             return Tools(matched_tools)
 
-        except SemanticSearchError:
+        except SemanticSearchError as e:
             if not fallback_to_local:
                 raise
 
-            # Fallback to local search
-            all_tools = self.fetch_tools(account_ids=account_ids)
-            available_connectors = all_tools.get_connectors()
+            logger.warning("Semantic search failed (%s), falling back to local BM25+TF-IDF search", e)
             utility = all_tools.utility_tools()
             search_tool = utility.get_tool("tool_search")
 
@@ -416,10 +435,11 @@ class StackOneToolSet:
                 matched_names = [t["name"] for t in result.get("tools", [])]
                 # Filter by available connectors and preserve relevance order
                 tool_map = {t.name: t for t in all_tools}
+                filter_connectors = {connector.lower()} if connector else available_connectors
                 matched_tools = [
                     tool_map[name]
                     for name in matched_names
-                    if name in tool_map and name.split("_")[0].lower() in available_connectors
+                    if name in tool_map and name.split("_")[0].lower() in filter_connectors
                 ]
                 return Tools(matched_tools[:top_k])
 
@@ -477,15 +497,15 @@ class StackOneToolSet:
             if not available_connectors:
                 return []
 
-        # Fetch max results to maximize results after connector filtering
-        semantic_api_max = 500
-        fetch_k = semantic_api_max if available_connectors else min(top_k, 500)
-
-        response = self.semantic_client.search(
-            query=query,
-            connector=connector,
-            top_k=fetch_k,
-        )
+        try:
+            response = self.semantic_client.search(
+                query=query,
+                connector=connector,
+                top_k=None if available_connectors else top_k,
+            )
+        except SemanticSearchError as e:
+            logger.warning("Semantic search failed: %s", e)
+            return []
 
         # Filter by min_score
         results = [r for r in response.results if r.similarity_score >= min_score]
@@ -517,7 +537,23 @@ class StackOneToolSet:
                 # Re-sort by score after merging
                 results.sort(key=lambda r: r.similarity_score, reverse=True)
 
-        return results[:top_k]
+        # Normalize and deduplicate by MCP name (keep highest score first)
+        seen: set[str] = set()
+        normalized: list[SemanticSearchResult] = []
+        for r in results:
+            norm_name = _normalize_action_name(r.action_name)
+            if norm_name not in seen:
+                seen.add(norm_name)
+                normalized.append(
+                    SemanticSearchResult(
+                        action_name=norm_name,
+                        connector_key=r.connector_key,
+                        similarity_score=r.similarity_score,
+                        label=r.label,
+                        description=r.description,
+                    )
+                )
+        return normalized[:top_k]
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters
