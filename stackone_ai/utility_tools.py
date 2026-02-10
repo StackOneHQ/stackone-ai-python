@@ -349,12 +349,14 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
                 norm_name = _normalize_action_name(r.action_name)
                 if norm_name not in seen:
                     seen.add(norm_name)
-                    tools_data.append({
-                        "name": norm_name,
-                        "description": r.description,
-                        "score": r.similarity_score,
-                        "connector": r.connector_key,
-                    })
+                    tools_data.append(
+                        {
+                            "name": norm_name,
+                            "description": r.description,
+                            "score": r.similarity_score,
+                            "connector": r.connector_key,
+                        }
+                    )
 
         return {"tools": tools_data[:limit]}
 

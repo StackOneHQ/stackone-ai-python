@@ -935,9 +935,7 @@ class TestSemanticSearchDeduplication:
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
-    def test_search_tools_deduplicates_versions(
-        self, mock_fetch: MagicMock, mock_search: MagicMock
-    ) -> None:
+    def test_search_tools_deduplicates_versions(self, mock_fetch: MagicMock, mock_search: MagicMock) -> None:
         """Test that search_tools deduplicates multiple API versions of the same action."""
         from stackone_ai import StackOneToolSet
         from stackone_ai.toolset import _McpToolDefinition

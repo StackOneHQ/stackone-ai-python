@@ -257,7 +257,9 @@ def example_openai_agent_loop():
             tool = tools.get_tool(tool_call.function.name)
             if tool:
                 result = tool.execute(tool_call.function.arguments)
-                print(f"    Response keys: {list(result.keys()) if isinstance(result, dict) else type(result)}")
+                print(
+                    f"    Response keys: {list(result.keys()) if isinstance(result, dict) else type(result)}"
+                )
     else:
         print(f"OpenAI responded with text: {response.choices[0].message.content}")
 
