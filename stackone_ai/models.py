@@ -558,7 +558,6 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-
     def utility_tools(
         self,
         hybrid_alpha: float | None = None,
