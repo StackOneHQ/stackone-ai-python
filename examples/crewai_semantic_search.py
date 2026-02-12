@@ -19,15 +19,66 @@ uv run examples/crewai_semantic_search.py
 """
 
 import os
+from typing import Any
 
 from crewai import Agent, Crew, Task
+from crewai.tools.base_tool import BaseTool as CrewAIBaseTool
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from stackone_ai import StackOneToolSet
+from stackone_ai.models import StackOneTool
 
 load_dotenv()
 
 _account_ids = [aid.strip() for aid in os.getenv("STACKONE_ACCOUNT_ID", "").split(",") if aid.strip()]
+
+
+def _to_crewai_tool(tool: StackOneTool) -> CrewAIBaseTool:
+    """Wrap a StackOneTool as a CrewAI BaseTool.
+
+    CrewAI has its own BaseTool (not LangChain's), so we create a
+    lightweight wrapper that delegates execution to the StackOne tool.
+    """
+    schema_props: dict[str, Any] = {}
+    annotations: dict[str, Any] = {}
+
+    for name, details in tool.parameters.properties.items():
+        python_type: type = str
+        if isinstance(details, dict):
+            type_str = details.get("type", "string")
+            if type_str == "number":
+                python_type = float
+            elif type_str == "integer":
+                python_type = int
+            elif type_str == "boolean":
+                python_type = bool
+            field = Field(description=details.get("description", ""))
+        else:
+            field = Field(description="")
+
+        schema_props[name] = field
+        annotations[name] = python_type
+
+    _schema = type(
+        f"{tool.name.title().replace('_', '')}Args",
+        (BaseModel,),
+        {"__annotations__": annotations, "__module__": __name__, **schema_props},
+    )
+
+    _parent = tool
+    _name = tool.name
+    _description = tool.description
+
+    class WrappedTool(CrewAIBaseTool):
+        name: str = _name
+        description: str = _description
+        args_schema: type[BaseModel] = _schema
+
+        def _run(self, **kwargs: Any) -> Any:
+            return _parent.execute(kwargs)
+
+    return WrappedTool()
 
 
 def crewai_semantic_search() -> None:
@@ -38,7 +89,7 @@ def crewai_semantic_search() -> None:
     #   tool definitions. Useful for inspecting what's available before committing.
     preview = toolset.search_action_names(
         "book a meeting or check availability",
-        account_ids=_account_ids
+        account_ids=_account_ids,
     )
     print("Semantic search preview (action names only):")
     for r in preview:
@@ -51,7 +102,7 @@ def crewai_semantic_search() -> None:
     tools = toolset.search_tools(
         "schedule meetings, check availability, list events",
         connector="calendly",
-        account_ids=_account_ids
+        account_ids=_account_ids,
     )
     assert len(tools) > 0, "Expected at least one scheduling tool"
 
@@ -61,7 +112,7 @@ def crewai_semantic_search() -> None:
     print()
 
     # Step 3: Convert to CrewAI format
-    crewai_tools = tools.to_crewai()
+    crewai_tools = [_to_crewai_tool(t) for t in tools]
 
     # Step 4: Create a CrewAI meeting booking agent
     agent = Agent(
