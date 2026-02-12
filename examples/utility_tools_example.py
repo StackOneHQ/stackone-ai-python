@@ -80,9 +80,39 @@ def example_utility_tools_with_execution():
     print()
 
 
+def example_utility_tools_semantic():
+    """Semantic search variant of utility tools.
+
+    By passing semantic_client to utility_tools(), tool_search switches from
+    local BM25+TF-IDF to cloud-based semantic search for better natural language
+    understanding. See examples/semantic_search_example.py for more patterns.
+    """
+    print("Example 3: Utility tools with semantic search\n")
+
+    toolset = StackOneToolSet()
+
+    # Fetch tools — these define the available tool catalog
+    all_tools = toolset.fetch_tools(actions=["bamboohr_*"])
+    print(f"Total BambooHR tools available: {len(all_tools)}")
+
+    # Pass semantic_client to switch from local BM25 to cloud semantic search
+    utility_tools = all_tools.utility_tools(semantic_client=toolset.semantic_client)
+
+    filter_tool = utility_tools.get_tool("tool_search")
+    if filter_tool:
+        # Semantic search understands intent — "onboard new hire" finds onboarding tools
+        result = filter_tool.call(query="onboard a new team member", limit=5, minScore=0.0)
+
+        print("Found relevant tools (semantic search):")
+        for tool in result.get("tools", []):
+            print(f"  - {tool['name']} (score: {tool['score']:.2f}): {tool['description']}")
+
+    print()
+
+
 def example_with_openai():
     """Example of using utility tools with OpenAI"""
-    print("Example 3: Using utility tools with OpenAI\n")
+    print("Example 4: Using utility tools with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -131,7 +161,7 @@ def example_with_openai():
 
 def example_with_langchain():
     """Example of using tools with LangChain"""
-    print("Example 4: Using tools with LangChain\n")
+    print("Example 5: Using tools with LangChain\n")
 
     try:
         from langchain.agents import AgentExecutor, create_tool_calling_agent
@@ -197,6 +227,7 @@ def main():
     # Basic examples that work without external APIs
     example_utility_tools_basic()
     example_utility_tools_with_execution()
+    example_utility_tools_semantic()
 
     # Examples that require OpenAI API
     if os.getenv("OPENAI_API_KEY"):

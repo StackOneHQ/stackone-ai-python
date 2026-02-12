@@ -6,7 +6,10 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, ClassVar, TypeAlias, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias, cast
+
+if TYPE_CHECKING:
+    from stackone_ai.semantic_search import SemanticSearchClient
 from urllib.parse import quote
 
 import httpx
@@ -97,6 +100,18 @@ class StackOneTool(BaseModel):
         "feedback_user_id",
         "feedback_metadata",
     }
+
+    @property
+    def connector(self) -> str:
+        """Extract connector from tool name.
+
+        Tool names follow the format: {connector}_{action}_{entity}
+        e.g., 'bamboohr_create_employee' -> 'bamboohr'
+
+        Returns:
+            Connector name in lowercase
+        """
+        return self.name.split("_")[0].lower()
 
     def __init__(
         self,
@@ -514,6 +529,19 @@ class Tools:
                 return account_id
         return None
 
+    def get_connectors(self) -> set[str]:
+        """Get unique connector names from all tools.
+
+        Returns:
+            Set of connector names (lowercase)
+
+        Example:
+            tools = toolset.fetch_tools()
+            connectors = tools.get_connectors()
+            # {'bamboohr', 'hibob', 'slack', ...}
+        """
+        return {tool.connector for tool in self.tools}
+
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format
 
@@ -530,34 +558,56 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def utility_tools(self, hybrid_alpha: float | None = None) -> Tools:
+    def utility_tools(
+        self,
+        hybrid_alpha: float | None = None,
+        semantic_client: SemanticSearchClient | None = None,
+    ) -> Tools:
         """Return utility tools for tool discovery and execution
 
-        Utility tools enable dynamic tool discovery and execution based on natural language queries
-        using hybrid BM25 + TF-IDF search.
+        Utility tools enable dynamic tool discovery and execution based on natural language queries.
+        By default, uses local hybrid BM25 + TF-IDF search. When a semantic_client is provided,
+        uses cloud-based semantic search for higher accuracy on natural language queries.
 
         Args:
-            hybrid_alpha: Weight for BM25 in hybrid search (0-1). If not provided, uses
-                ToolIndex.DEFAULT_HYBRID_ALPHA (0.2), which gives more weight to BM25 scoring
-                and has been shown to provide better tool discovery accuracy
-                (10.8% improvement in validation testing).
+            hybrid_alpha: Weight for BM25 in hybrid search (0-1). Only used when
+                semantic_client is not provided. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2),
+                which gives more weight to BM25 scoring.
+            semantic_client: SemanticSearchClient instance for cloud-based semantic search.
+                When provided, semantic search is used instead of local BM25+TF-IDF.
+                Can be obtained from StackOneToolSet.semantic_client.
 
         Returns:
             Tools collection containing tool_search and tool_execute
 
         Note:
             This feature is in beta and may change in future versions
+
+        Example:
+            # Local search (default)
+            utility = tools.utility_tools()
+
+            # Semantic search (requires toolset)
+            from stackone_ai import StackOneToolSet
+            toolset = StackOneToolSet()
+            tools = toolset.fetch_tools()
+            utility = tools.utility_tools(
+                semantic_client=toolset.semantic_client,
+            )
         """
-        from stackone_ai.utility_tools import (
-            ToolIndex,
-            create_tool_execute,
-            create_tool_search,
-        )
+        from stackone_ai.utility_tools import create_tool_execute
 
-        # Create search index with hybrid search
+        if semantic_client is not None:
+            from stackone_ai.utility_tools import create_semantic_tool_search
+
+            search_tool = create_semantic_tool_search(semantic_client)
+            execute_tool = create_tool_execute(self)
+            return Tools([search_tool, execute_tool])
+
+        # Default: local BM25+TF-IDF search
+        from stackone_ai.utility_tools import ToolIndex, create_tool_search
+
         index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
-
-        # Create utility tools
         filter_tool = create_tool_search(index)
         execute_tool = create_tool_execute(self)
 

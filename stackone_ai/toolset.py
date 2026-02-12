@@ -4,7 +4,9 @@ import asyncio
 import base64
 import fnmatch
 import json
+import logging
 import os
+import re
 import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
@@ -18,6 +20,13 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
 )
+from stackone_ai.semantic_search import (
+    SemanticSearchClient,
+    SemanticSearchError,
+    SemanticSearchResult,
+)
+
+logger = logging.getLogger("stackone.tools")
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
@@ -33,6 +42,19 @@ _RPC_PARAMETER_LOCATIONS = {
     "query": ParameterLocation.BODY,
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
+
+_VERSIONED_ACTION_RE = re.compile(r"^[a-z][a-z0-9]*_\d+(?:\.\d+)+_(.+)_global$")
+
+
+def _normalize_action_name(action_name: str) -> str:
+    """Convert semantic search API action name to MCP tool name.
+
+    API:  'calendly_1.0.0_calendly_create_scheduling_link_global'
+    MCP:  'calendly_create_scheduling_link'
+    """
+    match = _VERSIONED_ACTION_RE.match(action_name)
+    return match.group(1) if match else action_name
+
 
 T = TypeVar("T")
 
@@ -251,6 +273,7 @@ class StackOneToolSet:
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
+        self._semantic_client: SemanticSearchClient | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -263,6 +286,275 @@ class StackOneToolSet:
         """
         self._account_ids = account_ids
         return self
+
+    @property
+    def semantic_client(self) -> SemanticSearchClient:
+        """Lazy initialization of semantic search client.
+
+        Returns:
+            SemanticSearchClient instance configured with the toolset's API key and base URL
+        """
+        if self._semantic_client is None:
+            self._semantic_client = SemanticSearchClient(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+        return self._semantic_client
+
+    def search_tools(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        top_k: int | None = None,
+        min_score: float = 0.0,
+        account_ids: list[str] | None = None,
+        fallback_to_local: bool = True,
+    ) -> Tools:
+        """Search for and fetch tools using semantic search.
+
+        This method uses the StackOne semantic search API to find relevant tools
+        based on natural language queries. It optimizes results by filtering to
+        only connectors available in linked accounts.
+
+        Args:
+            query: Natural language description of needed functionality
+                (e.g., "create employee", "send a message")
+            connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
+            top_k: Maximum number of tools to return. If None, uses the backend default.
+            min_score: Minimum similarity score threshold 0-1 (default: 0.0)
+            account_ids: Optional account IDs (uses set_accounts() if not provided)
+            fallback_to_local: If True, fall back to local BM25+TF-IDF search on API failure
+
+        Returns:
+            Tools collection with semantically matched tools from linked accounts
+
+        Raises:
+            SemanticSearchError: If the API call fails and fallback_to_local is False
+
+        Examples:
+            # Basic semantic search
+            tools = toolset.search_tools("manage employee records", top_k=5)
+
+            # Filter by connector
+            tools = toolset.search_tools(
+                "create time off request",
+                connector="bamboohr",
+                min_score=0.5
+            )
+
+            # With account filtering
+            tools = toolset.search_tools(
+                "send message",
+                account_ids=["acc-123"],
+                top_k=3
+            )
+        """
+        try:
+            # Step 1: Fetch all tools to get available connectors from linked accounts
+            all_tools = self.fetch_tools(account_ids=account_ids)
+            available_connectors = all_tools.get_connectors()
+
+            if not available_connectors:
+                return Tools([])
+
+            # Step 2: Fetch results from semantic API, then filter client-side
+            response = self.semantic_client.search(
+                query=query,
+                connector=connector,
+            )
+
+            # Step 3: Filter results to only available connectors and min_score
+            filtered_results = [
+                r
+                for r in response.results
+                if r.connector_key.lower() in available_connectors and r.similarity_score >= min_score
+            ]
+
+            # Step 3b: If not enough results, make per-connector calls for missing connectors
+            if not connector and (top_k is None or len(filtered_results) < top_k):
+                found_connectors = {r.connector_key.lower() for r in filtered_results}
+                missing_connectors = available_connectors - found_connectors
+                for missing in missing_connectors:
+                    if top_k is not None and len(filtered_results) >= top_k:
+                        break
+                    try:
+                        extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
+                        for r in extra.results:
+                            if r.similarity_score >= min_score and r.action_name not in {
+                                fr.action_name for fr in filtered_results
+                            }:
+                                filtered_results.append(r)
+                                if top_k is not None and len(filtered_results) >= top_k:
+                                    break
+                    except SemanticSearchError:
+                        continue
+
+                # Re-sort by score after merging results from multiple calls
+                filtered_results.sort(key=lambda r: r.similarity_score, reverse=True)
+
+            # Deduplicate by normalized MCP name (keep highest score first, already sorted)
+            seen_names: set[str] = set()
+            deduped: list[SemanticSearchResult] = []
+            for r in filtered_results:
+                norm = _normalize_action_name(r.action_name)
+                if norm not in seen_names:
+                    seen_names.add(norm)
+                    deduped.append(r)
+            filtered_results = deduped[:top_k] if top_k is not None else deduped
+
+            if not filtered_results:
+                return Tools([])
+
+            # Step 4: Get matching tools from already-fetched tools
+            action_names = {_normalize_action_name(r.action_name) for r in filtered_results}
+            matched_tools = [t for t in all_tools if t.name in action_names]
+
+            # Sort matched tools by semantic search score order
+            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(filtered_results)}
+            matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
+
+            return Tools(matched_tools)
+
+        except SemanticSearchError as e:
+            if not fallback_to_local:
+                raise
+
+            logger.warning("Semantic search failed (%s), falling back to local BM25+TF-IDF search", e)
+            utility = all_tools.utility_tools()
+            search_tool = utility.get_tool("tool_search")
+
+            if search_tool:
+                fallback_limit = top_k * 3 if top_k is not None else 100
+                result = search_tool.execute(
+                    {
+                        "query": query,
+                        "limit": fallback_limit,
+                        "minScore": min_score,
+                    }
+                )
+                matched_names = [t["name"] for t in result.get("tools", [])]
+                # Filter by available connectors and preserve relevance order
+                tool_map = {t.name: t for t in all_tools}
+                filter_connectors = {connector.lower()} if connector else available_connectors
+                matched_tools = [
+                    tool_map[name]
+                    for name in matched_names
+                    if name in tool_map and name.split("_")[0].lower() in filter_connectors
+                ]
+                return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
+
+            return all_tools
+
+    def search_action_names(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        account_ids: list[str] | None = None,
+        top_k: int | None = None,
+        min_score: float = 0.0,
+    ) -> list[SemanticSearchResult]:
+        """Search for action names without fetching tools.
+
+        Useful when you need to inspect search results before fetching,
+        or when building custom filtering logic.
+
+        Args:
+            query: Natural language description of needed functionality
+            connector: Optional provider/connector filter (single connector)
+            account_ids: Optional account IDs to scope results to connectors
+                available in those accounts (uses set_accounts() if not provided).
+                When provided, results are filtered to only matching connectors.
+            top_k: Maximum number of results. If None, uses the backend default.
+            min_score: Minimum similarity score threshold 0-1 (default: 0.0)
+
+        Returns:
+            List of SemanticSearchResult with action names, scores, and metadata
+
+        Examples:
+            # Lightweight: inspect results before fetching
+            results = toolset.search_action_names("manage employees")
+            for r in results:
+                print(f"{r.action_name}: {r.similarity_score:.2f}")
+
+            # Account-scoped: only results for connectors in linked accounts
+            results = toolset.search_action_names(
+                "create employee",
+                account_ids=["acc-123"],
+                top_k=5
+            )
+
+            # Then fetch specific high-scoring actions
+            selected = [r.action_name for r in results if r.similarity_score > 0.7]
+            tools = toolset.fetch_tools(actions=selected)
+        """
+        # Resolve available connectors from account_ids (same pattern as search_tools)
+        available_connectors: set[str] | None = None
+        effective_account_ids = account_ids or self._account_ids
+        if effective_account_ids:
+            all_tools = self.fetch_tools(account_ids=effective_account_ids)
+            available_connectors = all_tools.get_connectors()
+            if not available_connectors:
+                return []
+
+        try:
+            response = self.semantic_client.search(
+                query=query,
+                connector=connector,
+                top_k=top_k,
+            )
+        except SemanticSearchError as e:
+            logger.warning("Semantic search failed: %s", e)
+            return []
+
+        # Filter by min_score
+        results = [r for r in response.results if r.similarity_score >= min_score]
+
+        # Filter by available connectors if resolved from accounts
+        if available_connectors:
+            connector_set = {c.lower() for c in available_connectors}
+            results = [r for r in results if r.connector_key.lower() in connector_set]
+
+            # If not enough results, make per-connector calls for missing connectors
+            if not connector and (top_k is None or len(results) < top_k):
+                found_connectors = {r.connector_key.lower() for r in results}
+                missing_connectors = connector_set - found_connectors
+                for missing in missing_connectors:
+                    if top_k is not None and len(results) >= top_k:
+                        break
+                    try:
+                        extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
+                        for r in extra.results:
+                            if r.similarity_score >= min_score and r.action_name not in {
+                                er.action_name for er in results
+                            }:
+                                results.append(r)
+                                if top_k is not None and len(results) >= top_k:
+                                    break
+                    except SemanticSearchError:
+                        continue
+
+                # Re-sort by score after merging
+                results.sort(key=lambda r: r.similarity_score, reverse=True)
+
+        # Normalize and deduplicate by MCP name (keep highest score first)
+        seen: set[str] = set()
+        normalized: list[SemanticSearchResult] = []
+        for r in results:
+            norm_name = _normalize_action_name(r.action_name)
+            if norm_name not in seen:
+                seen.add(norm_name)
+                normalized.append(
+                    SemanticSearchResult(
+                        action_name=norm_name,
+                        connector_key=r.connector_key,
+                        similarity_score=r.similarity_score,
+                        label=r.label,
+                        description=r.description,
+                    )
+                )
+        return normalized[:top_k] if top_k is not None else normalized
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

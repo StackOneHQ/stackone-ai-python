@@ -1,6 +1,9 @@
 """
 This example demonstrates how to use StackOne tools with CrewAI.
 
+Note: This example is Python only. CrewAI does not have an official
+TypeScript/Node.js library.
+
 CrewAI uses LangChain tools natively.
 
 ```bash

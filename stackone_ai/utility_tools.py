@@ -15,6 +15,7 @@ from stackone_ai.utils.tfidf_index import TfidfDocument, TfidfIndex
 
 if TYPE_CHECKING:
     from stackone_ai.models import Tools
+    from stackone_ai.semantic_search import SemanticSearchClient
 
 
 class ToolSearchResult(BaseModel):
@@ -201,11 +202,13 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
                 "type": "number",
                 "description": "Maximum number of tools to return (default: 5)",
                 "default": 5,
+                "nullable": True,
             },
             "minScore": {
                 "type": "number",
                 "description": "Minimum relevance score (0-1) to filter results (default: 0.0)",
                 "default": 0.0,
+                "nullable": True,
             },
         },
     )
@@ -219,8 +222,8 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
             kwargs = arguments or {}
 
         query = kwargs.get("query", "")
-        limit = int(kwargs.get("limit", 5))
-        min_score = float(kwargs.get("minScore", 0.0))
+        limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
+        min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
 
         # Search for tools
         results = index.search(query, limit, min_score)
@@ -264,6 +267,124 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
             return execute_filter(arguments)
 
     return ToolSearchTool()
+
+
+def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackOneTool:
+    """Create a semantic search variant of tool_search.
+
+    Uses cloud semantic search API instead of local BM25+TF-IDF for
+    improved natural language tool discovery.
+
+    Args:
+        semantic_client: Initialized SemanticSearchClient instance
+
+    Returns:
+        Utility tool for searching relevant tools using semantic search
+    """
+    from stackone_ai.semantic_search import SemanticSearchClient  # noqa: F811
+    from stackone_ai.toolset import _normalize_action_name
+
+    if not isinstance(semantic_client, SemanticSearchClient):
+        raise TypeError("semantic_client must be a SemanticSearchClient instance")
+
+    name = "tool_search"
+    description = (
+        "Searches for relevant tools based on a natural language query using "
+        "semantic vector search. Call this first to discover "
+        "available tools before executing them."
+    )
+
+    parameters = ToolParameters(
+        type="object",
+        properties={
+            "query": {
+                "type": "string",
+                "description": (
+                    "Natural language query describing what tools you need "
+                    '(e.g., "onboard a new team member", "request vacation days")'
+                ),
+            },
+            "limit": {
+                "type": "number",
+                "description": "Maximum number of tools to return (default: 5)",
+                "default": 5,
+                "nullable": True,
+            },
+            "minScore": {
+                "type": "number",
+                "description": "Minimum similarity score (0-1) to filter results (default: 0.0)",
+                "default": 0.0,
+                "nullable": True,
+            },
+            "connector": {
+                "type": "string",
+                "description": "Optional: filter by connector/provider (e.g., 'bamboohr', 'slack')",
+                "nullable": True,
+            },
+        },
+    )
+
+    def execute_search(arguments: str | JsonDict | None = None) -> JsonDict:
+        """Execute the semantic search tool"""
+        if isinstance(arguments, str):
+            kwargs = json.loads(arguments)
+        else:
+            kwargs = arguments or {}
+
+        query = kwargs.get("query", "")
+        limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
+        min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
+        connector = kwargs.get("connector")
+
+        response = semantic_client.search(
+            query=query,
+            connector=connector,
+            top_k=limit,
+        )
+
+        seen: set[str] = set()
+        tools_data: list[dict[str, object]] = []
+        for r in response.results:
+            if r.similarity_score >= min_score:
+                norm_name = _normalize_action_name(r.action_name)
+                if norm_name not in seen:
+                    seen.add(norm_name)
+                    tools_data.append(
+                        {
+                            "name": norm_name,
+                            "description": r.description,
+                            "score": r.similarity_score,
+                            "connector": r.connector_key,
+                        }
+                    )
+
+        return {"tools": tools_data[:limit]}
+
+    execute_config = ExecuteConfig(
+        name=name,
+        method="POST",
+        url="",  # Utility tools don't make HTTP requests
+        headers={},
+    )
+
+    class SemanticToolSearchTool(StackOneTool):
+        """Utility tool for searching relevant tools using semantic search"""
+
+        def __init__(self) -> None:
+            super().__init__(
+                description=description,
+                parameters=parameters,
+                _execute_config=execute_config,
+                _api_key="",  # Utility tools don't need API key
+                _account_id=None,
+            )
+
+        def execute(
+            self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+        ) -> JsonDict:
+            return execute_search(arguments)
+
+    return SemanticToolSearchTool()
 
 
 def create_tool_execute(tools_collection: Tools) -> StackOneTool:
