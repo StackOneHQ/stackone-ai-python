@@ -306,7 +306,7 @@ class StackOneToolSet:
         query: str,
         *,
         connector: str | None = None,
-        top_k: int = 10,
+        top_k: int | None = None,
         min_score: float = 0.0,
         account_ids: list[str] | None = None,
         fallback_to_local: bool = True,
@@ -321,7 +321,7 @@ class StackOneToolSet:
             query: Natural language description of needed functionality
                 (e.g., "create employee", "send a message")
             connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
-            top_k: Maximum number of tools to return (default: 10)
+            top_k: Maximum number of tools to return. If None, uses the backend default.
             min_score: Minimum similarity score threshold 0-1 (default: 0.0)
             account_ids: Optional account IDs (uses set_accounts() if not provided)
             fallback_to_local: If True, fall back to local BM25+TF-IDF search on API failure
@@ -372,11 +372,11 @@ class StackOneToolSet:
             ]
 
             # Step 3b: If not enough results, make per-connector calls for missing connectors
-            if len(filtered_results) < top_k and not connector:
+            if not connector and (top_k is None or len(filtered_results) < top_k):
                 found_connectors = {r.connector_key.lower() for r in filtered_results}
                 missing_connectors = available_connectors - found_connectors
                 for missing in missing_connectors:
-                    if len(filtered_results) >= top_k:
+                    if top_k is not None and len(filtered_results) >= top_k:
                         break
                     try:
                         extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
@@ -385,7 +385,7 @@ class StackOneToolSet:
                                 fr.action_name for fr in filtered_results
                             }:
                                 filtered_results.append(r)
-                                if len(filtered_results) >= top_k:
+                                if top_k is not None and len(filtered_results) >= top_k:
                                     break
                     except SemanticSearchError:
                         continue
@@ -401,7 +401,7 @@ class StackOneToolSet:
                 if norm not in seen_names:
                     seen_names.add(norm)
                     deduped.append(r)
-            filtered_results = deduped[:top_k]
+            filtered_results = deduped[:top_k] if top_k is not None else deduped
 
             if not filtered_results:
                 return Tools([])
@@ -425,10 +425,11 @@ class StackOneToolSet:
             search_tool = utility.get_tool("tool_search")
 
             if search_tool:
+                fallback_limit = top_k * 3 if top_k is not None else 100
                 result = search_tool.execute(
                     {
                         "query": query,
-                        "limit": top_k * 3,  # Over-fetch to account for connector filtering
+                        "limit": fallback_limit,
                         "minScore": min_score,
                     }
                 )
@@ -441,7 +442,7 @@ class StackOneToolSet:
                     for name in matched_names
                     if name in tool_map and name.split("_")[0].lower() in filter_connectors
                 ]
-                return Tools(matched_tools[:top_k])
+                return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
 
             return all_tools
 
@@ -451,7 +452,7 @@ class StackOneToolSet:
         *,
         connector: str | None = None,
         account_ids: list[str] | None = None,
-        top_k: int = 10,
+        top_k: int | None = None,
         min_score: float = 0.0,
     ) -> list[SemanticSearchResult]:
         """Search for action names without fetching tools.
@@ -465,7 +466,7 @@ class StackOneToolSet:
             account_ids: Optional account IDs to scope results to connectors
                 available in those accounts (uses set_accounts() if not provided).
                 When provided, results are filtered to only matching connectors.
-            top_k: Maximum number of results (default: 10)
+            top_k: Maximum number of results. If None, uses the backend default.
             min_score: Minimum similarity score threshold 0-1 (default: 0.0)
 
         Returns:
@@ -473,7 +474,7 @@ class StackOneToolSet:
 
         Examples:
             # Lightweight: inspect results before fetching
-            results = toolset.search_action_names("manage employees", top_k=10)
+            results = toolset.search_action_names("manage employees")
             for r in results:
                 print(f"{r.action_name}: {r.similarity_score:.2f}")
 
@@ -501,7 +502,7 @@ class StackOneToolSet:
             response = self.semantic_client.search(
                 query=query,
                 connector=connector,
-                top_k=None if available_connectors else top_k,
+                top_k=top_k,
             )
         except SemanticSearchError as e:
             logger.warning("Semantic search failed: %s", e)
@@ -516,11 +517,11 @@ class StackOneToolSet:
             results = [r for r in results if r.connector_key.lower() in connector_set]
 
             # If not enough results, make per-connector calls for missing connectors
-            if len(results) < top_k and not connector:
+            if not connector and (top_k is None or len(results) < top_k):
                 found_connectors = {r.connector_key.lower() for r in results}
                 missing_connectors = connector_set - found_connectors
                 for missing in missing_connectors:
-                    if len(results) >= top_k:
+                    if top_k is not None and len(results) >= top_k:
                         break
                     try:
                         extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
@@ -529,7 +530,7 @@ class StackOneToolSet:
                                 er.action_name for er in results
                             }:
                                 results.append(r)
-                                if len(results) >= top_k:
+                                if top_k is not None and len(results) >= top_k:
                                     break
                     except SemanticSearchError:
                         continue
@@ -553,7 +554,7 @@ class StackOneToolSet:
                         description=r.description,
                     )
                 )
-        return normalized[:top_k]
+        return normalized[:top_k] if top_k is not None else normalized
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters
