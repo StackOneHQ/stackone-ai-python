@@ -11,7 +11,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Features
 
-- Unified interface for multiple SaaS tools
+- Agentic interface for multiple SaaS tools
 - AI-friendly tool descriptions and parameters
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
 - **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
