@@ -202,11 +202,13 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
                 "type": "number",
                 "description": "Maximum number of tools to return (default: 5)",
                 "default": 5,
+                "nullable": True,
             },
             "minScore": {
                 "type": "number",
                 "description": "Minimum relevance score (0-1) to filter results (default: 0.0)",
                 "default": 0.0,
+                "nullable": True,
             },
         },
     )
@@ -305,11 +307,13 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
                 "type": "number",
                 "description": "Maximum number of tools to return (default: 5)",
                 "default": 5,
+                "nullable": True,
             },
             "minScore": {
                 "type": "number",
                 "description": "Minimum similarity score (0-1) to filter results (default: 0.0)",
                 "default": 0.0,
+                "nullable": True,
             },
             "connector": {
                 "type": "string",

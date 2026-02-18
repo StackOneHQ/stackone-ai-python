@@ -344,7 +344,7 @@ class StackOneToolSet:
             # Step 2: Over-fetch from semantic API to account for connector filtering
             # We fetch 3x to ensure we get enough results after filtering
             over_fetch_multiplier = 3
-            over_fetch_k = top_k * over_fetch_multiplier
+            over_fetch_k = min(top_k * over_fetch_multiplier, 500)
 
             response = self.semantic_client.search(
                 query=query,
@@ -378,6 +378,7 @@ class StackOneToolSet:
 
             # Fallback to local search
             all_tools = self.fetch_tools(account_ids=account_ids)
+            available_connectors = all_tools.get_connectors()
             utility = all_tools.utility_tools()
             search_tool = utility.get_tool("tool_search")
 
@@ -385,12 +386,19 @@ class StackOneToolSet:
                 result = search_tool.execute(
                     {
                         "query": query,
-                        "limit": top_k,
+                        "limit": top_k * 3,  # Over-fetch to account for connector filtering
                         "minScore": min_score,
                     }
                 )
                 matched_names = [t["name"] for t in result.get("tools", [])]
-                return Tools([t for t in all_tools if t.name in matched_names])
+                # Filter by available connectors and preserve relevance order
+                tool_map = {t.name: t for t in all_tools}
+                matched_tools = [
+                    tool_map[name]
+                    for name in matched_names
+                    if name in tool_map and name.split("_")[0].lower() in available_connectors
+                ]
+                return Tools(matched_tools[:top_k])
 
             return all_tools
 
@@ -439,7 +447,7 @@ class StackOneToolSet:
             tools = toolset.fetch_tools(actions=selected)
         """
         # Over-fetch if filtering by available_connectors
-        fetch_k = top_k * 3 if available_connectors else top_k
+        fetch_k = min(top_k * 3, 500) if available_connectors else min(top_k, 500)
 
         response = self.semantic_client.search(
             query=query,
