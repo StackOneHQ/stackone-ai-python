@@ -72,14 +72,14 @@ class SemanticSearchClient:
         self,
         query: str,
         connector: str | None = None,
-        top_k: int = 10,
+        top_k: int | None = None,
     ) -> SemanticSearchResponse:
         """Search for relevant actions using semantic search.
 
         Args:
             query: Natural language query describing what tools/actions you need
             connector: Optional connector/provider filter (e.g., "bamboohr", "slack")
-            top_k: Maximum number of results to return (1-500, default: 10)
+            top_k: Maximum number of results to return. If not provided, uses the backend default.
 
         Returns:
             SemanticSearchResponse containing matching actions with similarity scores
@@ -97,7 +97,9 @@ class SemanticSearchClient:
             "Authorization": self._build_auth_header(),
             "Content-Type": "application/json",
         }
-        payload: dict[str, Any] = {"query": query, "top_k": top_k}
+        payload: dict[str, Any] = {"query": query}
+        if top_k is not None:
+            payload["top_k"] = top_k
         if connector:
             payload["connector"] = connector
 
@@ -117,7 +119,7 @@ class SemanticSearchClient:
         self,
         query: str,
         connector: str | None = None,
-        top_k: int = 10,
+        top_k: int | None = None,
         min_score: float = 0.0,
     ) -> list[str]:
         """Convenience method returning just action names.
@@ -125,7 +127,7 @@ class SemanticSearchClient:
         Args:
             query: Natural language query
             connector: Optional connector/provider filter
-            top_k: Maximum number of results
+            top_k: Maximum number of results. If not provided, uses the backend default.
             min_score: Minimum similarity score threshold (0-1)
 
         Returns:

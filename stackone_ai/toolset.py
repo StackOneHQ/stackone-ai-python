@@ -430,7 +430,7 @@ class StackOneToolSet:
         query: str,
         *,
         connector: str | None = None,
-        available_connectors: set[str] | None = None,
+        account_ids: list[str] | None = None,
         top_k: int = 10,
         min_score: float = 0.0,
     ) -> list[SemanticSearchResult]:
@@ -442,26 +442,25 @@ class StackOneToolSet:
         Args:
             query: Natural language description of needed functionality
             connector: Optional provider/connector filter (single connector)
-            available_connectors: Optional set of connectors to filter results by.
-                If provided, only returns results for these connectors (over-fetches
-                from API to ensure enough results after filtering).
+            account_ids: Optional account IDs to scope results to connectors
+                available in those accounts (uses set_accounts() if not provided).
+                When provided, results are filtered to only matching connectors.
             top_k: Maximum number of results (default: 10)
             min_score: Minimum similarity score threshold 0-1 (default: 0.0)
 
         Returns:
             List of SemanticSearchResult with action names, scores, and metadata
 
-        Example:
-            # Inspect results before fetching
+        Examples:
+            # Lightweight: inspect results before fetching
             results = toolset.search_action_names("manage employees", top_k=10)
             for r in results:
                 print(f"{r.action_name}: {r.similarity_score:.2f}")
 
-            # Filter by available connectors from linked accounts
-            tools = toolset.fetch_tools()
+            # Account-scoped: only results for connectors in linked accounts
             results = toolset.search_action_names(
                 "create employee",
-                available_connectors=tools.get_connectors(),
+                account_ids=["acc-123"],
                 top_k=5
             )
 
@@ -469,6 +468,13 @@ class StackOneToolSet:
             selected = [r.action_name for r in results if r.similarity_score > 0.7]
             tools = toolset.fetch_tools(actions=selected)
         """
+        # Resolve available connectors from account_ids (same pattern as search_tools)
+        available_connectors: set[str] | None = None
+        effective_account_ids = account_ids or self._account_ids
+        if effective_account_ids:
+            all_tools = self.fetch_tools(account_ids=effective_account_ids)
+            available_connectors = all_tools.get_connectors()
+
         # Fetch max results to maximize results after connector filtering
         semantic_api_max = 500
         fetch_k = semantic_api_max if available_connectors else min(top_k, 500)
@@ -482,7 +488,7 @@ class StackOneToolSet:
         # Filter by min_score
         results = [r for r in response.results if r.similarity_score >= min_score]
 
-        # Filter by available connectors if provided
+        # Filter by available connectors if resolved from accounts
         if available_connectors:
             connector_set = {c.lower() for c in available_connectors}
             results = [r for r in results if r.connector_key.lower() in connector_set]
