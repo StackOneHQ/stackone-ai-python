@@ -450,64 +450,6 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
-    def to_crewai(self) -> Any:
-        """Convert this tool to CrewAI format
-
-        Requires the ``crewai`` package (``pip install crewai``).
-
-        Returns:
-            Tool as a ``crewai.tools.BaseTool`` instance
-        """
-        try:
-            from crewai.tools.base_tool import BaseTool as CrewAIBaseTool
-        except ImportError as e:
-            raise ImportError("crewai is required for to_crewai(). Install with: pip install crewai") from e
-
-        schema_props: dict[str, Any] = {}
-        annotations: dict[str, Any] = {}
-
-        for name, details in self.parameters.properties.items():
-            python_type: type = str
-            if isinstance(details, dict):
-                type_str = details.get("type", "string")
-                if type_str == "number":
-                    python_type = float
-                elif type_str == "integer":
-                    python_type = int
-                elif type_str == "boolean":
-                    python_type = bool
-
-                field = Field(description=details.get("description", ""))
-            else:
-                field = Field(description="")
-
-            schema_props[name] = field
-            annotations[name] = python_type
-
-        schema_class = type(
-            f"{self.name.title()}Args",
-            (BaseModel,),
-            {
-                "__annotations__": annotations,
-                "__module__": __name__,
-                **schema_props,
-            },
-        )
-
-        parent_tool = self
-        _name = parent_tool.name
-        _description = parent_tool.description
-
-        class StackOneCrewAITool(CrewAIBaseTool):
-            name: str = _name
-            description: str = _description
-            args_schema: type[BaseModel] = schema_class
-
-            def _run(self, **kwargs: Any) -> Any:
-                return parent_tool.execute(kwargs)
-
-        return StackOneCrewAITool()
-
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool
 
@@ -616,15 +558,6 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def to_crewai(self) -> list[Any]:
-        """Convert all tools to CrewAI format
-
-        Requires the ``crewai`` package (``pip install crewai``).
-
-        Returns:
-            List of tools as ``crewai.tools.BaseTool`` instances
-        """
-        return [tool.to_crewai() for tool in self.tools]
 
     def utility_tools(
         self,
