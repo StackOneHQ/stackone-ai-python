@@ -6,15 +6,14 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias, cast
-
-if TYPE_CHECKING:
-    from stackone_ai.semantic_search import SemanticSearchClient
+from typing import Annotated, Any, ClassVar, TypeAlias, cast
 from urllib.parse import quote
 
 import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
+
+from stackone_ai.semantic_search import SemanticSearchClient
 
 # Type aliases for common types
 JsonDict: TypeAlias = dict[str, Any]
@@ -573,9 +572,8 @@ class Tools:
             hybrid_alpha: Weight for BM25 in hybrid search (0-1). Only used when
                 semantic_client is not provided. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2),
                 which gives more weight to BM25 scoring.
-            semantic_client: SemanticSearchClient instance for cloud-based semantic search.
-                When provided, semantic search is used instead of local BM25+TF-IDF.
-                Can be obtained from StackOneToolSet.semantic_client.
+            semantic_client: Optional SemanticSearchClient instance. Pass
+                toolset.semantic_client to enable cloud-based semantic search.
 
         Returns:
             Tools collection containing tool_search and tool_execute
@@ -584,16 +582,13 @@ class Tools:
             This feature is in beta and may change in future versions
 
         Example:
-            # Local search (default)
-            utility = tools.utility_tools()
-
-            # Semantic search (requires toolset)
-            from stackone_ai import StackOneToolSet
+            # Semantic search (pass semantic_client explicitly)
             toolset = StackOneToolSet()
             tools = toolset.fetch_tools()
-            utility = tools.utility_tools(
-                semantic_client=toolset.semantic_client,
-            )
+            utility = tools.utility_tools(semantic_client=toolset.semantic_client)
+
+            # Local BM25+TF-IDF search (default, no semantic_client)
+            utility = tools.utility_tools()
         """
         from stackone_ai.utility_tools import create_tool_execute
 

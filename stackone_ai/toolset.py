@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import fnmatch
 import json
 import logging
 import os
-import re
 import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
@@ -25,6 +25,7 @@ from stackone_ai.semantic_search import (
     SemanticSearchError,
     SemanticSearchResult,
 )
+from stackone_ai.utils.normalize import _normalize_action_name
 
 logger = logging.getLogger("stackone.tools")
 
@@ -42,18 +43,6 @@ _RPC_PARAMETER_LOCATIONS = {
     "query": ParameterLocation.BODY,
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
-
-_VERSIONED_ACTION_RE = re.compile(r"^[a-z][a-z0-9]*_\d+(?:\.\d+)+_(.+)_global$")
-
-
-def _normalize_action_name(action_name: str) -> str:
-    """Convert semantic search API action name to MCP tool name.
-
-    API:  'calendly_1.0.0_calendly_create_scheduling_link_global'
-    MCP:  'calendly_create_scheduling_link'
-    """
-    match = _VERSIONED_ACTION_RE.match(action_name)
-    return match.group(1) if match else action_name
 
 
 T = TypeVar("T")
@@ -358,60 +347,48 @@ class StackOneToolSet:
             if not available_connectors:
                 return Tools([])
 
-            # Step 2: Fetch results from semantic API, then filter client-side
-            response = self.semantic_client.search(
-                query=query,
-                connector=connector,
-            )
+            # Step 2: Determine which connectors to search
+            if connector:
+                connectors_to_search = {connector.lower()} & available_connectors
+                if not connectors_to_search:
+                    return Tools([])
+            else:
+                connectors_to_search = available_connectors
 
-            # Step 3: Filter results to only available connectors and min_score
-            filtered_results = [
-                r
-                for r in response.results
-                if r.connector_key.lower() in available_connectors and r.similarity_score >= min_score
-            ]
+            # Step 3: Search each connector in parallel
+            def _search_one(c: str) -> list[SemanticSearchResult]:
+                resp = self.semantic_client.search(query=query, connector=c, top_k=top_k)
+                return [r for r in resp.results if r.similarity_score >= min_score]
 
-            # Step 3b: If not enough results, make per-connector calls for missing connectors
-            if not connector and (top_k is None or len(filtered_results) < top_k):
-                found_connectors = {r.connector_key.lower() for r in filtered_results}
-                missing_connectors = available_connectors - found_connectors
-                for missing in missing_connectors:
-                    if top_k is not None and len(filtered_results) >= top_k:
-                        break
+            all_results: list[SemanticSearchResult] = []
+            last_error: SemanticSearchError | None = None
+            max_workers = min(len(connectors_to_search), 10)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {pool.submit(_search_one, c): c for c in connectors_to_search}
+                for future in concurrent.futures.as_completed(futures):
                     try:
-                        extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
-                        for r in extra.results:
-                            if r.similarity_score >= min_score and r.action_name not in {
-                                fr.action_name for fr in filtered_results
-                            }:
-                                filtered_results.append(r)
-                                if top_k is not None and len(filtered_results) >= top_k:
-                                    break
-                    except SemanticSearchError:
-                        continue
+                        all_results.extend(future.result())
+                    except SemanticSearchError as e:
+                        last_error = e
 
-                # Re-sort by score after merging results from multiple calls
-                filtered_results.sort(key=lambda r: r.similarity_score, reverse=True)
+            # If ALL connector searches failed, re-raise to trigger fallback
+            if not all_results and last_error is not None:
+                raise last_error
 
-            # Deduplicate by normalized MCP name (keep highest score first, already sorted)
-            seen_names: set[str] = set()
-            deduped: list[SemanticSearchResult] = []
-            for r in filtered_results:
-                norm = _normalize_action_name(r.action_name)
-                if norm not in seen_names:
-                    seen_names.add(norm)
-                    deduped.append(r)
-            filtered_results = deduped[:top_k] if top_k is not None else deduped
+            # Step 4: Sort by score, apply top_k
+            all_results.sort(key=lambda r: r.similarity_score, reverse=True)
+            if top_k is not None:
+                all_results = all_results[:top_k]
 
-            if not filtered_results:
+            if not all_results:
                 return Tools([])
 
-            # Step 4: Get matching tools from already-fetched tools
-            action_names = {_normalize_action_name(r.action_name) for r in filtered_results}
+            # Step 5: Match back to fetched tool definitions
+            action_names = {_normalize_action_name(r.action_name) for r in all_results}
             matched_tools = [t for t in all_tools if t.name in action_names]
 
             # Sort matched tools by semantic search score order
-            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(filtered_results)}
+            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(all_results)}
             matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
 
             return Tools(matched_tools)
@@ -499,61 +476,49 @@ class StackOneToolSet:
                 return []
 
         try:
-            response = self.semantic_client.search(
-                query=query,
-                connector=connector,
-                top_k=top_k,
-            )
+            if available_connectors:
+                # Parallel per-connector search (only user's connectors)
+                if connector:
+                    connectors_to_search = {connector.lower()} & available_connectors
+                else:
+                    connectors_to_search = available_connectors
+
+                def _search_one(c: str) -> list[SemanticSearchResult]:
+                    try:
+                        resp = self.semantic_client.search(query=query, connector=c, top_k=top_k)
+                        return [r for r in resp.results if r.similarity_score >= min_score]
+                    except SemanticSearchError:
+                        return []
+
+                all_results: list[SemanticSearchResult] = []
+                if connectors_to_search:
+                    max_workers = min(len(connectors_to_search), 10)
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                        futures = [pool.submit(_search_one, c) for c in connectors_to_search]
+                        for future in concurrent.futures.as_completed(futures):
+                            all_results.extend(future.result())
+            else:
+                # No account filtering — single global search
+                response = self.semantic_client.search(query=query, connector=connector, top_k=top_k)
+                all_results = [r for r in response.results if r.similarity_score >= min_score]
+
         except SemanticSearchError as e:
             logger.warning("Semantic search failed: %s", e)
             return []
 
-        # Filter by min_score
-        results = [r for r in response.results if r.similarity_score >= min_score]
-
-        # Filter by available connectors if resolved from accounts
-        if available_connectors:
-            connector_set = {c.lower() for c in available_connectors}
-            results = [r for r in results if r.connector_key.lower() in connector_set]
-
-            # If not enough results, make per-connector calls for missing connectors
-            if not connector and (top_k is None or len(results) < top_k):
-                found_connectors = {r.connector_key.lower() for r in results}
-                missing_connectors = connector_set - found_connectors
-                for missing in missing_connectors:
-                    if top_k is not None and len(results) >= top_k:
-                        break
-                    try:
-                        extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
-                        for r in extra.results:
-                            if r.similarity_score >= min_score and r.action_name not in {
-                                er.action_name for er in results
-                            }:
-                                results.append(r)
-                                if top_k is not None and len(results) >= top_k:
-                                    break
-                    except SemanticSearchError:
-                        continue
-
-                # Re-sort by score after merging
-                results.sort(key=lambda r: r.similarity_score, reverse=True)
-
-        # Normalize and deduplicate by MCP name (keep highest score first)
-        seen: set[str] = set()
+        # Sort by score, normalize action names
+        all_results.sort(key=lambda r: r.similarity_score, reverse=True)
         normalized: list[SemanticSearchResult] = []
-        for r in results:
-            norm_name = _normalize_action_name(r.action_name)
-            if norm_name not in seen:
-                seen.add(norm_name)
-                normalized.append(
-                    SemanticSearchResult(
-                        action_name=norm_name,
-                        connector_key=r.connector_key,
-                        similarity_score=r.similarity_score,
-                        label=r.label,
-                        description=r.description,
-                    )
+        for r in all_results:
+            normalized.append(
+                SemanticSearchResult(
+                    action_name=_normalize_action_name(r.action_name),
+                    connector_key=r.connector_key,
+                    similarity_score=r.similarity_score,
+                    label=r.label,
+                    description=r.description,
                 )
+            )
         return normalized[:top_k] if top_k is not None else normalized
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:

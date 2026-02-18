@@ -22,32 +22,33 @@ trade-off between speed, filtering, and completeness:
    This is the method you should use when integrating with OpenAI, LangChain,
    CrewAI, or any other agent framework. It works in these steps:
 
-   a) Fetch ALL tools from the user's linked accounts via MCP
-   b) Extract the set of available connectors (e.g. {bamboohr, calendly})
-   c) Query the semantic search API with the natural language query
-   d) Filter results to only connectors the user has access to
-   e) Deduplicate across API versions (keep highest score per action)
+   a) Fetch tools from the user's linked accounts via MCP
+   b) Extract available connectors (e.g. {bamboohr, calendly})
+   c) Search EACH connector in parallel via the semantic search API
+   d) Collect results, sort by relevance score
+   e) If top_k was specified, keep only the top K results
    f) Match results back to the fetched tool definitions
    g) Return a Tools collection sorted by relevance score
 
-   Key point: tools are fetched first, semantic search runs second, and only
-   the intersection (tools the user has AND that match the query) is returned.
-   If the semantic API is unavailable, the SDK falls back to local BM25+TF-IDF
-   search automatically.
+   Key point: only the user's own connectors are searched — no wasted results
+   from connectors the user doesn't have. When top_k is not specified, the
+   backend decides how many results to return per connector. If the semantic
+   API is unavailable, the SDK falls back to local BM25+TF-IDF search
+   automatically.
 
 2. search_action_names(query)  — Lightweight preview
 
    Queries the semantic API directly and returns metadata (name, connector,
    score, description) without fetching full tool definitions. Useful for
    inspecting results before committing to a full fetch. When account_ids are
-   provided, results are filtered to the user's available connectors.
+   provided, each connector is searched in parallel (same as search_tools).
 
-3. utility_tools(semantic_client=...)  — Agent-loop pattern
+3. utility_tools()  — Agent-loop pattern
 
    Creates tool_search and tool_execute utility tools that agents can call
-   inside an agentic loop. The agent searches, inspects, and executes tools
-   dynamically. Note: utility tool search queries the full backend catalog
-   (all connectors), not just the user's linked accounts.
+   inside an agentic loop. Pass semantic_client=toolset.semantic_client to
+   enable cloud-based semantic search; without it, local BM25+TF-IDF is
+   used. The agent searches, inspects, and executes tools dynamically.
 
 
 This example is runnable with the following command:
@@ -100,13 +101,23 @@ def example_search_action_names():
     toolset = StackOneToolSet()
 
     query = "get user schedule"
-    print(f'Searching for: "{query}"')
+
+    # --- top_k behavior ---
+    # When top_k is NOT specified, the backend decides how many results to return.
+    # When top_k IS specified, results are explicitly limited to that number.
+    print(f'Searching for: "{query}" (no top_k — backend decides count)')
+    results_default = toolset.search_action_names(query)
+    print(f"  Backend returned {len(results_default)} results (its default)")
     print()
 
-    results = toolset.search_action_names(query, top_k=5)
+    print(f'Searching for: "{query}" (top_k=3 — explicitly limited)')
+    results_limited = toolset.search_action_names(query, top_k=3)
+    print(f"  Got exactly {len(results_limited)} results")
+    print()
 
-    print(f"Top {len(results)} matches from the full catalog:")
-    for r in results:
+    # Show the limited results
+    print(f"Top {len(results_limited)} matches from the full catalog:")
+    for r in results_limited:
         print(f"  [{r.similarity_score:.2f}] {r.action_name} ({r.connector_key})")
         print(f"         {r.description}")
     print()
@@ -114,10 +125,11 @@ def example_search_action_names():
     # Show filtering effect when account_ids are available
     if _account_ids:
         print(f"Now filtering to your linked accounts ({', '.join(_account_ids)})...")
+        print("  (Each connector is searched in parallel — only your connectors are queried)")
         filtered = toolset.search_action_names(query, account_ids=_account_ids, top_k=5)
-        print(f"Filtered to {len(filtered)} matches (only your connectors):")
+        print(f"  Filtered to {len(filtered)} matches (only your connectors):")
         for r in filtered:
-            print(f"  [{r.similarity_score:.2f}] {r.action_name} ({r.connector_key})")
+            print(f"    [{r.similarity_score:.2f}] {r.action_name} ({r.connector_key})")
     else:
         print("Tip: Set STACKONE_ACCOUNT_ID to see results filtered to your linked connectors.")
 
@@ -128,9 +140,9 @@ def example_search_tools():
     """High-level semantic search returning a Tools collection.
 
     search_tools() is the recommended way to use semantic search. It:
-    1. Queries the semantic search API with your natural language query
-    2. Fetches tool definitions from your linked accounts via MCP
-    3. Matches semantic results to available tools (filtering out connectors you don't have)
+    1. Fetches tool definitions from your linked accounts via MCP
+    2. Searches each of your connectors in parallel via the semantic search API
+    3. Sorts results by relevance and matches back to tool definitions
     4. Returns a Tools collection ready for any framework (.to_openai(), .to_langchain(), etc.)
     """
     print("=" * 60)
@@ -199,9 +211,9 @@ def example_search_tools_with_connector():
 def example_utility_tools_semantic():
     """Using utility tools with semantic search for agent loops.
 
-    When building agent loops (search -> select -> execute), pass
-    semantic_client to utility_tools() to upgrade tool_search from
-    local BM25+TF-IDF to cloud-based semantic search.
+    Pass semantic_client=toolset.semantic_client to utility_tools() to enable
+    cloud-based semantic search. Without it, utility_tools() uses local
+    BM25+TF-IDF search instead.
 
     Note: tool_search queries the full backend catalog (all connectors),
     not just the ones in your linked accounts.
@@ -219,8 +231,7 @@ def example_utility_tools_semantic():
     print()
 
     print("Step 2: Creating utility tools with semantic search enabled...")
-    print("  Passing semantic_client upgrades tool_search from local keyword")
-    print("  matching (BM25+TF-IDF) to cloud-based semantic vector search.")
+    print("  Pass semantic_client=toolset.semantic_client to enable semantic search.")
     utility = tools.utility_tools(semantic_client=toolset.semantic_client)
 
     search_tool = utility.get_tool("tool_search")

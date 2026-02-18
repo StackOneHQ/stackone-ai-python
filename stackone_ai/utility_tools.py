@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 
 import bm25s
 import numpy as np
 from pydantic import BaseModel
 
 from stackone_ai.constants import DEFAULT_HYBRID_ALPHA
-from stackone_ai.models import ExecuteConfig, JsonDict, StackOneTool, ToolParameters
+from stackone_ai.models import ExecuteConfig, JsonDict, StackOneTool, ToolParameters, Tools
+from stackone_ai.semantic_search import SemanticSearchClient
+from stackone_ai.utils.normalize import _normalize_action_name
 from stackone_ai.utils.tfidf_index import TfidfDocument, TfidfIndex
-
-if TYPE_CHECKING:
-    from stackone_ai.models import Tools
-    from stackone_ai.semantic_search import SemanticSearchClient
 
 
 class ToolSearchResult(BaseModel):
@@ -281,9 +278,6 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
     Returns:
         Utility tool for searching relevant tools using semantic search
     """
-    from stackone_ai.semantic_search import SemanticSearchClient  # noqa: F811
-    from stackone_ai.toolset import _normalize_action_name
-
     if not isinstance(semantic_client, SemanticSearchClient):
         raise TypeError("semantic_client must be a SemanticSearchClient instance")
 
