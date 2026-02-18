@@ -827,11 +827,11 @@ class TestSearchActionNamesWithAccountIds:
             top_k=5,
         )
 
-        # First call: broad search without top_k (let backend decide, filter client-side)
+        # First call: passes user's top_k to backend
         # Second call: per-connector fallback for "bamboohr" since first returned nothing
         assert mock_search.call_count == 2
         first_call = mock_search.call_args_list[0].kwargs
-        assert first_call["top_k"] is None
+        assert first_call["top_k"] == 5
         assert first_call["connector"] is None
         second_call = mock_search.call_args_list[1].kwargs
         assert second_call["connector"] == "bamboohr"
