@@ -474,6 +474,8 @@ class StackOneToolSet:
         if effective_account_ids:
             all_tools = self.fetch_tools(account_ids=effective_account_ids)
             available_connectors = all_tools.get_connectors()
+            if not available_connectors:
+                return []
 
         # Fetch max results to maximize results after connector filtering
         semantic_api_max = 500
