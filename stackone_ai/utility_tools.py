@@ -282,6 +282,7 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
         Utility tool for searching relevant tools using semantic search
     """
     from stackone_ai.semantic_search import SemanticSearchClient  # noqa: F811
+    from stackone_ai.toolset import _normalize_action_name
 
     if not isinstance(semantic_client, SemanticSearchClient):
         raise TypeError("semantic_client must be a SemanticSearchClient instance")
@@ -341,16 +342,19 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
             top_k=limit,
         )
 
-        tools_data = [
-            {
-                "name": r.action_name,
-                "description": r.description,
-                "score": r.similarity_score,
-                "connector": r.connector_key,
-            }
-            for r in response.results
-            if r.similarity_score >= min_score
-        ]
+        seen: set[str] = set()
+        tools_data: list[dict[str, object]] = []
+        for r in response.results:
+            if r.similarity_score >= min_score:
+                norm_name = _normalize_action_name(r.action_name)
+                if norm_name not in seen:
+                    seen.add(norm_name)
+                    tools_data.append({
+                        "name": norm_name,
+                        "description": r.description,
+                        "score": r.similarity_score,
+                        "connector": r.connector_key,
+                    })
 
         return {"tools": tools_data[:limit]}
 

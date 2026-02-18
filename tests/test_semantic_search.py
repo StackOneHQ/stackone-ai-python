@@ -252,25 +252,25 @@ class TestSemanticSearchIntegration:
         from stackone_ai import StackOneToolSet
         from stackone_ai.toolset import _McpToolDefinition
 
-        # Mock semantic search to return results (including some for unavailable connectors)
+        # Mock semantic search to return versioned API names (including some for unavailable connectors)
         mock_search.return_value = SemanticSearchResponse(
             results=[
                 SemanticSearchResult(
-                    action_name="bamboohr_create_employee",
+                    action_name="bamboohr_1.0.0_bamboohr_create_employee_global",
                     connector_key="bamboohr",
                     similarity_score=0.95,
                     label="Create Employee",
                     description="Creates a new employee",
                 ),
                 SemanticSearchResult(
-                    action_name="workday_create_worker",
+                    action_name="workday_1.0.0_workday_create_worker_global",
                     connector_key="workday",  # User doesn't have this connector
                     similarity_score=0.90,
                     label="Create Worker",
                     description="Creates a new worker",
                 ),
                 SemanticSearchResult(
-                    action_name="hibob_create_employee",
+                    action_name="hibob_1.0.0_hibob_create_employee_global",
                     connector_key="hibob",
                     similarity_score=0.85,
                     label="Create Employee",
@@ -361,6 +361,45 @@ class TestSemanticSearchIntegration:
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_toolset_search_tools_fallback_respects_connector(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test BM25 fallback filters to the requested connector."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_search.side_effect = SemanticSearchError("API unavailable")
+
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            _McpToolDefinition(
+                name="bamboohr_list_employees",
+                description="Lists all employees in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            _McpToolDefinition(
+                name="workday_create_worker",
+                description="Creates a new worker in Workday",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        tools = toolset.search_tools("create employee", connector="bamboohr", fallback_to_local=True)
+
+        assert len(tools) > 0
+        tool_names = [t.name for t in tools]
+        for name in tool_names:
+            assert name.split("_")[0] == "bamboohr"
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
     def test_toolset_search_tools_fallback_disabled(
         self,
         mock_fetch: MagicMock,
@@ -397,14 +436,14 @@ class TestSemanticSearchIntegration:
         mock_search.return_value = SemanticSearchResponse(
             results=[
                 SemanticSearchResult(
-                    action_name="bamboohr_create_employee",
+                    action_name="bamboohr_1.0.0_bamboohr_create_employee_global",
                     connector_key="bamboohr",
                     similarity_score=0.92,
                     label="Create Employee",
                     description="Creates a new employee",
                 ),
                 SemanticSearchResult(
-                    action_name="hibob_create_employee",
+                    action_name="hibob_1.0.0_hibob_create_employee_global",
                     connector_key="hibob",
                     similarity_score=0.45,
                     label="Create Employee",
@@ -418,7 +457,7 @@ class TestSemanticSearchIntegration:
         toolset = StackOneToolSet(api_key="test-key")
         results = toolset.search_action_names("create employee", min_score=0.5)
 
-        # Should filter by min_score
+        # Should filter by min_score and normalize action names
         assert len(results) == 1
         assert results[0].action_name == "bamboohr_create_employee"
 
@@ -485,7 +524,7 @@ class TestSemanticToolSearch:
         mock_search.return_value = SemanticSearchResponse(
             results=[
                 SemanticSearchResult(
-                    action_name="bamboohr_create_employee",
+                    action_name="bamboohr_1.0.0_bamboohr_create_employee_global",
                     connector_key="bamboohr",
                     similarity_score=0.92,
                     label="Create Employee",
@@ -503,6 +542,7 @@ class TestSemanticToolSearch:
 
         assert "tools" in result
         assert len(result["tools"]) == 1
+        # Name should be normalized from versioned API format to MCP format
         assert result["tools"][0]["name"] == "bamboohr_create_employee"
         assert result["tools"][0]["score"] == 0.92
         assert result["tools"][0]["connector"] == "bamboohr"
@@ -690,21 +730,21 @@ class TestSearchActionNamesWithAccountIds:
         mock_search.return_value = SemanticSearchResponse(
             results=[
                 SemanticSearchResult(
-                    action_name="bamboohr_create_employee",
+                    action_name="bamboohr_1.0.0_bamboohr_create_employee_global",
                     connector_key="bamboohr",
                     similarity_score=0.95,
                     label="Create Employee",
                     description="Creates employee",
                 ),
                 SemanticSearchResult(
-                    action_name="workday_create_worker",
+                    action_name="workday_1.0.0_workday_create_worker_global",
                     connector_key="workday",
                     similarity_score=0.90,
                     label="Create Worker",
                     description="Creates worker",
                 ),
                 SemanticSearchResult(
-                    action_name="hibob_create_employee",
+                    action_name="hibob_1.0.0_hibob_create_employee_global",
                     connector_key="hibob",
                     similarity_score=0.85,
                     label="Create Employee",
@@ -737,11 +777,24 @@ class TestSearchActionNamesWithAccountIds:
         )
 
         # workday should be filtered out (not in linked accounts)
+        # Names should be normalized from versioned API format
         assert len(results) == 2
         action_names = [r.action_name for r in results]
         assert "bamboohr_create_employee" in action_names
         assert "hibob_create_employee" in action_names
         assert "workday_create_worker" not in action_names
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_search_action_names_returns_empty_on_failure(self, mock_search: MagicMock) -> None:
+        """Test that search_action_names returns [] when semantic search fails."""
+        from stackone_ai import StackOneToolSet
+
+        mock_search.side_effect = SemanticSearchError("API unavailable")
+
+        toolset = StackOneToolSet(api_key="test-key")
+        results = toolset.search_action_names("create employee")
+
+        assert results == []
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
@@ -774,11 +827,11 @@ class TestSearchActionNamesWithAccountIds:
             top_k=5,
         )
 
-        # First call: fetch API max (500) for broad search
+        # First call: broad search without top_k (let backend decide, filter client-side)
         # Second call: per-connector fallback for "bamboohr" since first returned nothing
         assert mock_search.call_count == 2
         first_call = mock_search.call_args_list[0].kwargs
-        assert first_call["top_k"] == 500
+        assert first_call["top_k"] is None
         assert first_call["connector"] is None
         second_call = mock_search.call_args_list[1].kwargs
         assert second_call["connector"] == "bamboohr"
@@ -791,11 +844,11 @@ class TestSearchActionNamesWithAccountIds:
         from stackone_ai import StackOneToolSet
         from stackone_ai.toolset import _McpToolDefinition
 
-        # Return more results than top_k
+        # Return more results than top_k using versioned API names
         mock_search.return_value = SemanticSearchResponse(
             results=[
                 SemanticSearchResult(
-                    action_name=f"bamboohr_action_{i}",
+                    action_name=f"bamboohr_1.0.0_bamboohr_action_{i}_global",
                     connector_key="bamboohr",
                     similarity_score=0.9 - i * 0.1,
                     label=f"Action {i}",
@@ -823,4 +876,188 @@ class TestSearchActionNamesWithAccountIds:
             top_k=3,
         )
 
+        # Should be limited to top_k after normalization
         assert len(results) == 3
+        # Names should be normalized
+        assert results[0].action_name == "bamboohr_action_0"
+
+
+class TestNormalizeActionName:
+    """Tests for _normalize_action_name() function."""
+
+    def test_versioned_name_is_normalized(self) -> None:
+        """Test that versioned API names are normalized to MCP format."""
+        from stackone_ai.toolset import _normalize_action_name
+
+        assert (
+            _normalize_action_name("calendly_1.0.0_calendly_create_scheduling_link_global")
+            == "calendly_create_scheduling_link"
+        )
+
+    def test_multi_segment_version(self) -> None:
+        """Test normalization with multi-segment semver."""
+        from stackone_ai.toolset import _normalize_action_name
+
+        assert (
+            _normalize_action_name("breathehr_1.0.1_breathehr_list_employees_global")
+            == "breathehr_list_employees"
+        )
+
+    def test_already_normalized_name_unchanged(self) -> None:
+        """Test that MCP-format names pass through unchanged."""
+        from stackone_ai.toolset import _normalize_action_name
+
+        assert _normalize_action_name("bamboohr_create_employee") == "bamboohr_create_employee"
+
+    def test_non_matching_name_unchanged(self) -> None:
+        """Test that names that don't match the pattern pass through unchanged."""
+        from stackone_ai.toolset import _normalize_action_name
+
+        assert _normalize_action_name("some_random_tool") == "some_random_tool"
+
+    def test_empty_string(self) -> None:
+        """Test empty string input."""
+        from stackone_ai.toolset import _normalize_action_name
+
+        assert _normalize_action_name("") == ""
+
+    def test_multiple_versions_normalize_to_same(self) -> None:
+        """Test that different versions of the same action normalize identically."""
+        from stackone_ai.toolset import _normalize_action_name
+
+        name_v1 = _normalize_action_name("breathehr_1.0.0_breathehr_list_employees_global")
+        name_v2 = _normalize_action_name("breathehr_1.0.1_breathehr_list_employees_global")
+        assert name_v1 == name_v2 == "breathehr_list_employees"
+
+
+class TestSemanticSearchDeduplication:
+    """Tests for deduplication after name normalization."""
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_search_tools_deduplicates_versions(
+        self, mock_fetch: MagicMock, mock_search: MagicMock
+    ) -> None:
+        """Test that search_tools deduplicates multiple API versions of the same action."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="breathehr_1.0.0_breathehr_list_employees_global",
+                    connector_key="breathehr",
+                    similarity_score=0.95,
+                    label="List Employees",
+                    description="Lists employees",
+                ),
+                SemanticSearchResult(
+                    action_name="breathehr_1.0.1_breathehr_list_employees_global",
+                    connector_key="breathehr",
+                    similarity_score=0.90,
+                    label="List Employees v2",
+                    description="Lists employees v2",
+                ),
+                SemanticSearchResult(
+                    action_name="bamboohr_1.0.0_bamboohr_create_employee_global",
+                    connector_key="bamboohr",
+                    similarity_score=0.85,
+                    label="Create Employee",
+                    description="Creates employee",
+                ),
+            ],
+            total_count=3,
+            query="list employees",
+        )
+
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="breathehr_list_employees",
+                description="Lists employees",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates employee",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        tools = toolset.search_tools("list employees", top_k=5)
+
+        # Should deduplicate: both breathehr versions -> breathehr_list_employees
+        tool_names = [t.name for t in tools]
+        assert tool_names.count("breathehr_list_employees") == 1
+        assert "bamboohr_create_employee" in tool_names
+        assert len(tools) == 2
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_search_action_names_deduplicates_versions(self, mock_search: MagicMock) -> None:
+        """Test that search_action_names deduplicates multiple API versions."""
+        from stackone_ai import StackOneToolSet
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="breathehr_1.0.0_breathehr_list_employees_global",
+                    connector_key="breathehr",
+                    similarity_score=0.95,
+                    label="List Employees",
+                    description="Lists employees",
+                ),
+                SemanticSearchResult(
+                    action_name="breathehr_1.0.1_breathehr_list_employees_global",
+                    connector_key="breathehr",
+                    similarity_score=0.90,
+                    label="List Employees v2",
+                    description="Lists employees v2",
+                ),
+            ],
+            total_count=2,
+            query="list employees",
+        )
+
+        toolset = StackOneToolSet(api_key="test-key")
+        results = toolset.search_action_names("list employees", top_k=5)
+
+        # Should deduplicate: only one result for breathehr_list_employees
+        assert len(results) == 1
+        assert results[0].action_name == "breathehr_list_employees"
+        # Should keep the highest score (first seen, already sorted by score)
+        assert results[0].similarity_score == 0.95
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_semantic_tool_search_deduplicates_versions(self, mock_search: MagicMock) -> None:
+        """Test that create_semantic_tool_search deduplicates API versions."""
+        from stackone_ai.utility_tools import create_semantic_tool_search
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="breathehr_1.0.0_breathehr_list_employees_global",
+                    connector_key="breathehr",
+                    similarity_score=0.95,
+                    label="List Employees",
+                    description="Lists employees",
+                ),
+                SemanticSearchResult(
+                    action_name="breathehr_1.0.1_breathehr_list_employees_global",
+                    connector_key="breathehr",
+                    similarity_score=0.90,
+                    label="List Employees v2",
+                    description="Lists employees v2",
+                ),
+            ],
+            total_count=2,
+            query="list employees",
+        )
+
+        client = SemanticSearchClient(api_key="test-key")
+        tool = create_semantic_tool_search(client)
+        result = tool.execute({"query": "list employees", "limit": 10})
+
+        # Should deduplicate: only one result
+        assert len(result["tools"]) == 1
+        assert result["tools"][0]["name"] == "breathehr_list_employees"
+        assert result["tools"][0]["score"] == 0.95
