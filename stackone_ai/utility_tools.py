@@ -222,8 +222,8 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
             kwargs = arguments or {}
 
         query = kwargs.get("query", "")
-        limit = int(kwargs.get("limit") or 5)
-        min_score = float(kwargs.get("minScore") or 0.0)
+        limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
+        min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
 
         # Search for tools
         results = index.search(query, limit, min_score)
@@ -331,8 +331,8 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
             kwargs = arguments or {}
 
         query = kwargs.get("query", "")
-        limit = int(kwargs.get("limit") or 5)
-        min_score = float(kwargs.get("minScore") or 0.0)
+        limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
+        min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
         connector = kwargs.get("connector")
 
         response = semantic_client.search(
