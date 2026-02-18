@@ -100,7 +100,7 @@ def example_utility_tools_semantic():
 
     filter_tool = utility_tools.get_tool("tool_search")
     if filter_tool:
-        # Semantic search understands intent — "onboard new hire" finds termination tools
+        # Semantic search understands intent — "onboard new hire" finds onboarding tools
         result = filter_tool.call(query="onboard a new team member", limit=5, minScore=0.0)
 
         print("Found relevant tools (semantic search):")
