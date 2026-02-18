@@ -584,7 +584,7 @@ class Tools:
 
         Utility tools enable dynamic tool discovery and execution based on natural language queries.
         By default, uses local hybrid BM25 + TF-IDF search. Optionally, can use cloud-based
-        semantic search for higher accuracy (84% Hit@5 vs 21% for local search).
+        semantic search for higher accuracy on natural language queries.
 
         Args:
             hybrid_alpha: Weight for BM25 in hybrid search (0-1). Only used when

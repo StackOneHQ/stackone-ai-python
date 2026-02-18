@@ -508,7 +508,6 @@ class TestSemanticToolSearch:
 
         assert tool.name == "tool_search"
         assert "semantic" in tool.description.lower()
-        assert "84%" in tool.description
 
         props = tool.parameters.properties
         assert "query" in props
