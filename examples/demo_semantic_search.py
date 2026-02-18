@@ -184,6 +184,7 @@ def run_demo(use_local: bool, lambda_url: str, api_key: str | None) -> None:
             print("Error: STACKONE_API_KEY required for production mode")
             print("Use --local flag for local Lambda mode")
             exit(1)
+        assert api_key is not None  # narrowing for type checker
         sem_client = SemanticSearchClient(api_key=api_key)
         semantic_search = sem_client.search
         client = None
@@ -216,7 +217,7 @@ def run_demo(use_local: bool, lambda_url: str, api_key: str | None) -> None:
         query = demo["query"]
         why = demo["why"]
 
-        print(f"\n  [{i}/{len(DEMO_QUERIES)}] Query: \"{query}\"")
+        print(f'\n  [{i}/{len(DEMO_QUERIES)}] Query: "{query}"')
         print(f"  Why interesting: {why}")
         print()
 
@@ -243,7 +244,7 @@ def run_demo(use_local: bool, lambda_url: str, api_key: str | None) -> None:
             s_name = sem_names[j] if j < len(sem_names) else ""
             s_score = sem_scores[j] if j < len(sem_scores) else ""
             l_display = f"  {l_name[:w]:<{w}}"
-            s_display = f"  {s_name[:w - 8]:<{w - 8}} ({s_score})" if s_name else ""
+            s_display = f"  {s_name[: w - 8]:<{w - 8}} ({s_score})" if s_name else ""
             print(f"{l_display} |{s_display}")
 
         input("\n  Press Enter for next query...")
