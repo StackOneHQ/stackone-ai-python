@@ -10,6 +10,46 @@ This example uses a Calendly-linked account to demonstrate how semantic search
 discovers scheduling, event, and organization management tools from natural
 language queries.
 
+
+How Semantic Search Works (Overview)
+=====================================
+
+The SDK provides three paths for semantic tool discovery, each with a different
+trade-off between speed, filtering, and completeness:
+
+1. search_tools(query)  — Full discovery (recommended for agent frameworks)
+
+   This is the method you should use when integrating with OpenAI, LangChain,
+   CrewAI, or any other agent framework. It works in these steps:
+
+   a) Fetch ALL tools from the user's linked accounts via MCP
+   b) Extract the set of available connectors (e.g. {bamboohr, calendly})
+   c) Query the semantic search API with the natural language query
+   d) Filter results to only connectors the user has access to
+   e) Deduplicate across API versions (keep highest score per action)
+   f) Match results back to the fetched tool definitions
+   g) Return a Tools collection sorted by relevance score
+
+   Key point: tools are fetched first, semantic search runs second, and only
+   the intersection (tools the user has AND that match the query) is returned.
+   If the semantic API is unavailable, the SDK falls back to local BM25+TF-IDF
+   search automatically.
+
+2. search_action_names(query)  — Lightweight preview
+
+   Queries the semantic API directly and returns metadata (name, connector,
+   score, description) without fetching full tool definitions. Useful for
+   inspecting results before committing to a full fetch. When account_ids are
+   provided, results are filtered to the user's available connectors.
+
+3. utility_tools(semantic_client=...)  — Agent-loop pattern
+
+   Creates tool_search and tool_execute utility tools that agents can call
+   inside an agentic loop. The agent searches, inspects, and executes tools
+   dynamically. Note: utility tool search queries the full backend catalog
+   (all connectors), not just the user's linked accounts.
+
+
 This example is runnable with the following command:
 ```bash
 uv run examples/semantic_search_example.py

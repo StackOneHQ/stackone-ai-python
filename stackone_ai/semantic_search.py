@@ -1,4 +1,96 @@
-"""Semantic search client for StackOne action search API."""
+"""Semantic search client for StackOne action search API.
+
+How Semantic Search Works
+=========================
+
+The SDK provides three ways to discover tools using semantic search.
+Each path trades off between speed, filtering, and completeness.
+
+1. ``search_tools(query)`` — Full tool discovery (recommended for agent frameworks)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This is the primary method used when integrating with OpenAI, LangChain, or CrewAI.
+The internal flow is:
+
+::
+
+    User query (e.g. "create an employee")
+        │
+        ▼
+    ┌─────────────────────────────────────────────────────┐
+    │ Step 1: Fetch ALL tools from linked accounts via MCP │
+    │         (uses account_ids to scope the request)      │
+    └────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+    ┌─────────────────────────────────────────────────────┐
+    │ Step 2: Extract available connectors from the       │
+    │         fetched tools (e.g. {bamboohr, hibob})      │
+    └────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+    ┌─────────────────────────────────────────────────────┐
+    │ Step 3: Query the semantic search API (/actions/    │
+    │         search) with the natural language query     │
+    └────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+    ┌─────────────────────────────────────────────────────┐
+    │ Step 4: Filter results — keep only connectors the   │
+    │         user has access to + apply min_score cutoff  │
+    │                                                     │
+    │         If not enough results, make per-connector    │
+    │         fallback queries for missing connectors      │
+    └────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+    ┌─────────────────────────────────────────────────────┐
+    │ Step 5: Deduplicate by normalized action name       │
+    │         (strips API version suffixes, keeps highest  │
+    │         scoring version of each action)              │
+    └────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+    ┌─────────────────────────────────────────────────────┐
+    │ Step 6: Match semantic results back to the fetched   │
+    │         tool definitions from Step 1                 │
+    │         Return Tools sorted by relevance score       │
+    └─────────────────────────────────────────────────────┘
+
+Key point: tools are fetched first, semantic search runs second, and only
+tools that exist in the user's linked accounts AND match the semantic query
+are returned. This prevents suggesting tools the user cannot execute.
+
+If the semantic API is unavailable, the SDK falls back to a local
+BM25 + TF-IDF hybrid search over the fetched tools (unless
+``fallback_to_local=False``).
+
+
+2. ``search_action_names(query)`` — Lightweight discovery
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Queries the semantic API directly and returns action name metadata
+(name, connector, score, description) **without** fetching full tool
+definitions. This is useful for previewing results before committing
+to a full fetch.
+
+When ``account_ids`` are provided, tools are fetched only to determine
+available connectors — results are then filtered to those connectors.
+Without ``account_ids``, results come from the full StackOne catalog.
+
+
+3. ``utility_tools(semantic_client=...)`` — Agent-loop search + execute
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Creates a ``tool_search`` utility tool that agents can call inside a
+loop. The agent searches for tools, inspects results, then calls
+``tool_execute`` to run the chosen tool. When ``semantic_client`` is
+passed, ``tool_search`` uses cloud-based semantic vectors instead of
+local BM25 + TF-IDF.
+
+Note: utility tool search queries the **full backend catalog** (all
+connectors), not just the ones in the user's linked accounts.
+"""
 
 from __future__ import annotations
 
