@@ -30,7 +30,6 @@ from typing import Any, Literal, Protocol
 
 import httpx
 
-from stackone_ai import StackOneToolSet
 from stackone_ai.semantic_search import SemanticSearchClient, SemanticSearchResponse, SemanticSearchResult
 from stackone_ai.utility_tools import ToolIndex
 
@@ -77,6 +76,35 @@ class LocalLambdaSearchClient:
         self.lambda_url = lambda_url
         self.timeout = timeout
 
+    def _invoke(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Invoke the local Lambda with an event payload."""
+        response = httpx.post(
+            self.lambda_url,
+            json=event,
+            headers={"Content-Type": "application/json"},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def _parse_results(self, data: dict[str, Any], query: str) -> SemanticSearchResponse:
+        """Parse Lambda response into SemanticSearchResponse."""
+        results = [
+            SemanticSearchResult(
+                action_name=r.get("action_name", ""),
+                connector_key=r.get("connector_key", ""),
+                similarity_score=r.get("similarity_score", 0.0),
+                label=r.get("label", ""),
+                description=r.get("description", ""),
+            )
+            for r in data.get("results", [])
+        ]
+        return SemanticSearchResponse(
+            results=results,
+            total_count=data.get("total_count", len(results)),
+            query=data.get("query", query),
+        )
+
     def search(
         self,
         query: str,
@@ -93,47 +121,82 @@ class LocalLambdaSearchClient:
         Returns:
             SemanticSearchResponse with matching actions
         """
-        # Lambda event envelope format
         payload: dict[str, Any] = {
             "type": "search",
-            "payload": {
-                "query": query,
-                "top_k": top_k,
-            },
+            "payload": {"query": query, "top_k": top_k},
         }
         if connector:
             payload["payload"]["connector"] = connector
 
         try:
-            response = httpx.post(
-                self.lambda_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            # Convert Lambda response to SemanticSearchResponse
-            results = [
-                SemanticSearchResult(
-                    action_name=r.get("action_name", ""),
-                    connector_key=r.get("connector_key", ""),
-                    similarity_score=r.get("similarity_score", 0.0),
-                    label=r.get("label", ""),
-                    description=r.get("description", ""),
-                )
-                for r in data.get("results", [])
-            ]
-            return SemanticSearchResponse(
-                results=results,
-                total_count=data.get("total_count", len(results)),
-                query=data.get("query", query),
-            )
+            data = self._invoke(payload)
+            return self._parse_results(data, query)
         except httpx.RequestError as e:
             raise RuntimeError(f"Local Lambda request failed: {e}") from e
         except Exception as e:
             raise RuntimeError(f"Local Lambda search failed: {e}") from e
+
+    def fetch_all_actions(self) -> list[SemanticSearchResult]:
+        """Fetch a broad set of actions from the Lambda for building local BM25 index.
+
+        Uses multiple broad queries with high top_k to collect the full action catalog.
+        This avoids needing the /mcp endpoint or STACKONE_API_KEY for benchmarking.
+
+        Returns:
+            Deduplicated list of all available actions
+        """
+        broad_queries = [
+            "employee",
+            "candidate",
+            "contact",
+            "task",
+            "message",
+            "file",
+            "user",
+            "event",
+            "campaign",
+            "course",
+            "deal",
+            "account",
+            "job",
+            "interview",
+            "department",
+            "time off",
+            "comment",
+            "project",
+            "folder",
+            "role",
+        ]
+
+        seen: dict[str, SemanticSearchResult] = {}
+        for query in broad_queries:
+            try:
+                data = self._invoke({
+                    "type": "search",
+                    "payload": {"query": query, "top_k": 500},
+                })
+                for r in data.get("results", []):
+                    name = r.get("action_name", "")
+                    if name and name not in seen:
+                        seen[name] = SemanticSearchResult(
+                            action_name=name,
+                            connector_key=r.get("connector_key", ""),
+                            similarity_score=r.get("similarity_score", 0.0),
+                            label=r.get("label", ""),
+                            description=r.get("description", ""),
+                        )
+            except Exception:
+                continue
+
+        return list(seen.values())
+
+
+@dataclass
+class LightweightTool:
+    """Minimal tool representation for BM25 indexing (no API dependency)."""
+
+    name: str
+    description: str
 
 
 @dataclass
@@ -897,11 +960,12 @@ class SearchBenchmark:
         """Initialize benchmark with tools and search client.
 
         Args:
-            tools: List of StackOneTool instances to search
+            tools: List of tool objects (StackOneTool or LightweightTool) with name + description
             semantic_client: Client for semantic search (production or local)
         """
         self.tools = tools
-        self.local_index = ToolIndex(tools)
+        # ToolIndex uses duck typing - only needs .name and .description
+        self.local_index = ToolIndex(tools)  # type: ignore[arg-type]
         self.semantic_client = semantic_client
 
     def evaluate_local(
@@ -1043,15 +1107,41 @@ def print_report(report: ComparisonReport) -> None:
     print(f"{'Improvement':<25} {report.improvement:>+10.1%}")
     print("=" * 70)
 
-    # Show failed tasks for local search
+    # Build lookup maps
+    local_by_id = {r.task_id: r for r in report.local_results.results}
+    semantic_by_id = {r.task_id: r for r in report.semantic_results.results}
+
     failed_local = [r for r in report.local_results.results if not r.hit]
-    if failed_local and len(failed_local) <= 20:
-        print(f"\nLocal search missed ({len(failed_local)} tasks):")
-        for r in failed_local[:10]:
+    failed_semantic = [r for r in report.semantic_results.results if not r.hit]
+
+    # Tasks semantic gets right but local misses (the value semantic adds)
+    semantic_wins = [r for r in failed_local if semantic_by_id.get(r.task_id, r).hit]
+    # Tasks local gets right but semantic misses
+    local_wins = [r for r in failed_semantic if local_by_id.get(r.task_id, r).hit]
+    # Tasks both miss
+    both_miss = [r for r in failed_local if not semantic_by_id.get(r.task_id, r).hit]
+
+    print(f"\n{'SEMANTIC WINS':} ({len(semantic_wins)} tasks - semantic gets right, local misses):")
+    for r in semantic_wins:
+        sr = semantic_by_id[r.task_id]
+        print(f"  - {r.task_id}: '{r.query}'")
+        print(f"    Local got:    {r.top_results[:3]}")
+        print(f"    Semantic got: {sr.top_results[:3]}")
+
+    if local_wins:
+        print(f"\n{'LOCAL WINS':} ({len(local_wins)} tasks - local gets right, semantic misses):")
+        for r in local_wins:
+            lr = local_by_id[r.task_id]
             print(f"  - {r.task_id}: '{r.query}'")
-            print(f"    Got: {r.top_results[:3]}")
-        if len(failed_local) > 10:
-            print(f"  ... and {len(failed_local) - 10} more")
+            print(f"    Local got:    {lr.top_results[:3]}")
+            print(f"    Semantic got: {r.top_results[:3]}")
+
+    print(f"\n{'BOTH MISS':} ({len(both_miss)} tasks):")
+    for r in both_miss:
+        sr = semantic_by_id[r.task_id]
+        print(f"  - {r.task_id}: '{r.query}'")
+        print(f"    Local got:    {r.top_results[:3]}")
+        print(f"    Semantic got: {sr.top_results[:3]}")
 
 
 def run_benchmark(
@@ -1074,12 +1164,17 @@ def run_benchmark(
     Raises:
         ValueError: If no API key is available (production mode only)
     """
-    # Create semantic search client based on mode
+    # Create semantic search client and load tools based on mode
     if use_local:
         print(f"Using LOCAL Lambda at: {local_lambda_url}")
-        semantic_client: SearchClientProtocol = LocalLambdaSearchClient(lambda_url=local_lambda_url)
-        # For local mode, we still need API key for toolset but can use a dummy if not set
-        api_key = api_key or os.environ.get("STACKONE_API_KEY") or "local-testing"
+        local_client = LocalLambdaSearchClient(lambda_url=local_lambda_url)
+        semantic_client: SearchClientProtocol = local_client
+
+        # Fetch tool catalog from the Lambda itself (no /mcp or API key needed)
+        print("Fetching action catalog from local Lambda...")
+        actions = local_client.fetch_all_actions()
+        tools = [LightweightTool(name=a.action_name, description=a.description) for a in actions]
+        print(f"Loaded {len(tools)} actions from Lambda")
     else:
         api_key = api_key or os.environ.get("STACKONE_API_KEY")
         if not api_key:
@@ -1087,15 +1182,17 @@ def run_benchmark(
         print(f"Using PRODUCTION API at: {base_url}")
         semantic_client = SemanticSearchClient(api_key=api_key, base_url=base_url)
 
-    print("Initializing toolset...")
-    toolset = StackOneToolSet(api_key=api_key, base_url=base_url)
+        from stackone_ai import StackOneToolSet
 
-    print("Fetching tools (this may take a moment)...")
-    tools = toolset.fetch_tools()
-    print(f"Loaded {len(tools)} tools")
+        print("Initializing toolset...")
+        toolset = StackOneToolSet(api_key=api_key, base_url=base_url)
+
+        print("Fetching tools (this may take a moment)...")
+        tools = list(toolset.fetch_tools())
+        print(f"Loaded {len(tools)} tools")
 
     print(f"\nRunning benchmark with {len(EVALUATION_TASKS)} evaluation tasks...")
-    benchmark = SearchBenchmark(list(tools), semantic_client=semantic_client)
+    benchmark = SearchBenchmark(tools, semantic_client=semantic_client)
 
     report = benchmark.compare()
     print_report(report)

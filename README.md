@@ -19,6 +19,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
   - Provider and action filtering
   - Multi-account support
+- **Semantic Search**: AI-powered tool discovery using natural language (76.6% Hit@5 vs 66.0% for keyword search)
 - **Utility Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
 - Integration with popular AI frameworks:
   - OpenAI Functions
@@ -323,6 +324,33 @@ results = filter_tool.call(query="manage employees", limit=5)
 # Execute discovered tools dynamically
 execute_tool = utility_tools.get_tool("tool_execute")
 result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
+```
+
+## Semantic Search
+
+Search across 9,000+ actions using natural language instead of exact keyword matching.
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Find tools using natural language
+tools = toolset.search_tools("onboard a new team member", top_k=5)
+# Returns: create_employee, invite_employee, ...
+
+# Filter by connector
+tools = toolset.search_tools("send a message", connector="slack", top_k=3)
+```
+
+Semantic search understands intent and synonyms, so queries like "onboard a new team member", "check my to-do list", or "file a bug" return the right actions even when no keywords match.
+
+It can also power the `tool_search` utility tool for AI agents:
+
+```python
+tools = toolset.fetch_tools(account_ids=["your-account-id"])
+utility = tools.utility_tools(use_semantic_search=True)
+# AI agent gets semantic-powered tool_search + tool_execute
 ```
 
 ## Examples
