@@ -165,16 +165,6 @@ def example_search_tools():
         print(f"    {tool.description}")
     print()
 
-    # Show OpenAI conversion
-    print("Step 2: Converting to OpenAI function-calling format...")
-    openai_tools = tools.to_openai()
-    print(f"Created {len(openai_tools)} OpenAI function definitions:")
-    for fn in openai_tools:
-        func = fn["function"]
-        param_names = list(func["parameters"].get("properties", {}).keys())
-        print(f"  - {func['name']}({', '.join(param_names[:3])}{'...' if len(param_names) > 3 else ''})")
-    print()
-
 
 def example_search_tools_with_connector():
     """Semantic search filtered by connector.
@@ -252,13 +242,16 @@ def example_utility_tools_semantic():
 
 
 def example_openai_agent_loop():
-    """Complete agent loop: semantic search -> OpenAI -> execute.
+    """Complete agent loop: semantic search -> LLM -> execute.
 
     This demonstrates the full pattern for building an AI agent that
-    discovers tools via semantic search and executes them via OpenAI.
+    discovers tools via semantic search and executes them via an LLM.
+
+    Supports both OpenAI and Google Gemini (via its OpenAI-compatible API).
+    Set OPENAI_API_KEY for OpenAI, or GOOGLE_API_KEY for Gemini.
     """
     print("=" * 60)
-    print("Example 5: OpenAI agent loop with semantic search")
+    print("Example 5: LLM agent loop with semantic search")
     print("=" * 60)
     print()
 
@@ -269,12 +262,29 @@ def example_openai_agent_loop():
         print()
         return
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Skipped: Set OPENAI_API_KEY to run this example.")
+    # Support both OpenAI and Gemini (via OpenAI-compatible endpoint)
+    openai_key = os.getenv("OPENAI_API_KEY")
+    google_key = os.getenv("GOOGLE_API_KEY")
+
+    if openai_key:
+        client = OpenAI()
+        model = "gpt-4o-mini"
+        provider = "OpenAI"
+    elif google_key:
+        client = OpenAI(
+            api_key=google_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+        model = "gemini-2.5-flash"
+        provider = "Gemini"
+    else:
+        print("Skipped: Set OPENAI_API_KEY or GOOGLE_API_KEY to run this example.")
         print()
         return
 
-    client = OpenAI()
+    print(f"Using {provider} ({model})")
+    print()
+
     toolset = StackOneToolSet()
 
     query = "list upcoming events"
@@ -285,7 +295,7 @@ def example_openai_agent_loop():
         print(f"  - {tool.name}")
     print()
 
-    print("Step 2: Sending tools to OpenAI as function definitions...")
+    print(f"Step 2: Sending tools to {provider} as function definitions...")
     openai_tools = tools.to_openai()
 
     messages = [
@@ -294,14 +304,14 @@ def example_openai_agent_loop():
     ]
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=model,
         messages=messages,
         tools=openai_tools,
         tool_choice="auto",
     )
 
     if response.choices[0].message.tool_calls:
-        print("Step 3: OpenAI chose to call these tools:")
+        print(f"Step 3: {provider} chose to call these tools:")
         for tool_call in response.choices[0].message.tool_calls:
             print(f"  - {tool_call.function.name}({tool_call.function.arguments})")
 
@@ -312,7 +322,7 @@ def example_openai_agent_loop():
                     f"    Response keys: {list(result.keys()) if isinstance(result, dict) else type(result)}"
                 )
     else:
-        print(f"OpenAI responded with text: {response.choices[0].message.content}")
+        print(f"{provider} responded with text: {response.choices[0].message.content}")
 
     print()
 

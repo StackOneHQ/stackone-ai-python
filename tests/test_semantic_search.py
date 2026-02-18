@@ -807,9 +807,7 @@ class TestSearchActionNamesWithAccountIds:
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
-    def test_searches_all_connectors_in_parallel(
-        self, mock_fetch: MagicMock, mock_search: MagicMock
-    ) -> None:
+    def test_searches_all_connectors_in_parallel(self, mock_fetch: MagicMock, mock_search: MagicMock) -> None:
         """Test that all available connectors are searched directly (no global call + fallback)."""
         from stackone_ai import StackOneToolSet
         from stackone_ai.toolset import _McpToolDefinition

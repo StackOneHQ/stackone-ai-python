@@ -12,54 +12,18 @@ Each path trades off between speed, filtering, and completeness.
 This is the primary method used when integrating with OpenAI, LangChain, or CrewAI.
 The internal flow is:
 
-::
+1. Fetch ALL tools from linked accounts via MCP (uses account_ids to scope the request)
+2. Extract available connectors from the fetched tools (e.g. {bamboohr, hibob})
+3. Search EACH connector in parallel via the semantic search API (/actions/search)
+4. Collect results, sort by relevance score, apply top_k if specified
+5. Match semantic results back to the fetched tool definitions
+6. Return Tools sorted by relevance score
 
-    User query (e.g. "create an employee")
-        │
-        ▼
-    ┌─────────────────────────────────────────────────────┐
-    │ Step 1: Fetch ALL tools from linked accounts via MCP │
-    │         (uses account_ids to scope the request)      │
-    └────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
-    ┌─────────────────────────────────────────────────────┐
-    │ Step 2: Extract available connectors from the       │
-    │         fetched tools (e.g. {bamboohr, hibob})      │
-    └────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
-    ┌─────────────────────────────────────────────────────┐
-    │ Step 3: Query the semantic search API (/actions/    │
-    │         search) with the natural language query     │
-    └────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
-    ┌─────────────────────────────────────────────────────┐
-    │ Step 4: Filter results — keep only connectors the   │
-    │         user has access to + apply min_score cutoff  │
-    │                                                     │
-    │         If not enough results, make per-connector    │
-    │         fallback queries for missing connectors      │
-    └────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
-    ┌─────────────────────────────────────────────────────┐
-    │ Step 5: Deduplicate by normalized action name       │
-    │         (strips API version suffixes, keeps highest  │
-    │         scoring version of each action)              │
-    └────────────────────────┬────────────────────────────┘
-                             │
-                             ▼
-    ┌─────────────────────────────────────────────────────┐
-    │ Step 6: Match semantic results back to the fetched   │
-    │         tool definitions from Step 1                 │
-    │         Return Tools sorted by relevance score       │
-    └─────────────────────────────────────────────────────┘
-
-Key point: tools are fetched first, semantic search runs second, and only
-tools that exist in the user's linked accounts AND match the semantic query
-are returned. This prevents suggesting tools the user cannot execute.
+Key point: only the user's own connectors are searched — no wasted results
+from connectors the user doesn't have. Tools are fetched first, semantic
+search runs second, and only tools that exist in the user's linked
+accounts AND match the semantic query are returned. This prevents
+suggesting tools the user cannot execute.
 
 If the semantic API is unavailable, the SDK falls back to a local
 BM25 + TF-IDF hybrid search over the fetched tools (unless
@@ -74,9 +38,9 @@ Queries the semantic API directly and returns action name metadata
 definitions. This is useful for previewing results before committing
 to a full fetch.
 
-When ``account_ids`` are provided, tools are fetched only to determine
-available connectors — results are then filtered to those connectors.
-Without ``account_ids``, results come from the full StackOne catalog.
+When ``account_ids`` are provided, each connector is searched in
+parallel (same as ``search_tools``). Without ``account_ids``, results
+come from the full StackOne catalog.
 
 
 3. ``utility_tools(semantic_client=...)`` — Agent-loop search + execute

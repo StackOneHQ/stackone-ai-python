@@ -339,14 +339,13 @@ class StackOneToolSet:
                 top_k=3
             )
         """
+        all_tools = self.fetch_tools(account_ids=account_ids)
+        available_connectors = all_tools.get_connectors()
+
+        if not available_connectors:
+            return Tools([])
+
         try:
-            # Step 1: Fetch all tools to get available connectors from linked accounts
-            all_tools = self.fetch_tools(account_ids=account_ids)
-            available_connectors = all_tools.get_connectors()
-
-            if not available_connectors:
-                return Tools([])
-
             # Step 2: Determine which connectors to search
             if connector:
                 connectors_to_search = {connector.lower()} & available_connectors
