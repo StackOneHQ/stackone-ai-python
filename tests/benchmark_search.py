@@ -6,20 +6,134 @@ Expected results:
 - Semantic Search: ~84% Hit@5
 - Improvement: 4x
 
-Run with:
+Run with production API:
     STACKONE_API_KEY=xxx python tests/benchmark_search.py
+
+Run with local Lambda (ai-generation/apps/action_search):
+    # First, start the local Lambda:
+    #   cd ai-generation/apps/action_search && make run-local
+    # Then run benchmark:
+    python tests/benchmark_search.py --local
+
+Environment Variables:
+    STACKONE_API_KEY: Required for production mode
+    LOCAL_LAMBDA_URL: Optional, defaults to http://localhost:4513/2015-03-31/functions/function/invocations
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal, Protocol
+
+import httpx
 
 from stackone_ai import StackOneToolSet
-from stackone_ai.semantic_search import SemanticSearchClient
+from stackone_ai.semantic_search import SemanticSearchClient, SemanticSearchResponse, SemanticSearchResult
 from stackone_ai.utility_tools import ToolIndex
+
+# Default local Lambda URL (from ai-generation/apps/action_search docker-compose)
+DEFAULT_LOCAL_LAMBDA_URL = "http://localhost:4513/2015-03-31/functions/function/invocations"
+
+
+class SearchClientProtocol(Protocol):
+    """Protocol for search clients (production or local)."""
+
+    def search(
+        self,
+        query: str,
+        connector: str | None = None,
+        top_k: int = 10,
+    ) -> SemanticSearchResponse: ...
+
+
+class LocalLambdaSearchClient:
+    """Client for local action_search Lambda.
+
+    This client connects to the local Lambda running via docker-compose
+    from ai-generation/apps/action_search.
+
+    Usage:
+        # Start local Lambda first:
+        #   cd ai-generation/apps/action_search && make run-local
+
+        client = LocalLambdaSearchClient()
+        response = client.search("create employee", connector="bamboohr", top_k=5)
+    """
+
+    def __init__(
+        self,
+        lambda_url: str = DEFAULT_LOCAL_LAMBDA_URL,
+        timeout: float = 30.0,
+    ) -> None:
+        """Initialize the local Lambda client.
+
+        Args:
+            lambda_url: URL of the local Lambda endpoint
+            timeout: Request timeout in seconds
+        """
+        self.lambda_url = lambda_url
+        self.timeout = timeout
+
+    def search(
+        self,
+        query: str,
+        connector: str | None = None,
+        top_k: int = 10,
+    ) -> SemanticSearchResponse:
+        """Search for relevant actions using local Lambda.
+
+        Args:
+            query: Natural language query
+            connector: Optional connector filter
+            top_k: Maximum number of results
+
+        Returns:
+            SemanticSearchResponse with matching actions
+        """
+        # Lambda event envelope format
+        payload: dict[str, Any] = {
+            "type": "search",
+            "payload": {
+                "query": query,
+                "top_k": top_k,
+            },
+        }
+        if connector:
+            payload["payload"]["connector"] = connector
+
+        try:
+            response = httpx.post(
+                self.lambda_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Convert Lambda response to SemanticSearchResponse
+            results = [
+                SemanticSearchResult(
+                    action_name=r.get("action_name", ""),
+                    connector_key=r.get("connector_key", ""),
+                    similarity_score=r.get("similarity_score", 0.0),
+                    label=r.get("label", ""),
+                    description=r.get("description", ""),
+                )
+                for r in data.get("results", [])
+            ]
+            return SemanticSearchResponse(
+                results=results,
+                total_count=data.get("total_count", len(results)),
+                query=data.get("query", query),
+            )
+        except httpx.RequestError as e:
+            raise RuntimeError(f"Local Lambda request failed: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Local Lambda search failed: {e}") from e
 
 
 @dataclass
@@ -778,19 +892,17 @@ class SearchBenchmark:
     def __init__(
         self,
         tools: list,
-        api_key: str,
-        base_url: str = "https://api.stackone.com",
+        semantic_client: SearchClientProtocol,
     ):
-        """Initialize benchmark with tools and API credentials.
+        """Initialize benchmark with tools and search client.
 
         Args:
             tools: List of StackOneTool instances to search
-            api_key: StackOne API key for semantic search
-            base_url: Base URL for API requests
+            semantic_client: Client for semantic search (production or local)
         """
         self.tools = tools
         self.local_index = ToolIndex(tools)
-        self.semantic_client = SemanticSearchClient(api_key=api_key, base_url=base_url)
+        self.semantic_client = semantic_client
 
     def evaluate_local(
         self,
@@ -942,22 +1054,38 @@ def print_report(report: ComparisonReport) -> None:
             print(f"  ... and {len(failed_local) - 10} more")
 
 
-def run_benchmark(api_key: str | None = None, base_url: str = "https://api.stackone.com") -> ComparisonReport:
+def run_benchmark(
+    api_key: str | None = None,
+    base_url: str = "https://api.stackone.com",
+    use_local: bool = False,
+    local_lambda_url: str = DEFAULT_LOCAL_LAMBDA_URL,
+) -> ComparisonReport:
     """Run the full benchmark comparison.
 
     Args:
         api_key: StackOne API key (uses STACKONE_API_KEY env var if not provided)
-        base_url: Base URL for API requests
+        base_url: Base URL for production API requests
+        use_local: If True, use local Lambda instead of production API
+        local_lambda_url: URL of local Lambda endpoint
 
     Returns:
         ComparisonReport with results
 
     Raises:
-        ValueError: If no API key is available
+        ValueError: If no API key is available (production mode only)
     """
-    api_key = api_key or os.environ.get("STACKONE_API_KEY")
-    if not api_key:
-        raise ValueError("API key must be provided or set via STACKONE_API_KEY environment variable")
+    # Create semantic search client based on mode
+    if use_local:
+        print(f"Using LOCAL Lambda at: {local_lambda_url}")
+        semantic_client: SearchClientProtocol = LocalLambdaSearchClient(lambda_url=local_lambda_url)
+        # For local mode, we still need API key for toolset but can use a dummy if not set
+        api_key = api_key or os.environ.get("STACKONE_API_KEY") or "local-testing"
+    else:
+        api_key = api_key or os.environ.get("STACKONE_API_KEY")
+        if not api_key:
+            raise ValueError("API key must be provided or set via STACKONE_API_KEY environment variable")
+        print(f"Using PRODUCTION API at: {base_url}")
+        semantic_client = SemanticSearchClient(api_key=api_key, base_url=base_url)
 
     print("Initializing toolset...")
     toolset = StackOneToolSet(api_key=api_key, base_url=base_url)
@@ -967,7 +1095,7 @@ def run_benchmark(api_key: str | None = None, base_url: str = "https://api.stack
     print(f"Loaded {len(tools)} tools")
 
     print(f"\nRunning benchmark with {len(EVALUATION_TASKS)} evaluation tasks...")
-    benchmark = SearchBenchmark(list(tools), api_key=api_key, base_url=base_url)
+    benchmark = SearchBenchmark(list(tools), semantic_client=semantic_client)
 
     report = benchmark.compare()
     print_report(report)
@@ -975,13 +1103,58 @@ def run_benchmark(api_key: str | None = None, base_url: str = "https://api.stack
     return report
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Main entry point with CLI argument parsing."""
+    parser = argparse.ArgumentParser(
+        description="Benchmark comparing local BM25+TF-IDF vs semantic search",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run with production API
+  STACKONE_API_KEY=xxx python tests/benchmark_search.py
+
+  # Run with local Lambda (start it first: cd ai-generation/apps/action_search && make run-local)
+  python tests/benchmark_search.py --local
+
+  # Run with custom local Lambda URL
+  python tests/benchmark_search.py --local --lambda-url http://localhost:9000/invoke
+        """,
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local Lambda instead of production API",
+    )
+    parser.add_argument(
+        "--lambda-url",
+        default=DEFAULT_LOCAL_LAMBDA_URL,
+        help=f"Local Lambda URL (default: {DEFAULT_LOCAL_LAMBDA_URL})",
+    )
+    parser.add_argument(
+        "--api-url",
+        default="https://api.stackone.com",
+        help="Production API base URL",
+    )
+
+    args = parser.parse_args()
+
     try:
-        run_benchmark()
+        run_benchmark(
+            base_url=args.api_url,
+            use_local=args.local,
+            local_lambda_url=args.lambda_url,
+        )
     except ValueError as e:
         print(f"Error: {e}")
-        print("Set STACKONE_API_KEY environment variable or pass api_key parameter")
+        print("Set STACKONE_API_KEY environment variable or use --local flag")
         exit(1)
     except Exception as e:
         print(f"Benchmark failed: {e}")
+        import traceback
+
+        traceback.print_exc()
         exit(1)
+
+
+if __name__ == "__main__":
+    main()
