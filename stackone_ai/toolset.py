@@ -341,15 +341,13 @@ class StackOneToolSet:
             if not available_connectors:
                 return Tools([])
 
-            # Step 2: Over-fetch from semantic API to account for connector filtering
-            # We fetch 3x to ensure we get enough results after filtering
-            over_fetch_multiplier = 3
-            over_fetch_k = min(top_k * over_fetch_multiplier, 500)
+            # Step 2: Fetch max results from semantic API, then filter client-side
+            semantic_api_max = 500
 
             response = self.semantic_client.search(
                 query=query,
                 connector=connector,
-                top_k=over_fetch_k,
+                top_k=semantic_api_max,
             )
 
             # Step 3: Filter results to only available connectors and min_score
@@ -357,7 +355,32 @@ class StackOneToolSet:
                 r
                 for r in response.results
                 if r.connector_key.lower() in available_connectors and r.similarity_score >= min_score
-            ][:top_k]  # Take only top_k after filtering
+            ]
+
+            # Step 3b: If not enough results, make per-connector calls for missing connectors
+            if len(filtered_results) < top_k and not connector:
+                found_connectors = {r.connector_key.lower() for r in filtered_results}
+                missing_connectors = available_connectors - found_connectors
+                for missing in missing_connectors:
+                    if len(filtered_results) >= top_k:
+                        break
+                    try:
+                        extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
+                        for r in extra.results:
+                            if r.similarity_score >= min_score and r.action_name not in {
+                                fr.action_name for fr in filtered_results
+                            }:
+                                filtered_results.append(r)
+                                if len(filtered_results) >= top_k:
+                                    break
+                    except SemanticSearchError:
+                        continue
+
+                # Re-sort by score after merging results from multiple calls
+                filtered_results.sort(key=lambda r: r.similarity_score, reverse=True)
+
+            # Apply top_k limit after all filtering and fallback
+            filtered_results = filtered_results[:top_k]
 
             if not filtered_results:
                 return Tools([])
@@ -446,8 +469,9 @@ class StackOneToolSet:
             selected = [r.action_name for r in results if r.similarity_score > 0.7]
             tools = toolset.fetch_tools(actions=selected)
         """
-        # Over-fetch if filtering by available_connectors
-        fetch_k = min(top_k * 3, 500) if available_connectors else min(top_k, 500)
+        # Fetch max results to maximize results after connector filtering
+        semantic_api_max = 500
+        fetch_k = semantic_api_max if available_connectors else min(top_k, 500)
 
         response = self.semantic_client.search(
             query=query,
@@ -462,6 +486,28 @@ class StackOneToolSet:
         if available_connectors:
             connector_set = {c.lower() for c in available_connectors}
             results = [r for r in results if r.connector_key.lower() in connector_set]
+
+            # If not enough results, make per-connector calls for missing connectors
+            if len(results) < top_k and not connector:
+                found_connectors = {r.connector_key.lower() for r in results}
+                missing_connectors = connector_set - found_connectors
+                for missing in missing_connectors:
+                    if len(results) >= top_k:
+                        break
+                    try:
+                        extra = self.semantic_client.search(query=query, connector=missing, top_k=top_k)
+                        for r in extra.results:
+                            if r.similarity_score >= min_score and r.action_name not in {
+                                er.action_name for er in results
+                            }:
+                                results.append(r)
+                                if len(results) >= top_k:
+                                    break
+                    except SemanticSearchError:
+                        continue
+
+                # Re-sort by score after merging
+                results.sort(key=lambda r: r.similarity_score, reverse=True)
 
         return results[:top_k]
 

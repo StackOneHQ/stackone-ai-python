@@ -798,8 +798,8 @@ class TestSearchActionNamesWithAvailableConnectors:
         assert "workday_create_worker" not in action_names
 
     @patch.object(SemanticSearchClient, "search")
-    def test_over_fetches_when_filtering(self, mock_search: MagicMock) -> None:
-        """Test that API is called with 3x top_k when filtering by connectors."""
+    def test_fetches_max_then_falls_back_per_connector(self, mock_search: MagicMock) -> None:
+        """Test that API fetches max results first, then per-connector if not enough."""
         from stackone_ai import StackOneToolSet
 
         mock_search.return_value = SemanticSearchResponse(
@@ -815,10 +815,15 @@ class TestSearchActionNamesWithAvailableConnectors:
             top_k=5,
         )
 
-        # Should over-fetch by 3x
-        mock_search.assert_called_once()
-        call_kwargs = mock_search.call_args.kwargs
-        assert call_kwargs["top_k"] == 15  # 5 * 3
+        # First call: fetch API max (500) for broad search
+        # Second call: per-connector fallback for "bamboohr" since first returned nothing
+        assert mock_search.call_count == 2
+        first_call = mock_search.call_args_list[0].kwargs
+        assert first_call["top_k"] == 500
+        assert first_call["connector"] is None
+        second_call = mock_search.call_args_list[1].kwargs
+        assert second_call["connector"] == "bamboohr"
+        assert second_call["top_k"] == 5
 
     @patch.object(SemanticSearchClient, "search")
     def test_respects_top_k_after_filtering(self, mock_search: MagicMock) -> None:
