@@ -26,6 +26,7 @@ EXAMPLES = get_example_files()
 OPTIONAL_DEPENDENCIES = {
     "openai_integration.py": ["openai", "mcp"],
     "langchain_integration.py": ["langchain_openai", "mcp"],
+    "crewai_integration.py": ["crewai", "mcp"],
     "index.py": ["mcp"],
     "file_uploads.py": ["mcp"],
     "stackone_account_ids.py": ["mcp"],
