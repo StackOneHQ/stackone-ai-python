@@ -446,7 +446,10 @@ class StackOneToolSet:
             min_score: Minimum similarity score threshold 0-1 (default: 0.0)
 
         Returns:
-            List of SemanticSearchResult with action names, scores, and metadata
+            List of SemanticSearchResult with action names, scores, and metadata.
+            Versioned API names are normalized to MCP format but results are NOT
+            deduplicated — multiple API versions of the same action may appear
+            with their individual scores.
 
         Examples:
             # Lightweight: inspect results before fetching

@@ -385,7 +385,6 @@ For more examples, check out the [examples/](examples/) directory:
 - [File Uploads](examples/file_uploads.py)
 - [OpenAI Integration](examples/openai_integration.py)
 - [LangChain Integration](examples/langchain_integration.py)
-- [CrewAI Integration](examples/crewai_integration.py)
 - [Utility Tools](examples/utility_tools_example.py)
 - [Semantic Search](examples/semantic_search_example.py)
 
