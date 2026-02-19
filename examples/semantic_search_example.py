@@ -48,7 +48,9 @@ trade-off between speed, filtering, and completeness:
    Creates tool_search and tool_execute utility tools that agents can call
    inside an agentic loop. Pass semantic_client=toolset.semantic_client to
    enable cloud-based semantic search; without it, local BM25+TF-IDF is
-   used. The agent searches, inspects, and executes tools dynamically.
+   used. When created via utility_tools(), tool_search is automatically
+   scoped to the user's linked connectors. The agent searches, inspects,
+   and executes tools dynamically.
 
 
 This example is runnable with the following command:
@@ -158,7 +160,7 @@ def example_search_tools():
 
     tools = toolset.search_tools(query, account_ids=_account_ids, top_k=5)
 
-    connectors = {t.name.split("_")[0] for t in tools}
+    connectors = tools.get_connectors()
     print(f"Found {len(tools)} tools from your linked account(s) ({', '.join(sorted(connectors))}):")
     for tool in tools:
         print(f"  - {tool.name}")
@@ -205,8 +207,8 @@ def example_utility_tools_semantic():
     cloud-based semantic search. Without it, utility_tools() uses local
     BM25+TF-IDF search instead.
 
-    Note: tool_search queries the full backend catalog (all connectors),
-    not just the ones in your linked accounts.
+    When created via utility_tools(), tool_search is automatically scoped to
+    the connectors available in your fetched tools collection.
     """
     print("=" * 60)
     print("Example 4: Utility tools with semantic search")
@@ -229,7 +231,7 @@ def example_utility_tools_semantic():
         query = "cancel an event or meeting"
         print()
         print(f'Step 3: Calling tool_search with query="{query}"...')
-        print("  (This searches the full StackOne catalog, not just your linked tools)")
+        print("  (Searches are scoped to your linked connectors)")
         print()
         result = search_tool.call(query=query, limit=5)
         tools_data = result.get("tools", [])

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 
 import bm25s
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 
 from stackone_ai.constants import DEFAULT_HYBRID_ALPHA
 from stackone_ai.models import ExecuteConfig, JsonDict, StackOneTool, ToolParameters, Tools
-from stackone_ai.semantic_search import SemanticSearchClient
+from stackone_ai.semantic_search import SemanticSearchClient, SemanticSearchResult
 from stackone_ai.utils.normalize import _normalize_action_name
 from stackone_ai.utils.tfidf_index import TfidfDocument, TfidfIndex
 
@@ -266,7 +267,10 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
     return ToolSearchTool()
 
 
-def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackOneTool:
+def create_semantic_tool_search(
+    semantic_client: SemanticSearchClient,
+    available_connectors: set[str] | None = None,
+) -> StackOneTool:
     """Create a semantic search variant of tool_search.
 
     Uses cloud semantic search API instead of local BM25+TF-IDF for
@@ -274,6 +278,9 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
 
     Args:
         semantic_client: Initialized SemanticSearchClient instance
+        available_connectors: Optional set of connector names to scope searches to.
+            When provided, searches each connector in parallel and only returns
+            results for those connectors. When None, queries the full catalog.
 
     Returns:
         Utility tool for searching relevant tools using semantic search
@@ -330,15 +337,44 @@ def create_semantic_tool_search(semantic_client: SemanticSearchClient) -> StackO
         min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
         connector = kwargs.get("connector")
 
-        response = semantic_client.search(
-            query=query,
-            connector=connector,
-            top_k=limit,
-        )
+        all_results: list[SemanticSearchResult] = []
 
+        if available_connectors is not None:
+            # Scoped search: query each connector in parallel
+            if connector:
+                connectors_to_search = {connector.lower()} & available_connectors
+            else:
+                connectors_to_search = available_connectors
+
+            if connectors_to_search:
+                max_workers = min(len(connectors_to_search), 10)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    futures = {
+                        pool.submit(
+                            semantic_client.search, query=query, connector=c, top_k=limit
+                        ): c
+                        for c in connectors_to_search
+                    }
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            resp = future.result()
+                            all_results.extend(resp.results)
+                        except Exception:
+                            pass  # Partial failures: skip failed connectors
+        else:
+            # No connector scoping: query full catalog (backwards compat)
+            response = semantic_client.search(
+                query=query,
+                connector=connector,
+                top_k=limit,
+            )
+            all_results = list(response.results)
+
+        # Sort by score, deduplicate, filter by min_score, apply limit
+        all_results.sort(key=lambda r: r.similarity_score, reverse=True)
         seen: set[str] = set()
         tools_data: list[dict[str, object]] = []
-        for r in response.results:
+        for r in all_results:
             if r.similarity_score >= min_score:
                 norm_name = _normalize_action_name(r.action_name)
                 if norm_name not in seen:

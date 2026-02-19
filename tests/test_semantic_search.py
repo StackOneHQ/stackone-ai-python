@@ -469,6 +469,7 @@ class TestSemanticSearchIntegration:
         tool = MagicMock(spec=StackOneTool)
         tool.name = "test_tool"
         tool.description = "Test tool"
+        tool.connector = "test"
         tools = Tools([tool])
 
         # Without semantic search - should use local search
@@ -501,7 +502,10 @@ class TestSemanticSearchIntegration:
             mock_create_execute.return_value = mock_execute_tool
             utility = tools.utility_tools(semantic_client=mock_client)
             assert len(utility) == 2
-            mock_create.assert_called_once_with(mock_client)
+            # Should pass available connectors from the tools collection
+            mock_create.assert_called_once_with(
+                mock_client, available_connectors={"test"}
+            )
 
 
 class TestSemanticToolSearch:
@@ -618,6 +622,142 @@ class TestSemanticToolSearch:
         assert "limit" in props
         assert "minScore" in props
         assert "connector" in props
+
+
+class TestSemanticToolSearchScoping:
+    """Tests for connector scoping in create_semantic_tool_search."""
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_scoped_searches_each_connector_in_parallel(self, mock_search: MagicMock) -> None:
+        """Test that available_connectors triggers per-connector parallel searches."""
+        from stackone_ai.utility_tools import create_semantic_tool_search
+
+        def _search_side_effect(
+            query: str, connector: str | None = None, top_k: int | None = None
+        ) -> SemanticSearchResponse:
+            if connector == "bamboohr":
+                return SemanticSearchResponse(
+                    results=[
+                        SemanticSearchResult(
+                            action_name="bamboohr_create_employee",
+                            connector_key="bamboohr",
+                            similarity_score=0.95,
+                            label="Create Employee",
+                            description="Creates employee",
+                        ),
+                    ],
+                    total_count=1,
+                    query=query,
+                )
+            elif connector == "hibob":
+                return SemanticSearchResponse(
+                    results=[
+                        SemanticSearchResult(
+                            action_name="hibob_create_employee",
+                            connector_key="hibob",
+                            similarity_score=0.85,
+                            label="Create Employee",
+                            description="Creates employee",
+                        ),
+                    ],
+                    total_count=1,
+                    query=query,
+                )
+            return SemanticSearchResponse(results=[], total_count=0, query=query)
+
+        mock_search.side_effect = _search_side_effect
+
+        client = SemanticSearchClient(api_key="test-key")
+        tool = create_semantic_tool_search(client, available_connectors={"bamboohr", "hibob"})
+
+        result = tool.execute({"query": "create employee", "limit": 10})
+
+        # Should have searched each connector separately
+        assert mock_search.call_count == 2
+        called_connectors = {call.kwargs.get("connector") for call in mock_search.call_args_list}
+        assert called_connectors == {"bamboohr", "hibob"}
+
+        # Should return results from both connectors
+        assert len(result["tools"]) == 2
+        names = [t["name"] for t in result["tools"]]
+        assert "bamboohr_create_employee" in names
+        assert "hibob_create_employee" in names
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_scoped_agent_connector_intersects_with_available(self, mock_search: MagicMock) -> None:
+        """Test that agent's connector param is intersected with available_connectors."""
+        from stackone_ai.utility_tools import create_semantic_tool_search
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="bamboohr_create_employee",
+                    connector_key="bamboohr",
+                    similarity_score=0.95,
+                    label="Create Employee",
+                    description="Creates employee",
+                ),
+            ],
+            total_count=1,
+            query="create employee",
+        )
+
+        client = SemanticSearchClient(api_key="test-key")
+        tool = create_semantic_tool_search(client, available_connectors={"bamboohr", "hibob"})
+
+        # Agent requests connector="bamboohr" — should only search bamboohr
+        tool.execute({"query": "create employee", "connector": "bamboohr"})
+
+        assert mock_search.call_count == 1
+        assert mock_search.call_args.kwargs["connector"] == "bamboohr"
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_scoped_agent_connector_not_available_returns_empty(self, mock_search: MagicMock) -> None:
+        """Test that requesting an unavailable connector returns empty results."""
+        from stackone_ai.utility_tools import create_semantic_tool_search
+
+        client = SemanticSearchClient(api_key="test-key")
+        tool = create_semantic_tool_search(client, available_connectors={"bamboohr", "hibob"})
+
+        # Agent requests connector="workday" — not in available_connectors
+        result = tool.execute({"query": "create employee", "connector": "workday"})
+
+        # Should not call API at all
+        mock_search.assert_not_called()
+        assert result["tools"] == []
+
+    @patch.object(SemanticSearchClient, "search")
+    def test_no_connectors_queries_full_catalog(self, mock_search: MagicMock) -> None:
+        """Test that available_connectors=None preserves full catalog behavior (backwards compat)."""
+        from stackone_ai.utility_tools import create_semantic_tool_search
+
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    action_name="workday_create_worker",
+                    connector_key="workday",
+                    similarity_score=0.90,
+                    label="Create Worker",
+                    description="Creates worker",
+                ),
+            ],
+            total_count=1,
+            query="create employee",
+        )
+
+        client = SemanticSearchClient(api_key="test-key")
+        tool = create_semantic_tool_search(client)  # No available_connectors
+
+        result = tool.execute({"query": "create employee", "limit": 5})
+
+        # Should make a single call without connector scoping
+        mock_search.assert_called_once_with(
+            query="create employee",
+            connector=None,
+            top_k=5,
+        )
+        assert len(result["tools"]) == 1
+        assert result["tools"][0]["name"] == "workday_create_worker"
 
 
 class TestConnectorProperty:

@@ -52,8 +52,8 @@ loop. The agent searches for tools, inspects results, then calls
 passed, ``tool_search`` uses cloud-based semantic vectors instead of
 local BM25 + TF-IDF.
 
-Note: utility tool search queries the **full backend catalog** (all
-connectors), not just the ones in the user's linked accounts.
+When created via ``utility_tools()``, ``tool_search`` is automatically
+scoped to the user's linked connectors (extracted from the fetched tools).
 """
 
 from __future__ import annotations

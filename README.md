@@ -373,7 +373,7 @@ search_tool = utility.get_tool("tool_search")
 results = search_tool.call(query="onboard a new team member", limit=5)
 ```
 
-> `tool_search` queries the full backend catalog, so make sure `fetch_tools()` covers the actions you expect to discover.
+> `tool_search` is scoped to the connectors in your fetched tools, so only tools you can execute are returned.
 
 See [Semantic Search Example](examples/semantic_search_example.py) for complete patterns including OpenAI and LangChain integration.
 
