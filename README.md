@@ -328,54 +328,22 @@ result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
 
 ## Semantic Search
 
-Semantic search enables tool discovery using natural language instead of exact keyword matching. It understands intent and synonyms, so queries like "onboard new hire" or "check my to-do list" resolve to the right StackOne actions.
-
-**How it works:** Your query is matched against all StackOne actions using semantic vector search. Results are automatically filtered to only the connectors available in your linked accounts, so you only get tools you can actually use.
-
-### `search_tools()` — Recommended
-
-High-level method that returns a `Tools` collection ready for any framework:
+Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `hris_create_employee`.
 
 ```python
 from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 
-# Natural language search — no need to know exact tool names
-tools = toolset.search_tools("manage employee records", top_k=5)
+# Search by intent — returns Tools collection ready for any framework
+tools = toolset.search_tools("manage employee records", account_ids=["your-account-id"], top_k=5)
+openai_tools = tools.to_openai()
 
-# Use with any framework
-langchain_tools = tools.to_langchain()
-
-# Filter by connector
-tools = toolset.search_tools("create time off request", connector="bamboohr", top_k=3)
-```
-
-### `search_action_names()` — Lightweight
-
-Returns action names and similarity scores without fetching full tool definitions. Useful for inspecting results before committing:
-
-```python
+# Lightweight: inspect results without fetching full tool definitions
 results = toolset.search_action_names("time off requests", top_k=5)
-for r in results:
-    print(f"{r.action_name} ({r.connector_key}): {r.similarity_score:.2f}")
 ```
 
-### Utility Tools with Semantic Search
-
-For agent loops using `tool_search` / `tool_execute`, pass `semantic_client` to upgrade from local keyword matching to semantic search:
-
-```python
-tools = toolset.fetch_tools()
-utility = tools.utility_tools(semantic_client=toolset.semantic_client)
-
-search_tool = utility.get_tool("tool_search")
-results = search_tool.call(query="onboard a new team member", limit=5)
-```
-
-> `tool_search` is scoped to the connectors in your fetched tools, so only tools you can execute are returned.
-
-See [Semantic Search Example](examples/semantic_search_example.py) for complete patterns including OpenAI and LangChain integration.
+Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for utility tools integration, OpenAI, and LangChain patterns.
 
 ## Examples
 
