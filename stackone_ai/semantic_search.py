@@ -79,6 +79,7 @@ class SemanticSearchResult(BaseModel):
     similarity_score: float
     label: str
     description: str
+    project_id: str = "global"
 
 
 class SemanticSearchResponse(BaseModel):
@@ -87,6 +88,8 @@ class SemanticSearchResponse(BaseModel):
     results: list[SemanticSearchResult]
     total_count: int
     query: str
+    connector_filter: str | None = None
+    project_filter: str | None = None
 
 
 class SemanticSearchClient:
@@ -129,6 +132,7 @@ class SemanticSearchClient:
         query: str,
         connector: str | None = None,
         top_k: int | None = None,
+        project_id: str | None = None,
     ) -> SemanticSearchResponse:
         """Search for relevant actions using semantic search.
 
@@ -136,6 +140,8 @@ class SemanticSearchClient:
             query: Natural language query describing what tools/actions you need
             connector: Optional connector/provider filter (e.g., "bamboohr", "slack")
             top_k: Maximum number of results to return. If not provided, uses the backend default.
+            project_id: Optional project scope (e.g., "103/dev-56501"). When provided,
+                results include both global actions and project-specific actions.
 
         Returns:
             SemanticSearchResponse containing matching actions with similarity scores
@@ -158,6 +164,8 @@ class SemanticSearchClient:
             payload["top_k"] = top_k
         if connector:
             payload["connector"] = connector
+        if project_id:
+            payload["project_id"] = project_id
 
         try:
             response = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
@@ -177,6 +185,7 @@ class SemanticSearchClient:
         connector: str | None = None,
         top_k: int | None = None,
         min_score: float = 0.0,
+        project_id: str | None = None,
     ) -> list[str]:
         """Convenience method returning just action names.
 
@@ -185,6 +194,7 @@ class SemanticSearchClient:
             connector: Optional connector/provider filter
             top_k: Maximum number of results. If not provided, uses the backend default.
             min_score: Minimum similarity score threshold (0-1)
+            project_id: Optional project scope for multi-tenant filtering
 
         Returns:
             List of action names sorted by relevance
@@ -196,5 +206,5 @@ class SemanticSearchClient:
                 min_score=0.5
             )
         """
-        response = self.search(query, connector, top_k)
+        response = self.search(query, connector, top_k, project_id)
         return [r.action_name for r in response.results if r.similarity_score >= min_score]
