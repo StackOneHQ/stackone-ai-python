@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from stackone_ai.constants import DEFAULT_HYBRID_ALPHA
 from stackone_ai.models import ExecuteConfig, JsonDict, StackOneTool, ToolParameters, Tools
-from stackone_ai.semantic_search import SemanticSearchClient, SemanticSearchResult
+from stackone_ai.semantic_search import SemanticSearchClient, SemanticSearchError, SemanticSearchResult
 from stackone_ai.utils.normalize import _normalize_action_name
 from stackone_ai.utils.tfidf_index import TfidfDocument, TfidfIndex
 
@@ -339,7 +339,7 @@ def create_semantic_tool_search(
 
         all_results: list[SemanticSearchResult] = []
 
-        if available_connectors is not None:
+        if available_connectors is not None and available_connectors:
             # Scoped search: query each connector in parallel
             if connector:
                 connectors_to_search = {connector.lower()} & available_connectors
@@ -357,7 +357,7 @@ def create_semantic_tool_search(
                         try:
                             resp = future.result()
                             all_results.extend(resp.results)
-                        except Exception:
+                        except SemanticSearchError:
                             pass  # Partial failures: skip failed connectors
         else:
             # No connector scoping: query full catalog (backwards compat)

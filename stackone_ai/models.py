@@ -596,7 +596,7 @@ class Tools:
             from stackone_ai.utility_tools import create_semantic_tool_search
 
             search_tool = create_semantic_tool_search(
-                semantic_client, available_connectors=self.get_connectors() or None
+                semantic_client, available_connectors=self.get_connectors()
             )
             execute_tool = create_tool_execute(self)
             return Tools([search_tool, execute_tool])

@@ -401,11 +401,10 @@ class StackOneToolSet:
             search_tool = utility.get_tool("tool_search")
 
             if search_tool:
-                fallback_limit = top_k * 3 if top_k is not None else 100
                 result = search_tool.execute(
                     {
                         "query": query,
-                        "limit": fallback_limit,
+                        "limit": top_k,
                         "minScore": min_score,
                     }
                 )
