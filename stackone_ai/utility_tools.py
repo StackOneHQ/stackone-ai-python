@@ -350,9 +350,7 @@ def create_semantic_tool_search(
                 max_workers = min(len(connectors_to_search), 10)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
-                        pool.submit(
-                            semantic_client.search, query=query, connector=c, top_k=limit
-                        ): c
+                        pool.submit(semantic_client.search, query=query, connector=c, top_k=limit): c
                         for c in connectors_to_search
                     }
                     for future in concurrent.futures.as_completed(futures):

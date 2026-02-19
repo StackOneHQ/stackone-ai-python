@@ -503,9 +503,7 @@ class TestSemanticSearchIntegration:
             utility = tools.utility_tools(semantic_client=mock_client)
             assert len(utility) == 2
             # Should pass available connectors from the tools collection
-            mock_create.assert_called_once_with(
-                mock_client, available_connectors={"test"}
-            )
+            mock_create.assert_called_once_with(mock_client, available_connectors={"test"})
 
 
 class TestSemanticToolSearch:
