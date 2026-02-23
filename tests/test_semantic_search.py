@@ -585,9 +585,7 @@ class TestSemanticToolSearch:
         assert len(result["tools"]) == 1
         assert result["tools"][0]["name"] == "high_score_action"
         # Verify min_similarity was passed to the search API
-        mock_search.assert_called_once_with(
-            query="test", connector=None, top_k=10, min_similarity=0.5
-        )
+        mock_search.assert_called_once_with(query="test", connector=None, top_k=10, min_similarity=0.5)
 
     @patch.object(SemanticSearchClient, "search")
     def test_semantic_tool_search_with_connector(self, mock_search: MagicMock) -> None:
