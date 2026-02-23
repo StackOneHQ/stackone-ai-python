@@ -85,12 +85,14 @@ class ToolIndex:
 
         # Create BM25 index
         self.bm25_retriever = bm25s.BM25()
-        corpus_tokens = bm25s.tokenize(corpus, stemmer=None, show_progress=False)  # ty: ignore[invalid-argument-type]
-        self.bm25_retriever.index(corpus_tokens)
+        if corpus:
+            corpus_tokens = bm25s.tokenize(corpus, stemmer=None, show_progress=False)  # ty: ignore[invalid-argument-type]
+            self.bm25_retriever.index(corpus_tokens)
 
         # Create TF-IDF index
         self.tfidf_index = TfidfIndex()
-        self.tfidf_index.build(tfidf_docs)
+        if tfidf_docs:
+            self.tfidf_index.build(tfidf_docs)
 
     def search(self, query: str, limit: int = 5, min_score: float = 0.0) -> list[ToolSearchResult]:
         """Search for relevant tools using hybrid BM25 + TF-IDF
@@ -103,6 +105,9 @@ class ToolIndex:
         Returns:
             List of search results sorted by relevance
         """
+        if not self.tools:
+            return []
+
         # Get more results initially to have better candidate pool for fusion
         fetch_limit = max(50, limit)
 
@@ -311,10 +316,12 @@ def create_semantic_tool_search(
                 "default": 5,
                 "nullable": True,
             },
-            "minScore": {
+            "minSimilarity": {
                 "type": "number",
-                "description": "Minimum similarity score (0-1) to filter results (default: 0.0)",
-                "default": 0.0,
+                "description": (
+                    "Minimum similarity score (0-1) to filter results. "
+                    "If not provided, the server uses its default."
+                ),
                 "nullable": True,
             },
             "connector": {
@@ -334,7 +341,7 @@ def create_semantic_tool_search(
 
         query = kwargs.get("query", "")
         limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
-        min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
+        min_similarity = float(kwargs["minSimilarity"]) if kwargs.get("minSimilarity") is not None else None
         connector = kwargs.get("connector")
 
         all_results: list[SemanticSearchResult] = []
@@ -350,7 +357,13 @@ def create_semantic_tool_search(
                 max_workers = min(len(connectors_to_search), 10)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
-                        pool.submit(semantic_client.search, query=query, connector=c, top_k=limit): c
+                        pool.submit(
+                            semantic_client.search,
+                            query=query,
+                            connector=c,
+                            top_k=limit,
+                            min_similarity=min_similarity,
+                        ): c
                         for c in connectors_to_search
                     }
                     for future in concurrent.futures.as_completed(futures):
@@ -365,26 +378,26 @@ def create_semantic_tool_search(
                 query=query,
                 connector=connector,
                 top_k=limit,
+                min_similarity=min_similarity,
             )
             all_results = list(response.results)
 
-        # Sort by score, deduplicate, filter by min_score, apply limit
+        # Sort by score, deduplicate, apply limit
         all_results.sort(key=lambda r: r.similarity_score, reverse=True)
         seen: set[str] = set()
         tools_data: list[dict[str, object]] = []
         for r in all_results:
-            if r.similarity_score >= min_score:
-                norm_name = _normalize_action_name(r.action_name)
-                if norm_name not in seen:
-                    seen.add(norm_name)
-                    tools_data.append(
-                        {
-                            "name": norm_name,
-                            "description": r.description,
-                            "score": r.similarity_score,
-                            "connector": r.connector_key,
-                        }
-                    )
+            norm_name = _normalize_action_name(r.action_name)
+            if norm_name not in seen:
+                seen.add(norm_name)
+                tools_data.append(
+                    {
+                        "name": norm_name,
+                        "description": r.description,
+                        "score": r.similarity_score,
+                        "connector": r.connector_key,
+                    }
+                )
 
         return {"tools": tools_data[:limit]}
 

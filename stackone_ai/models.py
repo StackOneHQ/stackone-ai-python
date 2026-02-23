@@ -561,7 +561,7 @@ class Tools:
         self,
         hybrid_alpha: float | None = None,
         semantic_client: SemanticSearchClient | None = None,
-    ) -> Tools:
+    ) -> UtilityTools:
         """Return utility tools for tool discovery and execution
 
         Utility tools enable dynamic tool discovery and execution based on natural language queries.
@@ -576,7 +576,7 @@ class Tools:
                 toolset.semantic_client to enable cloud-based semantic search.
 
         Returns:
-            Tools collection containing tool_search and tool_execute
+            UtilityTools collection with search_tool and execute_tool accessors
 
         Note:
             This feature is in beta and may change in future versions
@@ -586,9 +586,11 @@ class Tools:
             toolset = StackOneToolSet()
             tools = toolset.fetch_tools()
             utility = tools.utility_tools(semantic_client=toolset.semantic_client)
+            result = utility.search_tool.call(query="onboard new hire")
 
             # Local BM25+TF-IDF search (default, no semantic_client)
             utility = tools.utility_tools()
+            result = utility.search_tool.call(query="onboard new hire")
         """
         from stackone_ai.utility_tools import create_tool_execute
 
@@ -599,7 +601,7 @@ class Tools:
                 semantic_client, available_connectors=self.get_connectors()
             )
             execute_tool = create_tool_execute(self)
-            return Tools([search_tool, execute_tool])
+            return UtilityTools([search_tool, execute_tool])
 
         # Default: local BM25+TF-IDF search
         from stackone_ai.utility_tools import ToolIndex, create_tool_search
@@ -608,4 +610,38 @@ class Tools:
         filter_tool = create_tool_search(index)
         execute_tool = create_tool_execute(self)
 
-        return Tools([filter_tool, execute_tool])
+        return UtilityTools([filter_tool, execute_tool])
+
+
+class UtilityTools(Tools):
+    """Utility tools collection with typed accessors for search and execute tools."""
+
+    @property
+    def search_tool(self) -> StackOneTool:
+        """Get the tool_search utility tool.
+
+        Returns:
+            The tool_search tool for discovering relevant tools
+
+        Raises:
+            StackOneError: If tool_search is not found in the collection
+        """
+        tool = self.get_tool("tool_search")
+        if tool is None:
+            raise StackOneError("tool_search not found in this UtilityTools collection")
+        return tool
+
+    @property
+    def execute_tool(self) -> StackOneTool:
+        """Get the tool_execute utility tool.
+
+        Returns:
+            The tool_execute tool for running discovered tools
+
+        Raises:
+            StackOneError: If tool_execute is not found in the collection
+        """
+        tool = self.get_tool("tool_execute")
+        if tool is None:
+            raise StackOneError("tool_execute not found in this UtilityTools collection")
+        return tool

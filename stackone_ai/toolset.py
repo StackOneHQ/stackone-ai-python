@@ -296,7 +296,7 @@ class StackOneToolSet:
         *,
         connector: str | None = None,
         top_k: int | None = None,
-        min_score: float = 0.0,
+        min_similarity: float | None = None,
         account_ids: list[str] | None = None,
         fallback_to_local: bool = True,
     ) -> Tools:
@@ -311,7 +311,8 @@ class StackOneToolSet:
                 (e.g., "create employee", "send a message")
             connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
             top_k: Maximum number of tools to return. If None, uses the backend default.
-            min_score: Minimum similarity score threshold 0-1 (default: 0.0)
+            min_similarity: Minimum similarity score threshold 0-1. If not provided,
+                the server uses its default.
             account_ids: Optional account IDs (uses set_accounts() if not provided)
             fallback_to_local: If True, fall back to local BM25+TF-IDF search on API failure
 
@@ -325,11 +326,11 @@ class StackOneToolSet:
             # Basic semantic search
             tools = toolset.search_tools("manage employee records", top_k=5)
 
-            # Filter by connector
+            # Filter by connector with minimum similarity
             tools = toolset.search_tools(
                 "create time off request",
                 connector="bamboohr",
-                min_score=0.5
+                min_similarity=0.5
             )
 
             # With account filtering
@@ -356,8 +357,10 @@ class StackOneToolSet:
 
             # Step 3: Search each connector in parallel
             def _search_one(c: str) -> list[SemanticSearchResult]:
-                resp = self.semantic_client.search(query=query, connector=c, top_k=top_k)
-                return [r for r in resp.results if r.similarity_score >= min_score]
+                resp = self.semantic_client.search(
+                    query=query, connector=c, top_k=top_k, min_similarity=min_similarity
+                )
+                return list(resp.results)
 
             all_results: list[SemanticSearchResult] = []
             last_error: SemanticSearchError | None = None
@@ -401,13 +404,13 @@ class StackOneToolSet:
             search_tool = utility.get_tool("tool_search")
 
             if search_tool:
-                result = search_tool.execute(
-                    {
-                        "query": query,
-                        "limit": top_k,
-                        "minScore": min_score,
-                    }
-                )
+                fallback_params: dict[str, Any] = {
+                    "query": query,
+                    "limit": top_k,
+                }
+                if min_similarity is not None:
+                    fallback_params["minScore"] = min_similarity
+                result = search_tool.execute(fallback_params)
                 matched_names = [t["name"] for t in result.get("tools", [])]
                 # Filter by available connectors and preserve relevance order
                 tool_map = {t.name: t for t in all_tools}
@@ -428,7 +431,7 @@ class StackOneToolSet:
         connector: str | None = None,
         account_ids: list[str] | None = None,
         top_k: int | None = None,
-        min_score: float = 0.0,
+        min_similarity: float | None = None,
     ) -> list[SemanticSearchResult]:
         """Search for action names without fetching tools.
 
@@ -442,7 +445,8 @@ class StackOneToolSet:
                 available in those accounts (uses set_accounts() if not provided).
                 When provided, results are filtered to only matching connectors.
             top_k: Maximum number of results. If None, uses the backend default.
-            min_score: Minimum similarity score threshold 0-1 (default: 0.0)
+            min_similarity: Minimum similarity score threshold 0-1. If not provided,
+                the server uses its default.
 
         Returns:
             List of SemanticSearchResult with action names, scores, and metadata.
@@ -486,8 +490,10 @@ class StackOneToolSet:
 
                 def _search_one(c: str) -> list[SemanticSearchResult]:
                     try:
-                        resp = self.semantic_client.search(query=query, connector=c, top_k=top_k)
-                        return [r for r in resp.results if r.similarity_score >= min_score]
+                        resp = self.semantic_client.search(
+                            query=query, connector=c, top_k=top_k, min_similarity=min_similarity
+                        )
+                        return list(resp.results)
                     except SemanticSearchError:
                         return []
 
@@ -500,8 +506,10 @@ class StackOneToolSet:
                             all_results.extend(future.result())
             else:
                 # No account filtering — single global search
-                response = self.semantic_client.search(query=query, connector=connector, top_k=top_k)
-                all_results = [r for r in response.results if r.similarity_score >= min_score]
+                response = self.semantic_client.search(
+                    query=query, connector=connector, top_k=top_k, min_similarity=min_similarity
+                )
+                all_results = list(response.results)
 
         except SemanticSearchError as e:
             logger.warning("Semantic search failed: %s", e)

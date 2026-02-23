@@ -4,6 +4,16 @@ Example demonstrating utility tools for dynamic tool discovery and execution.
 
 Utility tools allow AI agents to search for relevant tools based on natural language queries
 and execute them dynamically without hardcoding tool names.
+
+Prerequisites:
+- STACKONE_API_KEY environment variable set
+- STACKONE_ACCOUNT_ID environment variable set (comma-separated for multiple)
+- At least one linked account in StackOne (this example uses BambooHR)
+
+This example is runnable with the following command:
+```bash
+uv run examples/utility_tools_example.py
+```
 """
 
 import os
@@ -15,6 +25,9 @@ from stackone_ai import StackOneToolSet
 # Load environment variables
 load_dotenv()
 
+# Read account IDs from environment — supports comma-separated values
+_account_ids = [aid.strip() for aid in os.getenv("STACKONE_ACCOUNT_ID", "").split(",") if aid.strip()]
+
 
 def example_utility_tools_basic():
     """Basic example of using utility tools for tool discovery"""
@@ -24,21 +37,22 @@ def example_utility_tools_basic():
     toolset = StackOneToolSet()
 
     # Get all available tools using MCP-backed fetch_tools()
-    all_tools = toolset.fetch_tools(actions=["bamboohr_*"])
-    print(f"Total BambooHR tools available: {len(all_tools)}")
+    all_tools = toolset.fetch_tools(account_ids=_account_ids)
+    print(f"Total tools available: {len(all_tools)}")
+
+    if not all_tools:
+        print("No tools found. Check your linked accounts.")
+        return
 
     # Get utility tools for dynamic discovery
     utility_tools = all_tools.utility_tools()
 
-    # Get the filter tool to search for relevant tools
-    filter_tool = utility_tools.get_tool("tool_search")
-    if filter_tool:
-        # Search for employee management tools
-        result = filter_tool.call(query="manage employees create update list", limit=5, minScore=0.0)
+    # Search for employee management tools
+    result = utility_tools.search_tool.call(query="manage employees create update list", limit=5)
 
-        print("Found relevant tools:")
-        for tool in result.get("tools", []):
-            print(f"  - {tool['name']} (score: {tool['score']:.2f}): {tool['description']}")
+    print("Found relevant tools:")
+    for tool in result.get("tools", []):
+        print(f"  - {tool['name']} (score: {tool['score']:.2f}): {tool['description']}")
 
     print()
 
@@ -51,31 +65,31 @@ def example_utility_tools_with_execution():
     toolset = StackOneToolSet()
 
     # Get all tools using MCP-backed fetch_tools()
-    all_tools = toolset.fetch_tools()
+    all_tools = toolset.fetch_tools(account_ids=_account_ids)
+
+    if not all_tools:
+        print("No tools found. Check your linked accounts.")
+        return
+
     utility_tools = all_tools.utility_tools()
 
     # Step 1: Search for relevant tools
-    filter_tool = utility_tools.get_tool("tool_search")
-    execute_tool = utility_tools.get_tool("tool_execute")
+    search_result = utility_tools.search_tool.call(query="list all employees", limit=1)
 
-    if filter_tool and execute_tool:
-        # Find tools for listing employees
-        search_result = filter_tool.call(query="list all employees", limit=1)
+    tools_found = search_result.get("tools", [])
+    if tools_found:
+        best_tool = tools_found[0]
+        print(f"Best matching tool: {best_tool['name']}")
+        print(f"Description: {best_tool['description']}")
+        print(f"Relevance score: {best_tool['score']:.2f}")
 
-        tools_found = search_result.get("tools", [])
-        if tools_found:
-            best_tool = tools_found[0]
-            print(f"Best matching tool: {best_tool['name']}")
-            print(f"Description: {best_tool['description']}")
-            print(f"Relevance score: {best_tool['score']:.2f}")
-
-            # Step 2: Execute the found tool
-            try:
-                print(f"\nExecuting {best_tool['name']}...")
-                result = execute_tool.call(toolName=best_tool["name"], params={"limit": 5})
-                print(f"Execution result: {result}")
-            except Exception as e:
-                print(f"Execution failed (expected in example): {e}")
+        # Step 2: Execute the found tool
+        try:
+            print(f"\nExecuting {best_tool['name']}...")
+            result = utility_tools.execute_tool.call(toolName=best_tool["name"], params={"limit": 5})
+            print(f"Execution result: {result}")
+        except Exception as e:
+            print(f"Execution failed (expected in example): {e}")
 
     print()
 
@@ -94,7 +108,7 @@ def example_with_openai():
         toolset = StackOneToolSet()
 
         # Get BambooHR tools and their utility tools using MCP-backed fetch_tools()
-        bamboohr_tools = toolset.fetch_tools(actions=["bamboohr_*"])
+        bamboohr_tools = toolset.fetch_tools(account_ids=_account_ids, actions=["bamboohr_*"])
         utility_tools = bamboohr_tools.utility_tools()
 
         # Convert to OpenAI format
@@ -142,7 +156,7 @@ def example_with_langchain():
         toolset = StackOneToolSet()
 
         # Get tools and convert to LangChain format using MCP-backed fetch_tools()
-        tools = toolset.fetch_tools(actions=["bamboohr_list_*"])
+        tools = toolset.fetch_tools(account_ids=_account_ids, actions=["bamboohr_list_*"])
         langchain_tools = tools.to_langchain()
 
         # Get utility tools as well
@@ -193,6 +207,15 @@ def main():
     print("StackOne AI SDK - Utility Tools Examples")
     print("=" * 60)
     print()
+
+    if not os.getenv("STACKONE_API_KEY"):
+        print("Set STACKONE_API_KEY to run these examples.")
+        return
+
+    if not _account_ids:
+        print("Set STACKONE_ACCOUNT_ID to run these examples.")
+        print("(Comma-separated for multiple accounts)")
+        return
 
     # Basic examples that work without external APIs
     example_utility_tools_basic()

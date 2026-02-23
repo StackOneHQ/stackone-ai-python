@@ -1,6 +1,6 @@
 """StackOne AI SDK"""
 
-from stackone_ai.models import StackOneTool, Tools
+from stackone_ai.models import StackOneTool, Tools, UtilityTools
 from stackone_ai.semantic_search import (
     SemanticSearchClient,
     SemanticSearchError,
@@ -13,6 +13,7 @@ __all__ = [
     "StackOneToolSet",
     "StackOneTool",
     "Tools",
+    "UtilityTools",
     # Semantic search
     "SemanticSearchClient",
     "SemanticSearchResult",

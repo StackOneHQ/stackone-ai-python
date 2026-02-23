@@ -133,6 +133,7 @@ class SemanticSearchClient:
         connector: str | None = None,
         top_k: int | None = None,
         project_id: str | None = None,
+        min_similarity: float | None = None,
     ) -> SemanticSearchResponse:
         """Search for relevant actions using semantic search.
 
@@ -142,6 +143,8 @@ class SemanticSearchClient:
             top_k: Maximum number of results to return. If not provided, uses the backend default.
             project_id: Optional project scope (e.g., "103/dev-56501"). When provided,
                 results include both global actions and project-specific actions.
+            min_similarity: Minimum similarity score threshold (0-1). If not provided,
+                the server uses its default (currently 0.4).
 
         Returns:
             SemanticSearchResponse containing matching actions with similarity scores
@@ -166,6 +169,8 @@ class SemanticSearchClient:
             payload["connector"] = connector
         if project_id:
             payload["project_id"] = project_id
+        if min_similarity is not None:
+            payload["min_similarity"] = min_similarity
 
         try:
             response = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
@@ -184,7 +189,7 @@ class SemanticSearchClient:
         query: str,
         connector: str | None = None,
         top_k: int | None = None,
-        min_score: float = 0.0,
+        min_similarity: float | None = None,
         project_id: str | None = None,
     ) -> list[str]:
         """Convenience method returning just action names.
@@ -193,7 +198,8 @@ class SemanticSearchClient:
             query: Natural language query
             connector: Optional connector/provider filter
             top_k: Maximum number of results. If not provided, uses the backend default.
-            min_score: Minimum similarity score threshold (0-1)
+            min_similarity: Minimum similarity score threshold (0-1). If not provided,
+                the server uses its default.
             project_id: Optional project scope for multi-tenant filtering
 
         Returns:
@@ -203,8 +209,8 @@ class SemanticSearchClient:
             action_names = client.search_action_names(
                 "create employee",
                 connector="bamboohr",
-                min_score=0.5
+                min_similarity=0.5
             )
         """
-        response = self.search(query, connector, top_k, project_id)
-        return [r.action_name for r in response.results if r.similarity_score >= min_score]
+        response = self.search(query, connector, top_k, project_id, min_similarity=min_similarity)
+        return [r.action_name for r in response.results]

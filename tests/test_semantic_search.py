@@ -212,16 +212,19 @@ class TestSemanticSearchClient:
 
         client = SemanticSearchClient(api_key="test-key")
 
-        # Without min_score filter
+        # Without min_similarity — returns all results
         names = client.search_action_names("create employee")
         assert len(names) == 2
         assert "bamboohr_create_employee" in names
         assert "hibob_create_employee" in names
 
-        # With min_score filter
-        names = client.search_action_names("create employee", min_score=0.5)
-        assert len(names) == 1
-        assert "bamboohr_create_employee" in names
+        # With min_similarity — passes threshold to server
+        names = client.search_action_names("create employee", min_similarity=0.5)
+        assert len(names) == 2  # Mock returns same data; filtering is server-side
+        # Verify min_similarity was sent in the request payload
+        last_call_kwargs = mock_post.call_args
+        payload = last_call_kwargs.kwargs.get("json") or last_call_kwargs[1].get("json")
+        assert payload["min_similarity"] == 0.5
 
 
 class TestSemanticSearchIntegration:
@@ -455,11 +458,17 @@ class TestSemanticSearchIntegration:
         )
 
         toolset = StackOneToolSet(api_key="test-key")
-        results = toolset.search_action_names("create employee", min_score=0.5)
+        results = toolset.search_action_names("create employee", min_similarity=0.5)
 
-        # Should filter by min_score and normalize action names
-        assert len(results) == 1
+        # min_similarity is passed to server; mock returns both results
+        # Verify results are normalized
+        assert len(results) == 2
         assert results[0].action_name == "bamboohr_create_employee"
+        assert results[1].action_name == "hibob_create_employee"
+        # Verify min_similarity was passed to the search call
+        mock_search.assert_called_with(
+            query="create employee", connector=None, top_k=None, min_similarity=0.5
+        )
 
     def test_utility_tools_semantic_search(self) -> None:
         """Test utility_tools with semantic search."""
@@ -550,8 +559,8 @@ class TestSemanticToolSearch:
         assert result["tools"][0]["connector"] == "bamboohr"
 
     @patch.object(SemanticSearchClient, "search")
-    def test_semantic_tool_search_with_min_score(self, mock_search: MagicMock) -> None:
-        """Test semantic tool search with min_score filter."""
+    def test_semantic_tool_search_with_min_similarity(self, mock_search: MagicMock) -> None:
+        """Test semantic tool search passes min_similarity to server."""
         from stackone_ai.utility_tools import create_semantic_tool_search
 
         mock_search.return_value = SemanticSearchResponse(
@@ -563,25 +572,22 @@ class TestSemanticToolSearch:
                     label="High Score",
                     description="High scoring action",
                 ),
-                SemanticSearchResult(
-                    action_name="low_score_action",
-                    connector_key="test",
-                    similarity_score=0.3,
-                    label="Low Score",
-                    description="Low scoring action",
-                ),
             ],
-            total_count=2,
+            total_count=1,
             query="test",
         )
 
         client = SemanticSearchClient(api_key="test-key")
         tool = create_semantic_tool_search(client)
 
-        result = tool.execute({"query": "test", "limit": 10, "minScore": 0.5})
+        result = tool.execute({"query": "test", "limit": 10, "minSimilarity": 0.5})
 
         assert len(result["tools"]) == 1
         assert result["tools"][0]["name"] == "high_score_action"
+        # Verify min_similarity was passed to the search API
+        mock_search.assert_called_once_with(
+            query="test", connector=None, top_k=10, min_similarity=0.5
+        )
 
     @patch.object(SemanticSearchClient, "search")
     def test_semantic_tool_search_with_connector(self, mock_search: MagicMock) -> None:
@@ -603,6 +609,7 @@ class TestSemanticToolSearch:
             query="create employee",
             connector="bamboohr",
             top_k=5,  # default limit
+            min_similarity=None,
         )
 
     def test_semantic_tool_search_has_correct_parameters(self) -> None:
@@ -618,7 +625,7 @@ class TestSemanticToolSearch:
         props = tool.parameters.properties
         assert "query" in props
         assert "limit" in props
-        assert "minScore" in props
+        assert "minSimilarity" in props
         assert "connector" in props
 
 
@@ -631,7 +638,10 @@ class TestSemanticToolSearchScoping:
         from stackone_ai.utility_tools import create_semantic_tool_search
 
         def _search_side_effect(
-            query: str, connector: str | None = None, top_k: int | None = None
+            query: str,
+            connector: str | None = None,
+            top_k: int | None = None,
+            min_similarity: float | None = None,
         ) -> SemanticSearchResponse:
             if connector == "bamboohr":
                 return SemanticSearchResponse(
@@ -753,6 +763,7 @@ class TestSemanticToolSearchScoping:
             query="create employee",
             connector=None,
             top_k=5,
+            min_similarity=None,
         )
         assert len(result["tools"]) == 1
         assert result["tools"][0]["name"] == "workday_create_worker"
@@ -866,7 +877,10 @@ class TestSearchActionNamesWithAccountIds:
         from stackone_ai.toolset import _McpToolDefinition
 
         def _search_side_effect(
-            query: str, connector: str | None = None, top_k: int | None = None
+            query: str,
+            connector: str | None = None,
+            top_k: int | None = None,
+            min_similarity: float | None = None,
         ) -> SemanticSearchResponse:
             if connector == "bamboohr":
                 return SemanticSearchResponse(
