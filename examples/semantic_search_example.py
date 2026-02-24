@@ -20,19 +20,25 @@ trade-off between speed, filtering, and completeness:
 1. search_tools(query)  — Full discovery (recommended for agent frameworks)
 
    This is the method you should use when integrating with OpenAI, LangChain,
-   CrewAI, or any other agent framework. It works in these steps:
+   CrewAI, or any other agent framework.
+
+   Recommended usage — pass ``connector`` to scope to a single provider:
+
+       tools = toolset.search_tools("book a meeting", connector="calendly")
+
+   This is faster and returns more relevant results than searching all
+   connectors. When the target provider is known, always pass ``connector``.
+
+   When ``connector`` is not specified, the SDK searches all connectors
+   available in the user's linked accounts in parallel:
 
    a) Fetch tools from the user's linked accounts via MCP
    b) Extract available connectors (e.g. {bamboohr, calendly})
-   c) Search EACH connector in parallel via the semantic search API
+   c) Search each connector in parallel via the semantic search API
    d) Collect results, sort by relevance score
    e) If top_k was specified, keep only the top K results
    f) Match results back to the fetched tool definitions
    g) Return a Tools collection sorted by relevance score
-
-   Tip: when you know which provider the user works with, pass
-   ``connector="calendly"`` to scope the search to a single connector —
-   this is faster and returns more relevant results.
 
    Key point: only the user's own connectors are searched — no wasted results
    from connectors the user doesn't have. When top_k is not specified, the
