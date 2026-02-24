@@ -469,7 +469,11 @@ class StackOneTool(BaseModel):
 class Tools:
     """Container for Tool instances with lookup capabilities"""
 
-    def __init__(self, tools: list[StackOneTool]) -> None:
+    def __init__(
+        self,
+        tools: list[StackOneTool],
+        _semantic_client: SemanticSearchClient | None = None,
+    ) -> None:
         """Initialize Tools container
 
         Args:
@@ -477,6 +481,7 @@ class Tools:
         """
         self.tools = tools
         self._tool_map = {tool.name: tool for tool in tools}
+        self._semantic_client = _semantic_client
 
     def __getitem__(self, index: int) -> StackOneTool:
         return self.tools[index]
@@ -559,58 +564,69 @@ class Tools:
 
     def utility_tools(
         self,
+        search_method: str = "bm25",
         hybrid_alpha: float | None = None,
-        semantic_client: SemanticSearchClient | None = None,
     ) -> UtilityTools:
         """Return utility tools for tool discovery and execution
 
         Utility tools enable dynamic tool discovery and execution based on natural language queries.
-        By default, uses local hybrid BM25 + TF-IDF search. When a semantic_client is provided,
-        uses cloud-based semantic search for higher accuracy on natural language queries.
+        Choose the search method via ``search_method``:
+
+        - ``"bm25"`` (default) — local hybrid BM25 + TF-IDF search, no network calls.
+        - ``"semantic"`` — cloud-based semantic vector search for higher accuracy on
+          natural language queries. Requires tools fetched via ``StackOneToolSet``.
 
         Args:
+            search_method: Search backend to use. ``"bm25"`` for local search,
+                ``"semantic"`` for cloud-based semantic search.
             hybrid_alpha: Weight for BM25 in hybrid search (0-1). Only used when
-                semantic_client is not provided. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2),
-                which gives more weight to BM25 scoring.
-            semantic_client: Optional SemanticSearchClient instance. Pass
-                toolset.semantic_client to enable cloud-based semantic search.
+                search_method is ``"bm25"``. If not provided, uses DEFAULT_HYBRID_ALPHA (0.2).
 
         Returns:
             UtilityTools collection with search_tool and execute_tool accessors
+
+        Raises:
+            StackOneError: If ``search_method="semantic"`` but tools were not created
+                via ``StackOneToolSet`` (no semantic client available).
+            ValueError: If ``search_method`` is not ``"bm25"`` or ``"semantic"``.
 
         Note:
             This feature is in beta and may change in future versions
 
         Example:
-            # Semantic search (pass semantic_client explicitly)
+            # Semantic search
             toolset = StackOneToolSet()
             tools = toolset.fetch_tools()
-            utility = tools.utility_tools(semantic_client=toolset.semantic_client)
+            utility = tools.utility_tools(search_method="semantic")
             result = utility.search_tool.call(query="onboard new hire")
 
-            # Local BM25+TF-IDF search (default, no semantic_client)
+            # Local BM25+TF-IDF search (default)
             utility = tools.utility_tools()
             result = utility.search_tool.call(query="onboard new hire")
         """
         from stackone_ai.utility_tools import create_tool_execute
 
-        if semantic_client is not None:
+        if search_method == "semantic":
+            if self._semantic_client is None:
+                raise StackOneError(
+                    "Semantic search requires tools fetched via StackOneToolSet. "
+                    "Use toolset.fetch_tools() or toolset.search_tools() first."
+                )
             from stackone_ai.utility_tools import create_semantic_tool_search
 
             search_tool = create_semantic_tool_search(
-                semantic_client, available_connectors=self.get_connectors()
+                self._semantic_client, available_connectors=self.get_connectors()
             )
-            execute_tool = create_tool_execute(self)
-            return UtilityTools([search_tool, execute_tool])
+        elif search_method == "bm25":
+            from stackone_ai.utility_tools import ToolIndex, create_tool_search
 
-        # Default: local BM25+TF-IDF search
-        from stackone_ai.utility_tools import ToolIndex, create_tool_search
+            index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
+            search_tool = create_tool_search(index)
+        else:
+            raise ValueError(f"Unknown search_method: {search_method!r}. Use 'bm25' or 'semantic'.")
 
-        index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
-        filter_tool = create_tool_search(index)
         execute_tool = create_tool_execute(self)
-
-        return UtilityTools([filter_tool, execute_tool])
+        return UtilityTools([search_tool, execute_tool])
 
 
 class UtilityTools(Tools):

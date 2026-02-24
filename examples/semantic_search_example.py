@@ -30,6 +30,10 @@ trade-off between speed, filtering, and completeness:
    f) Match results back to the fetched tool definitions
    g) Return a Tools collection sorted by relevance score
 
+   Tip: when you know which provider the user works with, pass
+   ``connector="calendly"`` to scope the search to a single connector —
+   this is faster and returns more relevant results.
+
    Key point: only the user's own connectors are searched — no wasted results
    from connectors the user doesn't have. When top_k is not specified, the
    backend decides how many results to return per connector. If the semantic
@@ -46,11 +50,11 @@ trade-off between speed, filtering, and completeness:
 3. utility_tools()  — Agent-loop pattern
 
    Creates tool_search and tool_execute utility tools that agents can call
-   inside an agentic loop. Pass semantic_client=toolset.semantic_client to
-   enable cloud-based semantic search; without it, local BM25+TF-IDF is
-   used. When created via utility_tools(), tool_search is automatically
-   scoped to the user's linked connectors. The agent searches, inspects,
-   and executes tools dynamically.
+   inside an agentic loop. Pass search_method="semantic" to enable
+   cloud-based semantic search; without it, local BM25+TF-IDF is used.
+   When created via utility_tools(), tool_search is automatically scoped
+   to the user's linked connectors. The agent searches, inspects, and
+   executes tools dynamically.
 
 
 This example is runnable with the following command:
@@ -69,11 +73,14 @@ Note: search_action_names() works with just STACKONE_API_KEY — no account ID n
 import logging
 import os
 
-from dotenv import load_dotenv
-
 from stackone_ai import StackOneToolSet
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
 
 # Show SDK warnings (e.g., semantic search fallback to local search)
 logging.basicConfig(level=logging.WARNING)
@@ -203,9 +210,9 @@ def example_search_tools_with_connector():
 def example_utility_tools_semantic():
     """Using utility tools with semantic search for agent loops.
 
-    Pass semantic_client=toolset.semantic_client to utility_tools() to enable
-    cloud-based semantic search. Without it, utility_tools() uses local
-    BM25+TF-IDF search instead.
+    Pass search_method="semantic" to utility_tools() to enable cloud-based
+    semantic search. Without it, utility_tools() uses local BM25+TF-IDF
+    search instead.
 
     When created via utility_tools(), tool_search is automatically scoped to
     the connectors available in your fetched tools collection.
@@ -223,8 +230,8 @@ def example_utility_tools_semantic():
     print()
 
     print("Step 2: Creating utility tools with semantic search enabled...")
-    print("  Pass semantic_client=toolset.semantic_client to enable semantic search.")
-    utility = tools.utility_tools(semantic_client=toolset.semantic_client)
+    print('  Pass search_method="semantic" to enable cloud-based semantic search.')
+    utility = tools.utility_tools(search_method="semantic")
 
     query = "cancel an event or meeting"
     print()

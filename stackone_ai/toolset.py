@@ -344,14 +344,14 @@ class StackOneToolSet:
         available_connectors = all_tools.get_connectors()
 
         if not available_connectors:
-            return Tools([])
+            return Tools([], _semantic_client=self._semantic_client)
 
         try:
             # Step 2: Determine which connectors to search
             if connector:
                 connectors_to_search = {connector.lower()} & available_connectors
                 if not connectors_to_search:
-                    return Tools([])
+                    return Tools([], _semantic_client=self._semantic_client)
             else:
                 connectors_to_search = available_connectors
 
@@ -383,7 +383,7 @@ class StackOneToolSet:
                 all_results = all_results[:top_k]
 
             if not all_results:
-                return Tools([])
+                return Tools([], _semantic_client=self._semantic_client)
 
             # Step 5: Match back to fetched tool definitions
             action_names = {_normalize_action_name(r.action_name) for r in all_results}
@@ -393,7 +393,7 @@ class StackOneToolSet:
             action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(all_results)}
             matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
 
-            return Tools(matched_tools)
+            return Tools(matched_tools, _semantic_client=self._semantic_client)
 
         except SemanticSearchError as e:
             if not fallback_to_local:
@@ -420,7 +420,10 @@ class StackOneToolSet:
                     for name in matched_names
                     if name in tool_map and name.split("_")[0].lower() in filter_connectors
                 ]
-                return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
+                return Tools(
+                    matched_tools[:top_k] if top_k is not None else matched_tools,
+                    _semantic_client=self._semantic_client,
+                )
 
             return all_tools
 
@@ -626,7 +629,7 @@ class StackOneToolSet:
             if actions:
                 all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
 
-            return Tools(all_tools)
+            return Tools(all_tools, _semantic_client=self.semantic_client)
 
         except ToolsetError:
             raise

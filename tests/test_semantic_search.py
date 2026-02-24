@@ -497,8 +497,9 @@ class TestSemanticSearchIntegration:
             utility = tools.utility_tools()
             assert len(utility) == 2  # tool_search + tool_execute
 
-        # With semantic search - presence of semantic_client enables it
+        # With semantic search - set _semantic_client and use search_method="semantic"
         mock_client = MagicMock(spec=SemanticSearchClient)
+        tools._semantic_client = mock_client
         with (
             patch("stackone_ai.utility_tools.create_semantic_tool_search") as mock_create,
             patch("stackone_ai.utility_tools.create_tool_execute") as mock_create_execute,
@@ -509,7 +510,7 @@ class TestSemanticSearchIntegration:
             mock_execute_tool.name = "tool_execute"
             mock_create.return_value = mock_search_tool
             mock_create_execute.return_value = mock_execute_tool
-            utility = tools.utility_tools(semantic_client=mock_client)
+            utility = tools.utility_tools(search_method="semantic")
             assert len(utility) == 2
             # Should pass available connectors from the tools collection
             mock_create.assert_called_once_with(mock_client, available_connectors={"test"})

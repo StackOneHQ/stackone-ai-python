@@ -18,12 +18,14 @@ uv run examples/utility_tools_example.py
 
 import os
 
-from dotenv import load_dotenv
-
 from stackone_ai import StackOneToolSet
 
-# Load environment variables
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
 
 # Read account IDs from environment — supports comma-separated values
 _account_ids = [aid.strip() for aid in os.getenv("STACKONE_ACCOUNT_ID", "").split(",") if aid.strip()]

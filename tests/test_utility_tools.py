@@ -239,36 +239,36 @@ class TestToolIndex:
 class TestToolSearch:
     """Test the tool_search functionality"""
 
-    def test_filter_tool_creation(self, sample_tools):
+    def test_search_tool_creation(self, sample_tools):
         """Test creating the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
+        search_tool = create_tool_search(index)
 
-        assert filter_tool.name == "tool_search"
-        assert "natural language query" in filter_tool.description.lower()
+        assert search_tool.name == "tool_search"
+        assert "natural language query" in search_tool.description.lower()
 
-    def test_filter_tool_execute_with_json_string(self, sample_tools):
+    def test_search_tool_execute_with_json_string(self, sample_tools):
         """Test executing the filter tool with JSON string input."""
         import json
 
         index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
+        search_tool = create_tool_search(index)
 
         # Execute with JSON string
         json_input = json.dumps({"query": "employee", "limit": 2, "minScore": 0.0})
-        result = filter_tool.execute(json_input)
+        result = search_tool.execute(json_input)
 
         assert "tools" in result
         assert isinstance(result["tools"], list)
         assert len(result["tools"]) <= 2
 
-    def test_filter_tool_execute(self, sample_tools):
+    def test_search_tool_execute(self, sample_tools):
         """Test executing the filter tool"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
+        search_tool = create_tool_search(index)
 
         # Execute with a query
-        result = filter_tool.execute(
+        result = search_tool.execute(
             {
                 "query": "manage employees",
                 "limit": 3,
@@ -287,13 +287,13 @@ class TestToolSearch:
             assert "description" in tool
             assert "score" in tool
 
-    def test_filter_tool_call(self, sample_tools):
+    def test_search_tool_call(self, sample_tools):
         """Test calling the filter tool with call method"""
         index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
+        search_tool = create_tool_search(index)
 
         # Call with kwargs
-        result = filter_tool.call(query="candidate", limit=2)
+        result = search_tool.call(query="candidate", limit=2)
 
         assert "tools" in result
         assert len(result["tools"]) <= 2
@@ -377,11 +377,11 @@ class TestToolsUtilityTools:
         utility_tools = tools_collection.utility_tools()
 
         # Get the filter tool
-        filter_tool = utility_tools.get_tool("tool_search")
-        assert filter_tool is not None
+        search_tool = utility_tools.get_tool("tool_search")
+        assert search_tool is not None
 
         # Search for tools
-        result = filter_tool.execute(
+        result = search_tool.execute(
             {
                 "query": "create employee",
                 "limit": 1,
@@ -482,13 +482,13 @@ class TestHybridSearch:
         # Create utility tools with custom alpha
         utility_tools = tools_collection.utility_tools(hybrid_alpha=0.3)
 
-        filter_tool = utility_tools.get_tool("tool_search")
-        assert filter_tool is not None
+        search_tool = utility_tools.get_tool("tool_search")
+        assert search_tool is not None
 
         # Check that description mentions the alpha value
-        assert "alpha=0.3" in filter_tool.description
+        assert "alpha=0.3" in search_tool.description
 
         # Test it works
-        result = filter_tool.execute({"query": "list employees", "limit": 3})
+        result = search_tool.execute({"query": "list employees", "limit": 3})
         assert "tools" in result
         assert len(result["tools"]) > 0
