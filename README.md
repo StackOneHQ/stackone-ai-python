@@ -318,10 +318,10 @@ tools = toolset.fetch_tools(actions=["hris_*"])
 utility_tools = tools.utility_tools()
 
 # Search for relevant tools using natural language
-results = utility_tools.search_tool.call(query="manage employees", limit=5)
+results = utility_tools.get_search_tool()(query="manage employees", top_k=5)
 
 # Execute discovered tools dynamically
-result = utility_tools.execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
+result = utility_tools.get_execute_tool()(toolName="hris_list_employees", params={"limit": 10})
 ```
 
 ## Semantic Search

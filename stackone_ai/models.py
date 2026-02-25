@@ -332,6 +332,13 @@ class StackOneTool(BaseModel):
 
         return self.execute(kwargs if kwargs else None)
 
+    def __call__(self, *args: Any, options: JsonDict | None = None, **kwargs: Any) -> JsonDict:
+        """Make the tool directly callable.
+
+        Alias for :meth:`call` so that ``tool(query="…")`` works.
+        """
+        return self.call(*args, options=options, **kwargs)
+
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format
 
@@ -598,11 +605,11 @@ class Tools:
             toolset = StackOneToolSet()
             tools = toolset.fetch_tools()
             utility = tools.utility_tools(search_method="semantic")
-            result = utility.search_tool.call(query="onboard new hire")
+            result = utility.get_search_tool()(query="onboard new hire")
 
             # Local BM25+TF-IDF search (default)
             utility = tools.utility_tools()
-            result = utility.search_tool.call(query="onboard new hire")
+            result = utility.get_search_tool()(query="onboard new hire")
         """
         from stackone_ai.utility_tools import create_tool_execute
 
@@ -632,8 +639,7 @@ class Tools:
 class UtilityTools(Tools):
     """Utility tools collection with typed accessors for search and execute tools."""
 
-    @property
-    def search_tool(self) -> StackOneTool:
+    def get_search_tool(self) -> StackOneTool:
         """Get the tool_search utility tool.
 
         Returns:
@@ -642,13 +648,12 @@ class UtilityTools(Tools):
         Raises:
             StackOneError: If tool_search is not found in the collection
         """
-        tool = self.get_tool("tool_search")
-        if tool is None:
-            raise StackOneError("tool_search not found in this UtilityTools collection")
-        return tool
+        for tool in self.tools:
+            if tool.name == "tool_search":
+                return tool
+        raise StackOneError("tool_search not found in this UtilityTools collection")
 
-    @property
-    def execute_tool(self) -> StackOneTool:
+    def get_execute_tool(self) -> StackOneTool:
         """Get the tool_execute utility tool.
 
         Returns:
@@ -657,7 +662,7 @@ class UtilityTools(Tools):
         Raises:
             StackOneError: If tool_execute is not found in the collection
         """
-        tool = self.get_tool("tool_execute")
-        if tool is None:
-            raise StackOneError("tool_execute not found in this UtilityTools collection")
-        return tool
+        for tool in self.tools:
+            if tool.name == "tool_execute":
+                return tool
+        raise StackOneError("tool_execute not found in this UtilityTools collection")

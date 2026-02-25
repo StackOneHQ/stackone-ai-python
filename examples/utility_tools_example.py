@@ -50,7 +50,7 @@ def example_utility_tools_basic():
     utility_tools = all_tools.utility_tools()
 
     # Search for employee management tools
-    result = utility_tools.search_tool.call(query="manage employees create update list", limit=5)
+    result = utility_tools.get_search_tool()(query="manage employees create update list", top_k=5)
 
     print("Found relevant tools:")
     for tool in result.get("tools", []):
@@ -76,7 +76,7 @@ def example_utility_tools_with_execution():
     utility_tools = all_tools.utility_tools()
 
     # Step 1: Search for relevant tools
-    search_result = utility_tools.search_tool.call(query="list all employees", limit=1)
+    search_result = utility_tools.get_search_tool()(query="list all employees", top_k=1)
 
     tools_found = search_result.get("tools", [])
     if tools_found:
@@ -88,7 +88,7 @@ def example_utility_tools_with_execution():
         # Step 2: Execute the found tool
         try:
             print(f"\nExecuting {best_tool['name']}...")
-            result = utility_tools.execute_tool.call(toolName=best_tool["name"], params={"limit": 5})
+            result = utility_tools.get_execute_tool()(toolName=best_tool["name"], params={"limit": 5})
             print(f"Execution result: {result}")
         except Exception as e:
             print(f"Execution failed (expected in example): {e}")

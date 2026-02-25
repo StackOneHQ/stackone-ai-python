@@ -406,10 +406,10 @@ class StackOneToolSet:
             if search_tool:
                 fallback_params: dict[str, Any] = {
                     "query": query,
-                    "limit": top_k,
+                    "top_k": top_k,
                 }
                 if min_similarity is not None:
-                    fallback_params["minScore"] = min_similarity
+                    fallback_params["min_score"] = min_similarity
                 result = search_tool.execute(fallback_params)
                 matched_names = [t["name"] for t in result.get("tools", [])]
                 # Filter by available connectors and preserve relevance order

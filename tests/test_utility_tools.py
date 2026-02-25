@@ -255,7 +255,7 @@ class TestToolSearch:
         search_tool = create_tool_search(index)
 
         # Execute with JSON string
-        json_input = json.dumps({"query": "employee", "limit": 2, "minScore": 0.0})
+        json_input = json.dumps({"query": "employee", "top_k": 2, "min_score": 0.0})
         result = search_tool.execute(json_input)
 
         assert "tools" in result
@@ -271,8 +271,8 @@ class TestToolSearch:
         result = search_tool.execute(
             {
                 "query": "manage employees",
-                "limit": 3,
-                "minScore": 0.0,
+                "top_k": 3,
+                "min_score": 0.0,
             }
         )
 
@@ -293,7 +293,7 @@ class TestToolSearch:
         search_tool = create_tool_search(index)
 
         # Call with kwargs
-        result = search_tool.call(query="candidate", limit=2)
+        result = search_tool.call(query="candidate", top_k=2)
 
         assert "tools" in result
         assert len(result["tools"]) <= 2
@@ -384,7 +384,7 @@ class TestToolsUtilityTools:
         result = search_tool.execute(
             {
                 "query": "create employee",
-                "limit": 1,
+                "top_k": 1,
             }
         )
 
@@ -489,6 +489,6 @@ class TestHybridSearch:
         assert "alpha=0.3" in search_tool.description
 
         # Test it works
-        result = search_tool.execute({"query": "list employees", "limit": 3})
+        result = search_tool.execute({"query": "list employees", "top_k": 3})
         assert "tools" in result
         assert len(result["tools"]) > 0

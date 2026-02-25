@@ -550,7 +550,7 @@ class TestSemanticToolSearch:
         client = SemanticSearchClient(api_key="test-key")
         tool = create_semantic_tool_search(client)
 
-        result = tool.execute({"query": "create employee", "limit": 5})
+        result = tool.execute({"query": "create employee", "top_k": 5})
 
         assert "tools" in result
         assert len(result["tools"]) == 1
@@ -581,7 +581,7 @@ class TestSemanticToolSearch:
         client = SemanticSearchClient(api_key="test-key")
         tool = create_semantic_tool_search(client)
 
-        result = tool.execute({"query": "test", "limit": 10, "minSimilarity": 0.5})
+        result = tool.execute({"query": "test", "top_k": 10, "min_similarity": 0.5})
 
         assert len(result["tools"]) == 1
         assert result["tools"][0]["name"] == "high_score_action"
@@ -623,8 +623,8 @@ class TestSemanticToolSearch:
 
         props = tool.parameters.properties
         assert "query" in props
-        assert "limit" in props
-        assert "minSimilarity" in props
+        assert "top_k" in props
+        assert "min_similarity" in props
         assert "connector" in props
 
 
@@ -677,7 +677,7 @@ class TestSemanticToolSearchScoping:
         client = SemanticSearchClient(api_key="test-key")
         tool = create_semantic_tool_search(client, available_connectors={"bamboohr", "hibob"})
 
-        result = tool.execute({"query": "create employee", "limit": 10})
+        result = tool.execute({"query": "create employee", "top_k": 10})
 
         # Should have searched each connector separately
         assert mock_search.call_count == 2
@@ -755,7 +755,7 @@ class TestSemanticToolSearchScoping:
         client = SemanticSearchClient(api_key="test-key")
         tool = create_semantic_tool_search(client)  # No available_connectors
 
-        result = tool.execute({"query": "create employee", "limit": 5})
+        result = tool.execute({"query": "create employee", "top_k": 5})
 
         # Should make a single call without connector scoping
         mock_search.assert_called_once_with(
@@ -1216,7 +1216,7 @@ class TestSemanticSearchDeduplication:
 
         client = SemanticSearchClient(api_key="test-key")
         tool = create_semantic_tool_search(client)
-        result = tool.execute({"query": "list employees", "limit": 10})
+        result = tool.execute({"query": "list employees", "top_k": 10})
 
         # Should deduplicate: only one result
         assert len(result["tools"]) == 1

@@ -244,7 +244,7 @@ def example_utility_tools_semantic():
     print(f'Step 3: Calling tool_search with query="{query}"...')
     print("  (Searches are scoped to your linked connectors)")
     print()
-    result = utility.search_tool.call(query=query, limit=5)
+    result = utility.get_search_tool()(query=query, top_k=5)
     tools_data = result.get("tools", [])
     print(f"tool_search returned {len(tools_data)} results:")
     for tool_info in tools_data:

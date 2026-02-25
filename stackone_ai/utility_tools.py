@@ -201,13 +201,13 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
                     '(e.g., "tools for managing employees", "create time off request")'
                 ),
             },
-            "limit": {
+            "top_k": {
                 "type": "number",
                 "description": "Maximum number of tools to return (default: 5)",
                 "default": 5,
                 "nullable": True,
             },
-            "minScore": {
+            "min_score": {
                 "type": "number",
                 "description": "Minimum relevance score (0-1) to filter results (default: 0.0)",
                 "default": 0.0,
@@ -225,11 +225,11 @@ def create_tool_search(index: ToolIndex) -> StackOneTool:
             kwargs = arguments or {}
 
         query = kwargs.get("query", "")
-        limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
-        min_score = float(kwargs["minScore"]) if kwargs.get("minScore") is not None else 0.0
+        top_k = int(kwargs["top_k"]) if kwargs.get("top_k") is not None else 5
+        min_score = float(kwargs["min_score"]) if kwargs.get("min_score") is not None else 0.0
 
         # Search for tools
-        results = index.search(query, limit, min_score)
+        results = index.search(query, top_k, min_score)
 
         # Format results
         tools_data = [
@@ -310,13 +310,13 @@ def create_semantic_tool_search(
                     '(e.g., "onboard a new team member", "request vacation days")'
                 ),
             },
-            "limit": {
+            "top_k": {
                 "type": "number",
                 "description": "Maximum number of tools to return (default: 5)",
                 "default": 5,
                 "nullable": True,
             },
-            "minSimilarity": {
+            "min_similarity": {
                 "type": "number",
                 "description": (
                     "Minimum similarity score (0-1) to filter results. "
@@ -340,8 +340,8 @@ def create_semantic_tool_search(
             kwargs = arguments or {}
 
         query = kwargs.get("query", "")
-        limit = int(kwargs["limit"]) if kwargs.get("limit") is not None else 5
-        min_similarity = float(kwargs["minSimilarity"]) if kwargs.get("minSimilarity") is not None else None
+        top_k = int(kwargs["top_k"]) if kwargs.get("top_k") is not None else 5
+        min_similarity = float(kwargs["min_similarity"]) if kwargs.get("min_similarity") is not None else None
         connector = kwargs.get("connector")
 
         all_results: list[SemanticSearchResult] = []
@@ -361,7 +361,7 @@ def create_semantic_tool_search(
                             semantic_client.search,
                             query=query,
                             connector=c,
-                            top_k=limit,
+                            top_k=top_k,
                             min_similarity=min_similarity,
                         ): c
                         for c in connectors_to_search
@@ -377,12 +377,12 @@ def create_semantic_tool_search(
             response = semantic_client.search(
                 query=query,
                 connector=connector,
-                top_k=limit,
+                top_k=top_k,
                 min_similarity=min_similarity,
             )
             all_results = list(response.results)
 
-        # Sort by score, deduplicate, apply limit
+        # Sort by score, deduplicate, apply top_k
         all_results.sort(key=lambda r: r.similarity_score, reverse=True)
         seen: set[str] = set()
         tools_data: list[dict[str, object]] = []
@@ -399,7 +399,7 @@ def create_semantic_tool_search(
                     }
                 )
 
-        return {"tools": tools_data[:limit]}
+        return {"tools": tools_data[:top_k]}
 
     execute_config = ExecuteConfig(
         name=name,
