@@ -346,7 +346,7 @@ def create_semantic_tool_search(
 
         all_results: list[SemanticSearchResult] = []
 
-        if available_connectors is not None and available_connectors:
+        if available_connectors is not None:
             # Scoped search: query each connector in parallel
             if connector:
                 connectors_to_search = {connector.lower()} & available_connectors
