@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Example demonstrating utility tools for dynamic tool discovery and execution.
+Example demonstrating dynamic tool discovery using search_tool.
 
-Utility tools allow AI agents to search for relevant tools based on natural language queries
-and execute them dynamically without hardcoding tool names.
+The search tool allows AI agents to discover relevant tools based on natural language
+queries without hardcoding tool names.
 
 Prerequisites:
 - STACKONE_API_KEY environment variable set
@@ -12,7 +12,7 @@ Prerequisites:
 
 This example is runnable with the following command:
 ```bash
-uv run examples/utility_tools_example.py
+uv run examples/search_tool_example.py
 ```
 """
 
@@ -31,8 +31,8 @@ except ModuleNotFoundError:
 _account_ids = [aid.strip() for aid in os.getenv("STACKONE_ACCOUNT_ID", "").split(",") if aid.strip()]
 
 
-def example_utility_tools_basic():
-    """Basic example of using utility tools for tool discovery"""
+def example_search_tool_basic():
+    """Basic example of using the search tool for tool discovery"""
     print("Example 1: Dynamic tool discovery\n")
 
     # Initialize StackOne toolset
@@ -46,20 +46,20 @@ def example_utility_tools_basic():
         print("No tools found. Check your linked accounts.")
         return
 
-    # Get utility tools for dynamic discovery
-    utility_tools = all_tools.utility_tools()
+    # Get a search tool for dynamic discovery
+    search_tool = toolset.get_search_tool()
 
-    # Search for employee management tools
-    result = utility_tools.get_search_tool()(query="manage employees create update list", top_k=5)
+    # Search for employee management tools — returns a Tools collection
+    tools = search_tool("manage employees create update list", top_k=5, account_ids=_account_ids)
 
-    print("Found relevant tools:")
-    for tool in result.get("tools", []):
-        print(f"  - {tool['name']} (score: {tool['score']:.2f}): {tool['description']}")
+    print(f"Found {len(tools)} relevant tools:")
+    for tool in tools:
+        print(f"  - {tool.name}: {tool.description}")
 
     print()
 
 
-def example_utility_tools_with_execution():
+def example_search_tool_with_execution():
     """Example of discovering and executing tools dynamically"""
     print("Example 2: Dynamic tool execution\n")
 
@@ -73,22 +73,20 @@ def example_utility_tools_with_execution():
         print("No tools found. Check your linked accounts.")
         return
 
-    utility_tools = all_tools.utility_tools()
+    search_tool = toolset.get_search_tool()
 
     # Step 1: Search for relevant tools
-    search_result = utility_tools.get_search_tool()(query="list all employees", top_k=1)
+    tools = search_tool("list all employees", top_k=1, account_ids=_account_ids)
 
-    tools_found = search_result.get("tools", [])
-    if tools_found:
-        best_tool = tools_found[0]
-        print(f"Best matching tool: {best_tool['name']}")
-        print(f"Description: {best_tool['description']}")
-        print(f"Relevance score: {best_tool['score']:.2f}")
+    if tools:
+        best_tool = tools[0]
+        print(f"Best matching tool: {best_tool.name}")
+        print(f"Description: {best_tool.description}")
 
-        # Step 2: Execute the found tool
+        # Step 2: Execute the found tool directly
         try:
-            print(f"\nExecuting {best_tool['name']}...")
-            result = utility_tools.get_execute_tool()(toolName=best_tool["name"], params={"limit": 5})
+            print(f"\nExecuting {best_tool.name}...")
+            result = best_tool(limit=5)
             print(f"Execution result: {result}")
         except Exception as e:
             print(f"Execution failed (expected in example): {e}")
@@ -97,8 +95,8 @@ def example_utility_tools_with_execution():
 
 
 def example_with_openai():
-    """Example of using utility tools with OpenAI"""
-    print("Example 3: Using utility tools with OpenAI\n")
+    """Example of using search tool with OpenAI"""
+    print("Example 3: Using search tool with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -109,20 +107,19 @@ def example_with_openai():
         # Initialize StackOne toolset
         toolset = StackOneToolSet()
 
-        # Get BambooHR tools and their utility tools using MCP-backed fetch_tools()
-        bamboohr_tools = toolset.fetch_tools(account_ids=_account_ids, actions=["bamboohr_*"])
-        utility_tools = bamboohr_tools.utility_tools()
+        # Search for BambooHR employee tools
+        tools = toolset.search_tools("manage employees", account_ids=_account_ids, top_k=5)
 
         # Convert to OpenAI format
-        openai_tools = utility_tools.to_openai()
+        openai_tools = tools.to_openai()
 
-        # Create a chat completion with utility tools
+        # Create a chat completion with discovered tools
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an HR assistant. Use tool_search to find appropriate tools, then tool_execute to execute them.",
+                    "content": "You are an HR assistant with access to employee management tools.",
                 },
                 {"role": "user", "content": "Can you help me find tools for managing employee records?"},
             ],
@@ -158,18 +155,11 @@ def example_with_langchain():
         toolset = StackOneToolSet()
 
         # Get tools and convert to LangChain format using MCP-backed fetch_tools()
-        tools = toolset.fetch_tools(account_ids=_account_ids, actions=["bamboohr_list_*"])
-        langchain_tools = tools.to_langchain()
+        tools = toolset.search_tools("list employees", account_ids=_account_ids, top_k=5)
+        langchain_tools = list(tools.to_langchain())
 
-        # Get utility tools as well
-        utility_tools = tools.utility_tools()
-        langchain_utility_tools = utility_tools.to_langchain()
-
-        # Combine all tools
-        all_langchain_tools = list(langchain_tools) + list(langchain_utility_tools)
-
-        print(f"Available tools for LangChain: {len(all_langchain_tools)}")
-        for tool in all_langchain_tools:
+        print(f"Available tools for LangChain: {len(langchain_tools)}")
+        for tool in langchain_tools:
             print(f"  - {tool.name}: {tool.description}")
 
         # Create LangChain agent
@@ -179,15 +169,15 @@ def example_with_langchain():
             [
                 (
                     "system",
-                    "You are an HR assistant. Use the utility tools to discover and execute relevant tools.",
+                    "You are an HR assistant. Use the available tools to help the user.",
                 ),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
             ]
         )
 
-        agent = create_tool_calling_agent(llm, all_langchain_tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=all_langchain_tools, verbose=True)
+        agent = create_tool_calling_agent(llm, langchain_tools, prompt)
+        agent_executor = AgentExecutor(agent=agent, tools=langchain_tools, verbose=True)
 
         # Run the agent
         result = agent_executor.invoke({"input": "Find tools that can list employee data"})
@@ -206,7 +196,7 @@ def example_with_langchain():
 def main():
     """Run all examples"""
     print("=" * 60)
-    print("StackOne AI SDK - Utility Tools Examples")
+    print("StackOne AI SDK - Search Tool Examples")
     print("=" * 60)
     print()
 
@@ -220,8 +210,8 @@ def main():
         return
 
     # Basic examples that work without external APIs
-    example_utility_tools_basic()
-    example_utility_tools_with_execution()
+    example_search_tool_basic()
+    example_search_tool_with_execution()
 
     # Examples that require OpenAI API
     if os.getenv("OPENAI_API_KEY"):

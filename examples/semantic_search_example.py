@@ -53,14 +53,11 @@ trade-off between speed, filtering, and completeness:
    inspecting results before committing to a full fetch. When account_ids are
    provided, each connector is searched in parallel (same as search_tools).
 
-3. utility_tools()  — Agent-loop pattern
+3. get_search_tool()  — Agent-loop pattern
 
-   Creates tool_search and tool_execute utility tools that agents can call
-   inside an agentic loop. Pass search_method="semantic" to enable
-   cloud-based semantic search; without it, local BM25+TF-IDF is used.
-   When created via utility_tools(), tool_search is automatically scoped
-   to the user's linked connectors. The agent searches, inspects, and
-   executes tools dynamically.
+   Returns a callable SearchTool that wraps search_tools(). Call it
+   with a natural language query to get a Tools collection back.
+   Designed for agent loops where the LLM decides what to search for.
 
 
 This example is runnable with the following command:
@@ -213,43 +210,38 @@ def example_search_tools_with_connector():
     print()
 
 
-def example_utility_tools_semantic():
-    """Using utility tools with semantic search for agent loops.
+def example_search_tool_agent_loop():
+    """Using get_search_tool() for agent loops.
 
-    Pass search_method="semantic" to utility_tools() to enable cloud-based
-    semantic search. Without it, utility_tools() uses local BM25+TF-IDF
-    search instead.
-
-    When created via utility_tools(), tool_search is automatically scoped to
-    the connectors available in your fetched tools collection.
+    get_search_tool() returns a callable that wraps search_tools().
+    Call it with a query to get a Tools collection back — designed
+    for agent loops where the LLM decides what to search for.
     """
     print("=" * 60)
-    print("Example 4: Utility tools with semantic search")
+    print("Example 4: Search tool for agent loops")
     print("=" * 60)
     print()
 
     toolset = StackOneToolSet()
 
     print("Step 1: Fetching tools from your linked accounts via MCP...")
-    tools = toolset.fetch_tools(account_ids=_account_ids)
-    print(f"Loaded {len(tools)} tools.")
+    all_tools = toolset.fetch_tools(account_ids=_account_ids)
+    print(f"Loaded {len(all_tools)} tools.")
     print()
 
-    print("Step 2: Creating utility tools with semantic search enabled...")
-    print('  Pass search_method="semantic" to enable cloud-based semantic search.')
-    utility = tools.utility_tools(search_method="semantic")
+    print("Step 2: Getting a callable search tool...")
+    search_tool = toolset.get_search_tool()
 
     query = "cancel an event or meeting"
     print()
-    print(f'Step 3: Calling tool_search with query="{query}"...')
+    print(f'Step 3: Calling search_tool("{query}")...')
     print("  (Searches are scoped to your linked connectors)")
     print()
-    result = utility.get_search_tool()(query=query, top_k=5)
-    tools_data = result.get("tools", [])
-    print(f"tool_search returned {len(tools_data)} results:")
-    for tool_info in tools_data:
-        print(f"  [{tool_info['score']:.2f}] {tool_info['name']}")
-        print(f"         {tool_info['description']}")
+    tools = search_tool(query, top_k=5, account_ids=_account_ids)
+    print(f"search_tool returned {len(tools)} tools:")
+    for tool in tools:
+        print(f"  - {tool.name}")
+        print(f"    {tool.description}")
 
     print()
 
@@ -409,7 +401,7 @@ def main():
 
     example_search_tools()
     example_search_tools_with_connector()
-    example_utility_tools_semantic()
+    example_search_tool_agent_loop()
 
     # Framework integration patterns
     example_openai_agent_loop()

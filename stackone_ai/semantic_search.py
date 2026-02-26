@@ -43,17 +43,12 @@ parallel (same as ``search_tools``). Without ``account_ids``, results
 come from the full StackOne catalog.
 
 
-3. ``utility_tools(semantic_client=...)`` — Agent-loop search + execute
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+3. ``toolset.get_search_tool()`` — Agent-loop callable
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Creates a ``tool_search`` utility tool that agents can call inside a
-loop. The agent searches for tools, inspects results, then calls
-``tool_execute`` to run the chosen tool. When ``semantic_client`` is
-passed, ``tool_search`` uses cloud-based semantic vectors instead of
-local BM25 + TF-IDF.
-
-When created via ``utility_tools()``, ``tool_search`` is automatically
-scoped to the user's linked connectors (extracted from the fetched tools).
+Returns a callable ``SearchTool`` that wraps ``search_tools()``.
+Call it with a natural language query to get a ``Tools`` collection
+back. Designed for agent loops where the LLM decides what to search for.
 """
 
 from __future__ import annotations

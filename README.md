@@ -306,22 +306,23 @@ result = feedback_tool.call(
 - "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
 - Only call the tool after the user explicitly agrees.
 
-## Utility Tools (Beta)
+## Search Tool
 
-Utility tools enable dynamic tool discovery and execution without hardcoding tool names.
+Search for tools using natural language queries. Works with both semantic (cloud) and local BM25+TF-IDF search.
 
 ### Basic Usage
 
 ```python
-# Get utility tools for dynamic discovery
-tools = toolset.fetch_tools(actions=["hris_*"])
-utility_tools = tools.utility_tools()
+# Get a callable search tool
+toolset = StackOneToolSet()
+all_tools = toolset.fetch_tools(account_ids=["your-account-id"])
+search_tool = toolset.get_search_tool()
 
-# Search for relevant tools using natural language
-results = utility_tools.get_search_tool()(query="manage employees", top_k=5)
+# Search for relevant tools — returns a Tools collection
+tools = search_tool("manage employees", top_k=5)
 
-# Execute discovered tools dynamically
-result = utility_tools.get_execute_tool()(toolName="hris_list_employees", params={"limit": 10})
+# Execute a discovered tool directly
+tools[0](limit=10)
 ```
 
 ## Semantic Search
@@ -352,7 +353,7 @@ For more examples, check out the [examples/](examples/) directory:
 - [OpenAI Integration](examples/openai_integration.py)
 - [LangChain Integration](examples/langchain_integration.py)
 - [CrewAI Integration](examples/crewai_integration.py)
-- [Utility Tools](examples/utility_tools_example.py)
+- [Search Tool](examples/search_tool_example.py)
 - [Semantic Search](examples/semantic_search_example.py)
 
 ## Development
