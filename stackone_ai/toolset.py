@@ -629,7 +629,7 @@ class StackOneToolSet:
             if actions:
                 all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
 
-            return Tools(all_tools, _semantic_client=self._semantic_client)
+            return Tools(all_tools, _semantic_client=self.semantic_client)
 
         except ToolsetError:
             raise
