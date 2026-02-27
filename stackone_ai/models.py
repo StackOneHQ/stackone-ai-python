@@ -564,4 +564,3 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
-

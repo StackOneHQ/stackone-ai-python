@@ -902,4 +902,3 @@ class TestSemanticSearchDeduplication:
         # Sorted by score descending
         assert results[0].similarity_score == 0.95
         assert results[1].similarity_score == 0.90
-
