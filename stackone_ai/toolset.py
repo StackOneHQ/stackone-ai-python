@@ -287,6 +287,7 @@ class StackOneToolSet:
         api_key: str | None = None,
         account_id: str | None = None,
         base_url: str | None = None,
+        semantic_client: SemanticSearchClient | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -294,6 +295,8 @@ class StackOneToolSet:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
             base_url: Optional base URL override for API requests
+            semantic_client: Optional pre-configured SemanticSearchClient instance.
+                If not provided, one will be created lazily using api_key and base_url.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -308,7 +311,7 @@ class StackOneToolSet:
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
-        self._semantic_client: SemanticSearchClient | None = None
+        self._semantic_client: SemanticSearchClient | None = semantic_client
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
