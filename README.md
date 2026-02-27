@@ -20,7 +20,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Provider and action filtering
   - Multi-account support
 - **Semantic Search**: AI-powered tool discovery using natural language queries
-- **Utility Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- **Search Tool**: Callable tool discovery for agent loops via `get_search_tool()`
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools

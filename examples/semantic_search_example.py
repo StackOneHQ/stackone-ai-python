@@ -394,7 +394,7 @@ def main():
         print("examples that fetch full tool definitions from your linked accounts:")
         print("  - search_tools() with natural language queries")
         print("  - search_tools() with connector filter")
-        print("  - Utility tools with semantic search")
+        print("  - Search tool for agent loops")
         print("  - OpenAI agent loop")
         print("  - LangChain integration")
         return
