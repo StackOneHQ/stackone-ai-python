@@ -102,7 +102,7 @@ def example_search_modes():
 
 def example_search_tool_with_execution():
     """Example of discovering and executing tools dynamically"""
-    print("Example 2: Dynamic tool execution\n")
+    print("Example 3: Dynamic tool execution\n")
 
     # Initialize toolset
     toolset = StackOneToolSet()
@@ -137,7 +137,7 @@ def example_search_tool_with_execution():
 
 def example_with_openai():
     """Example of using search tool with OpenAI"""
-    print("Example 3: Using search tool with OpenAI\n")
+    print("Example 4: Using search tool with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -185,7 +185,7 @@ def example_with_openai():
 
 def example_with_langchain():
     """Example of using tools with LangChain"""
-    print("Example 4: Using tools with LangChain\n")
+    print("Example 5: Using tools with LangChain\n")
 
     try:
         from langchain.agents import AgentExecutor, create_tool_calling_agent

@@ -243,9 +243,8 @@ class SearchTool:
     Example::
 
         toolset = StackOneToolSet()
-        all_tools = toolset.fetch_tools(account_ids=["acc-123"])
         search_tool = toolset.get_search_tool()
-        tools = search_tool("manage employee records")  # returns Tools
+        tools = search_tool("manage employee records", account_ids=["acc-123"])
     """
 
     def __init__(self, toolset: StackOneToolSet, search: SearchMode = "auto") -> None:
@@ -348,9 +347,8 @@ class StackOneToolSet:
         Example::
 
             toolset = StackOneToolSet()
-            all_tools = toolset.fetch_tools(account_ids=["acc-123"])
             search_tool = toolset.get_search_tool()
-            tools = search_tool("manage employee records")
+            tools = search_tool("manage employee records", account_ids=["acc-123"])
         """
         return SearchTool(self, search=search)
 

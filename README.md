@@ -357,7 +357,7 @@ tools = toolset.search_tools("manage employees", search="semantic")
 tools = toolset.search_tools("manage employees", search="local")
 ```
 
-Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for utility tools integration, OpenAI, and LangChain patterns.
+Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for `SearchTool` (`get_search_tool`) integration, OpenAI, and LangChain patterns.
 
 ## Examples
 

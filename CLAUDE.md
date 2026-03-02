@@ -51,17 +51,6 @@ StackOne AI SDK is a Python library that provides a unified interface for access
    - `Tools`: Container for managing multiple tools
    - Format converters for different AI frameworks
 
-3. **OpenAPI Parser** (`stackone_ai/specs/parser.py`): Spec conversion
-   - Converts OpenAPI specs to tool definitions
-   - Handles file upload detection (`format: binary` → `type: file`)
-   - Resolves schema references
-
-### OpenAPI Specifications
-
-All tool definitions are generated from OpenAPI specs in `stackone_ai/oas/`:
-
-- `core.json`, `ats.json`, `crm.json`, `documents.json`, `hris.json`, `iam.json`, `lms.json`, `marketing.json`
-
 ## Key Development Patterns
 
 ### Tool Filtering
