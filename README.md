@@ -59,10 +59,10 @@ toolset = StackOneToolSet()  # Uses STACKONE_API_KEY env var
 # Or explicitly: toolset = StackOneToolSet(api_key="your-api-key")
 
 # Get HRIS-related tools with glob patterns
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 
 # Use a specific tool with the call method
-employee_tool = tools.get_tool("hris_get_employee")
+employee_tool = tools.get_tool("bamboohr_get_employee")
 # Call with keyword arguments
 employee = employee_tool.call(id="employee-id")
 # Or with traditional execute method
@@ -108,9 +108,9 @@ tools = toolset.fetch_tools(providers=["hibob"])
 - **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
 - **`providers`**: Filter by provider names (e.g., `["hibob", "bamboohr"]`). Case-insensitive matching.
 - **`actions`**: Filter by action patterns with glob support:
-  - Exact match: `["hris_list_employees"]`
+  - Exact match: `["bamboohr_list_employees"]`
   - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
-  - Provider prefix: `["hris_*"]` matches all HRIS tools
+  - Provider prefix: `["bamboohr_*"]` matches all BambooHR tools
 
 ## Implicit Feedback (Beta)
 
@@ -170,7 +170,7 @@ from stackone_ai import StackOneToolSet
 
 # Initialize StackOne tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 
 # Convert to LangChain format
 langchain_tools = tools.to_langchain()
@@ -217,7 +217,7 @@ from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_too
 
 # Prepare tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 langchain_tools = tools.to_langchain()
 
 class State(TypedDict):
@@ -255,7 +255,7 @@ from stackone_ai import StackOneToolSet
 
 # Get tools and convert to LangChain format
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 langchain_tools = tools.to_langchain()
 
 # Create CrewAI agent with StackOne tools
@@ -297,7 +297,7 @@ feedback_tool = tools.get_tool("tool_feedback")
 result = feedback_tool.call(
     feedback="The HRIS tools are working great! Very fast response times.",
     account_id="acc_123456",
-    tool_names=["hris_list_employees", "hris_get_employee"]
+    tool_names=["bamboohr_list_employees", "bamboohr_get_employee"]
 )
 ```
 
@@ -327,7 +327,7 @@ tools[0](limit=10)
 
 ## Semantic Search
 
-Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `hris_create_employee`.
+Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `bamboohr_create_employee`.
 
 ```python
 from stackone_ai import StackOneToolSet

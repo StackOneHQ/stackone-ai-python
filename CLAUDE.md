@@ -68,7 +68,7 @@ All tool definitions are generated from OpenAPI specs in `stackone_ai/oas/`:
 
 ```python
 # Use glob patterns for tool selection
-tools = StackOneToolSet(include_tools=["hris_*", "!hris_create_*"])
+tools = StackOneToolSet(include_tools=["bamboohr_*", "!bamboohr_create_*"])
 ```
 
 ### Authentication
