@@ -16,7 +16,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
 - **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
 - **Advanced Tool Filtering**:
-  - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
+  - Glob pattern filtering with patterns like `"salesforce_*"` and exclusions `"!*_delete_*"`
   - Provider and action filtering
   - Multi-account support
 - **Semantic Search**: AI-powered tool discovery using natural language queries
@@ -340,6 +340,21 @@ openai_tools = tools.to_openai()
 
 # Lightweight: inspect results without fetching full tool definitions
 results = toolset.search_action_names("time off requests", top_k=5)
+```
+
+### Search Modes
+
+Control which search backend `search_tools()` uses via the `search` parameter:
+
+```python
+# "auto" (default) — tries semantic search first, falls back to local
+tools = toolset.search_tools("manage employees", search="auto")
+
+# "semantic" — semantic API only, raises if unavailable
+tools = toolset.search_tools("manage employees", search="semantic")
+
+# "local" — local BM25+TF-IDF only, no semantic API call
+tools = toolset.search_tools("manage employees", search="local")
 ```
 
 Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for utility tools integration, OpenAI, and LangChain patterns.
