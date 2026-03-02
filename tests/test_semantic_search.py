@@ -352,7 +352,7 @@ class TestSemanticSearchIntegration:
         ]
 
         toolset = StackOneToolSet(api_key="test-key")
-        tools = toolset.search_tools("create employee", top_k=5, fallback_to_local=True)
+        tools = toolset.search_tools("create employee", top_k=5, search="auto")
 
         # Should return results from the local BM25+TF-IDF fallback
         assert len(tools) > 0
@@ -394,7 +394,7 @@ class TestSemanticSearchIntegration:
         ]
 
         toolset = StackOneToolSet(api_key="test-key")
-        tools = toolset.search_tools("create employee", connector="bamboohr", fallback_to_local=True)
+        tools = toolset.search_tools("create employee", connector="bamboohr", search="auto")
 
         assert len(tools) > 0
         tool_names = [t.name for t in tools]
@@ -424,7 +424,7 @@ class TestSemanticSearchIntegration:
 
         toolset = StackOneToolSet(api_key="test-key")
         with pytest.raises(SemanticSearchError):
-            toolset.search_tools("create employee", fallback_to_local=False)
+            toolset.search_tools("create employee", search="semantic")
 
     @patch.object(SemanticSearchClient, "search")
     @patch("stackone_ai.toolset._fetch_mcp_tools")
@@ -481,6 +481,115 @@ class TestSemanticSearchIntegration:
         tools = Tools([tool])
 
         assert not hasattr(tools, "utility_tools")
+
+
+class TestSearchModes:
+    """Tests for the search parameter on search_tools()."""
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_local_mode_skips_semantic_api(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test search='local' uses BM25+TF-IDF without calling semantic API."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            _McpToolDefinition(
+                name="bamboohr_list_employees",
+                description="Lists all employees in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        tools = toolset.search_tools("create employee", top_k=5, search="local")
+
+        assert len(tools) > 0
+        mock_search.assert_not_called()
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_semantic_mode_raises_on_failure(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test search='semantic' raises SemanticSearchError on failure."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_search.side_effect = SemanticSearchError("API unavailable")
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        with pytest.raises(SemanticSearchError):
+            toolset.search_tools("create employee", search="semantic")
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_auto_mode_falls_back_to_local(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test search='auto' falls back to local on semantic failure."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_search.side_effect = SemanticSearchError("API unavailable")
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        tools = toolset.search_tools("create employee", top_k=5, search="auto")
+
+        assert len(tools) > 0
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_search_tool_passes_search_mode(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Test that get_search_tool(search='local') passes mode through."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_list_employees",
+                description="Lists employees in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key")
+        search_tool = toolset.get_search_tool(search="local")
+        tools = search_tool("list employees", top_k=5)
+
+        assert len(tools) > 0
+        mock_search.assert_not_called()
 
 
 class TestConnectorProperty:

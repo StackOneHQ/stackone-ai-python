@@ -27,7 +27,7 @@ suggesting tools the user cannot execute.
 
 If the semantic API is unavailable, the SDK falls back to a local
 BM25 + TF-IDF hybrid search over the fetched tools (unless
-``fallback_to_local=False``).
+``search="semantic"`` is specified).
 
 
 2. ``search_action_names(query)`` — Lightweight discovery

@@ -59,6 +59,47 @@ def example_search_tool_basic():
     print()
 
 
+def example_search_modes():
+    """Comparing semantic vs local search modes.
+
+    The search parameter controls which backend search_tools() uses:
+    - "semantic": cloud-based semantic vector search (higher accuracy for natural language)
+    - "local": local BM25+TF-IDF hybrid search (no network call to semantic API)
+    - "auto" (default): tries semantic first, falls back to local on failure
+    """
+    print("Example 2: Semantic vs local search modes\n")
+
+    toolset = StackOneToolSet()
+    query = "manage employee time off"
+
+    # Semantic search — uses StackOne's semantic search API
+    print('search="semantic": cloud-based semantic vector search')
+    try:
+        tools_semantic = toolset.search_tools(query, account_ids=_account_ids, top_k=5, search="semantic")
+        print(f"  Found {len(tools_semantic)} tools:")
+        for tool in tools_semantic:
+            print(f"    - {tool.name}")
+    except Exception as e:
+        print(f"  Semantic search unavailable: {e}")
+    print()
+
+    # Local search — BM25+TF-IDF, no semantic API call
+    print('search="local": local BM25+TF-IDF hybrid search')
+    tools_local = toolset.search_tools(query, account_ids=_account_ids, top_k=5, search="local")
+    print(f"  Found {len(tools_local)} tools:")
+    for tool in tools_local:
+        print(f"    - {tool.name}")
+    print()
+
+    # Auto (default) — tries semantic, falls back to local
+    print('search="auto" (default): semantic with local fallback')
+    tools_auto = toolset.search_tools(query, account_ids=_account_ids, top_k=5, search="auto")
+    print(f"  Found {len(tools_auto)} tools:")
+    for tool in tools_auto:
+        print(f"    - {tool.name}")
+    print()
+
+
 def example_search_tool_with_execution():
     """Example of discovering and executing tools dynamically"""
     print("Example 2: Dynamic tool execution\n")
@@ -211,6 +252,7 @@ def main():
 
     # Basic examples that work without external APIs
     example_search_tool_basic()
+    example_search_modes()
     example_search_tool_with_execution()
 
     # Examples that require OpenAI API

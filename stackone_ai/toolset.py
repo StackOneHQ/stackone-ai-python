@@ -11,7 +11,7 @@ import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from stackone_ai.models import (
     ExecuteConfig,
@@ -28,6 +28,8 @@ from stackone_ai.semantic_search import (
 from stackone_ai.utils.normalize import _normalize_action_name
 
 logger = logging.getLogger("stackone.tools")
+
+SearchMode = Literal["auto", "semantic", "local"]
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
@@ -246,8 +248,9 @@ class SearchTool:
         tools = search_tool("manage employee records")  # returns Tools
     """
 
-    def __init__(self, toolset: StackOneToolSet) -> None:
+    def __init__(self, toolset: StackOneToolSet, search: SearchMode = "auto") -> None:
         self._toolset = toolset
+        self._search = search
 
     def __call__(
         self,
@@ -257,6 +260,7 @@ class SearchTool:
         top_k: int | None = None,
         min_similarity: float | None = None,
         account_ids: list[str] | None = None,
+        search: SearchMode | None = None,
     ) -> Tools:
         """Search for tools using natural language.
 
@@ -266,6 +270,7 @@ class SearchTool:
             top_k: Maximum number of tools to return
             min_similarity: Minimum similarity score threshold 0-1
             account_ids: Optional account IDs (uses set_accounts() if not provided)
+            search: Override the default search mode for this call
 
         Returns:
             Tools collection with matched tools
@@ -276,6 +281,7 @@ class SearchTool:
             top_k=top_k,
             min_similarity=min_similarity,
             account_ids=account_ids,
+            search=search if search is not None else self._search,
         )
 
 
@@ -325,12 +331,16 @@ class StackOneToolSet:
         self._account_ids = account_ids
         return self
 
-    def get_search_tool(self) -> SearchTool:
+    def get_search_tool(self, *, search: SearchMode = "auto") -> SearchTool:
         """Get a callable search tool that returns Tools collections.
 
         Returns a callable that wraps :meth:`search_tools` for use in agent loops.
         The returned tool is directly callable: ``search_tool("query")`` returns
         :class:`Tools`.
+
+        Args:
+            search: Default search mode for the returned tool. Can be overridden
+                per-call. See :meth:`search_tools` for details.
 
         Returns:
             SearchTool instance
@@ -342,7 +352,7 @@ class StackOneToolSet:
             search_tool = toolset.get_search_tool()
             tools = search_tool("manage employee records")
         """
-        return SearchTool(self)
+        return SearchTool(self, search=search)
 
     @property
     def semantic_client(self) -> SemanticSearchClient:
@@ -358,6 +368,38 @@ class StackOneToolSet:
             )
         return self._semantic_client
 
+    def _local_search(
+        self,
+        query: str,
+        all_tools: Tools,
+        *,
+        connector: str | None = None,
+        top_k: int | None = None,
+        min_similarity: float | None = None,
+    ) -> Tools:
+        """Run local BM25+TF-IDF search over already-fetched tools."""
+        from stackone_ai.local_search import ToolIndex
+
+        available_connectors = all_tools.get_connectors()
+        if not available_connectors:
+            return Tools([])
+
+        index = ToolIndex(list(all_tools))
+        results = index.search(
+            query,
+            limit=top_k if top_k is not None else 5,
+            min_score=min_similarity if min_similarity is not None else 0.0,
+        )
+        matched_names = [r.name for r in results]
+        tool_map = {t.name: t for t in all_tools}
+        filter_connectors = {connector.lower()} if connector else available_connectors
+        matched_tools = [
+            tool_map[name]
+            for name in matched_names
+            if name in tool_map and name.split("_")[0].lower() in filter_connectors
+        ]
+        return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
+
     def search_tools(
         self,
         query: str,
@@ -366,13 +408,11 @@ class StackOneToolSet:
         top_k: int | None = None,
         min_similarity: float | None = None,
         account_ids: list[str] | None = None,
-        fallback_to_local: bool = True,
+        search: SearchMode = "auto",
     ) -> Tools:
-        """Search for and fetch tools using semantic search.
+        """Search for and fetch tools using semantic or local search.
 
-        This method uses the StackOne semantic search API to find relevant tools
-        based on natural language queries. It optimizes results by filtering to
-        only connectors available in linked accounts.
+        This method discovers relevant tools based on natural language queries.
 
         Args:
             query: Natural language description of needed functionality
@@ -382,30 +422,35 @@ class StackOneToolSet:
             min_similarity: Minimum similarity score threshold 0-1. If not provided,
                 the server uses its default.
             account_ids: Optional account IDs (uses set_accounts() if not provided)
-            fallback_to_local: If True, fall back to local BM25+TF-IDF search on API failure
+            search: Search backend to use:
+                - ``"auto"`` (default): try semantic search first, fall back to local
+                  BM25+TF-IDF if the API is unavailable.
+                - ``"semantic"``: use only the semantic search API; raises
+                  ``SemanticSearchError`` on failure.
+                - ``"local"``: use only local BM25+TF-IDF search (no API call to the
+                  semantic search endpoint).
 
         Returns:
-            Tools collection with semantically matched tools from linked accounts
+            Tools collection with matched tools from linked accounts
 
         Raises:
-            SemanticSearchError: If the API call fails and fallback_to_local is False
+            SemanticSearchError: If the API call fails and search is ``"semantic"``
 
         Examples:
-            # Basic semantic search
+            # Semantic search (default with local fallback)
             tools = toolset.search_tools("manage employee records", top_k=5)
 
-            # Filter by connector with minimum similarity
+            # Explicit semantic search
+            tools = toolset.search_tools("manage employees", search="semantic")
+
+            # Local BM25+TF-IDF search
+            tools = toolset.search_tools("manage employees", search="local")
+
+            # Filter by connector
             tools = toolset.search_tools(
                 "create time off request",
                 connector="bamboohr",
-                min_similarity=0.5
-            )
-
-            # With account filtering
-            tools = toolset.search_tools(
-                "send message",
-                account_ids=["acc-123"],
-                top_k=3
+                search="semantic",
             )
         """
         all_tools = self.fetch_tools(account_ids=account_ids)
@@ -414,8 +459,14 @@ class StackOneToolSet:
         if not available_connectors:
             return Tools([])
 
+        # Local-only search — skip semantic API entirely
+        if search == "local":
+            return self._local_search(
+                query, all_tools, connector=connector, top_k=top_k, min_similarity=min_similarity
+            )
+
         try:
-            # Step 2: Determine which connectors to search
+            # Determine which connectors to search
             if connector:
                 connectors_to_search = {connector.lower()} & available_connectors
                 if not connectors_to_search:
@@ -423,7 +474,7 @@ class StackOneToolSet:
             else:
                 connectors_to_search = available_connectors
 
-            # Step 3: Search each connector in parallel
+            # Search each connector in parallel
             def _search_one(c: str) -> list[SemanticSearchResult]:
                 resp = self.semantic_client.search(
                     query=query, connector=c, top_k=top_k, min_similarity=min_similarity
@@ -445,7 +496,7 @@ class StackOneToolSet:
             if not all_results and last_error is not None:
                 raise last_error
 
-            # Step 4: Sort by score, apply top_k
+            # Sort by score, apply top_k
             all_results.sort(key=lambda r: r.similarity_score, reverse=True)
             if top_k is not None:
                 all_results = all_results[:top_k]
@@ -453,7 +504,7 @@ class StackOneToolSet:
             if not all_results:
                 return Tools([])
 
-            # Step 5: Match back to fetched tool definitions
+            # Match back to fetched tool definitions
             action_names = {_normalize_action_name(r.action_name) for r in all_results}
             matched_tools = [t for t in all_tools if t.name in action_names]
 
@@ -464,28 +515,13 @@ class StackOneToolSet:
             return Tools(matched_tools)
 
         except SemanticSearchError as e:
-            if not fallback_to_local:
+            if search == "semantic":
                 raise
 
             logger.warning("Semantic search failed (%s), falling back to local BM25+TF-IDF search", e)
-
-            from stackone_ai.local_search import ToolIndex
-
-            index = ToolIndex(list(all_tools))
-            results = index.search(
-                query,
-                limit=top_k if top_k is not None else 5,
-                min_score=min_similarity if min_similarity is not None else 0.0,
+            return self._local_search(
+                query, all_tools, connector=connector, top_k=top_k, min_similarity=min_similarity
             )
-            matched_names = [r.name for r in results]
-            tool_map = {t.name: t for t in all_tools}
-            filter_connectors = {connector.lower()} if connector else available_connectors
-            matched_tools = [
-                tool_map[name]
-                for name in matched_names
-                if name in tool_map and name.split("_")[0].lower() in filter_connectors
-            ]
-            return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
 
     def search_action_names(
         self,
