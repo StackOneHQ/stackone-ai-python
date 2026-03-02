@@ -337,6 +337,33 @@ class StackOneTool(BaseModel):
         """
         return self.call(*args, options=options, **kwargs)
 
+    def _build_json_schema(self) -> JsonDict:
+        """Build a standard JSON Schema dict for this tool's parameters.
+
+        Computes ``required`` from ``nullable`` flags on each property
+        (same convention used by the MCP schema normaliser and the ADK plugin)
+        and strips the internal ``nullable`` key from the output.
+
+        Returns:
+            JSON Schema dict with ``type``, ``properties``, and optionally ``required``.
+        """
+        clean_properties: JsonDict = {}
+        required: list[str] = []
+
+        for name, prop in self.parameters.properties.items():
+            if isinstance(prop, dict):
+                clean_properties[name] = {k: v for k, v in prop.items() if k != "nullable"}
+                if not prop.get("nullable", False):
+                    required.append(name)
+            else:
+                clean_properties[name] = {"type": "string"}
+                required.append(name)
+
+        schema: JsonDict = {"type": self.parameters.type, "properties": clean_properties}
+        if required:
+            schema["required"] = required
+        return schema
+
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format
 
@@ -454,6 +481,79 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
+    def to_pydantic_ai(self) -> Any:
+        """Convert this tool to a native Pydantic AI Tool.
+
+        Returns a ``pydantic_ai.Tool`` created via ``Tool.from_schema()``
+        with the tool's JSON Schema and execution function.
+
+        Returns:
+            pydantic_ai.Tool instance
+
+        Raises:
+            ImportError: If pydantic-ai is not installed
+        """
+        try:
+            from pydantic_ai import Tool
+        except ImportError:
+            raise ImportError(
+                "pydantic-ai is required for to_pydantic_ai(). Install with: pip install pydantic-ai"
+            ) from None
+
+        return Tool.from_schema(
+            function=self.execute,
+            name=self.name,
+            description=self.description,
+            json_schema=self._build_json_schema(),
+        )
+
+    def to_adk(self) -> Any:
+        """Convert this tool to a native Google ADK BaseTool.
+
+        Returns an ADK ``BaseTool`` subclass that wraps this tool's
+        execution via ``run_async()`` and provides a ``FunctionDeclaration``
+        with the correct JSON Schema.
+
+        Returns:
+            google.adk.tools.BaseTool instance
+
+        Raises:
+            ImportError: If google-adk is not installed
+        """
+        try:
+            from google.adk.tools import BaseTool as AdkBaseTool
+            from google.adk.tools import ToolContext
+            from google.genai import types
+        except ImportError:
+            raise ImportError(
+                "google-adk is required for to_adk(). Install with: pip install google-adk"
+            ) from None
+
+        parent_tool = self
+        json_schema = self._build_json_schema()
+
+        class _StackOneAdkTool(AdkBaseTool):
+            def __init__(self) -> None:
+                super().__init__(name=parent_tool.name, description=parent_tool.description)
+
+            def _get_declaration(self) -> types.FunctionDeclaration:
+                if not json_schema.get("properties"):
+                    return types.FunctionDeclaration(name=self.name, description=self.description)
+                return types.FunctionDeclaration(
+                    name=self.name,
+                    description=self.description,
+                    parameters_json_schema=json_schema,
+                )
+
+            async def run_async(self, *, args: dict[str, Any], tool_context: ToolContext) -> Any:
+                import asyncio
+
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, parent_tool.execute, args)
+                return result if isinstance(result, dict) else {"result": result}
+
+        return _StackOneAdkTool()
+
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool
 
@@ -564,3 +664,25 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
+
+    def to_pydantic_ai(self) -> list[Any]:
+        """Convert all tools to native Pydantic AI Tools.
+
+        Returns:
+            List of pydantic_ai.Tool instances
+
+        Raises:
+            ImportError: If pydantic-ai is not installed
+        """
+        return [tool.to_pydantic_ai() for tool in self.tools]
+
+    def to_adk(self) -> list[Any]:
+        """Convert all tools to native Google ADK BaseTools.
+
+        Returns:
+            List of google.adk.tools.BaseTool instances
+
+        Raises:
+            ImportError: If google-adk is not installed
+        """
+        return [tool.to_adk() for tool in self.tools]

@@ -37,6 +37,8 @@ packages = ["stackone_ai"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.3.0"]
+pydantic-ai = ["pydantic-ai-slim>=1.63.0"]
+adk = ["google-adk>=1.26.0"]
 examples = [
   "crewai>=0.102.0",
   "langchain-openai>=0.3.6",
