@@ -63,8 +63,8 @@ def mcp_mock_server() -> Generator[str, None, None]:
     if not serve_script.exists():
         pytest.skip("MCP mock server script not found at tests/mocks/serve.ts")
 
-    if not vendor_dir.exists():
-        pytest.skip("stackone-ai-node submodule not found. Run 'git submodule update --init'")
+    if not (vendor_dir / "package.json").exists():
+        pytest.skip("stackone-ai-node submodule not initialized. Run 'git submodule update --init'")
 
     # find port
     port = _find_free_port()
@@ -85,10 +85,14 @@ def mcp_mock_server() -> Generator[str, None, None]:
     try:
         # Wait for server to start
         if not _wait_for_server("localhost", port, timeout=30.0):
-            stdout, stderr = process.communicate(timeout=5)
-            raise RuntimeError(
-                f"MCP mock server failed to start:\nstdout: {stdout.decode()}\nstderr: {stderr.decode()}"
-            )
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+                msg = f"MCP mock server failed to start:\nstdout: {stdout.decode()}\nstderr: {stderr.decode()}"
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+                msg = f"MCP mock server timed out:\nstdout: {stdout.decode()}\nstderr: {stderr.decode()}"
+            raise RuntimeError(msg)
 
         yield base_url
 
