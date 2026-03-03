@@ -11,6 +11,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.toolset import (
     StackOneToolSet,
     ToolsetConfigError,
@@ -173,7 +174,7 @@ class TestStackOneToolSetInit:
         toolset = StackOneToolSet(api_key="test_key")
         assert toolset.api_key == "test_key"
         assert toolset.account_id is None
-        assert toolset.base_url == "https://api.stackone.com"
+        assert toolset.base_url == DEFAULT_BASE_URL
 
     def test_init_with_env_api_key(self):
         """Test initialization with API key from environment."""

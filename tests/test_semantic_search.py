@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.semantic_search import (
     SemanticSearchClient,
     SemanticSearchError,
@@ -75,7 +76,7 @@ class TestSemanticSearchClient:
         client = SemanticSearchClient(api_key="test-key")
 
         assert client.api_key == "test-key"
-        assert client.base_url == "https://api.stackone.com"
+        assert client.base_url == DEFAULT_BASE_URL
         assert client.timeout == 30.0
 
     def test_init_custom_base_url(self) -> None:

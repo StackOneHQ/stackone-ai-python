@@ -59,6 +59,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from stackone_ai.constants import DEFAULT_BASE_URL
+
 
 class SemanticSearchError(Exception):
     """Raised when semantic search fails."""
@@ -103,7 +105,7 @@ class SemanticSearchClient:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://api.stackone.com",
+        base_url: str = DEFAULT_BASE_URL,
         timeout: float = 30.0,
     ) -> None:
         """Initialize the semantic search client.

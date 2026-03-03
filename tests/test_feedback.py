@@ -12,7 +12,9 @@ import respx
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.feedback import create_feedback_tool
+from tests.conftest import TEST_BASE_URL
 from stackone_ai.models import StackOneError
 
 # Hypothesis strategies for PBT
@@ -48,7 +50,7 @@ class TestFeedbackToolValidation:
 
     def test_missing_required_fields(self) -> None:
         """Test validation errors for missing required fields."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="account_id"):
             tool.execute({"feedback": "Great tools!", "tool_names": ["test_tool"]})
@@ -61,7 +63,7 @@ class TestFeedbackToolValidation:
 
     def test_empty_and_whitespace_validation(self) -> None:
         """Test validation for empty and whitespace-only strings."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="non-empty"):
             tool.execute({"feedback": "   ", "account_id": "acc_123456", "tool_names": ["test_tool"]})
@@ -77,7 +79,7 @@ class TestFeedbackToolValidation:
 
     def test_multiple_account_ids_validation(self) -> None:
         """Test validation with multiple account IDs."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="At least one account ID is required"):
             tool.execute({"feedback": "Great tools!", "account_id": [], "tool_names": ["test_tool"]})
@@ -87,7 +89,7 @@ class TestFeedbackToolValidation:
 
     def test_invalid_account_id_type(self) -> None:
         """Test validation with invalid account ID type (not string or list)."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         # Pydantic validates input types before our custom validator runs
         with pytest.raises(StackOneError, match="(account_id|Input should be a valid)"):
@@ -100,7 +102,7 @@ class TestFeedbackToolValidation:
 
     def test_invalid_json_input(self) -> None:
         """Test that invalid JSON input raises appropriate error."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="Invalid JSON"):
             tool.execute("not valid json {}")
@@ -112,7 +114,7 @@ class TestFeedbackToolValidation:
     @settings(max_examples=50)
     def test_whitespace_feedback_validation_pbt(self, whitespace: str) -> None:
         """PBT: Test validation for various whitespace patterns in feedback."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="non-empty"):
             tool.execute({"feedback": whitespace, "account_id": "acc_123456", "tool_names": ["test_tool"]})
@@ -121,7 +123,7 @@ class TestFeedbackToolValidation:
     @settings(max_examples=50)
     def test_whitespace_account_id_validation_pbt(self, whitespace: str) -> None:
         """PBT: Test validation for various whitespace patterns in account_id."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="non-empty"):
             tool.execute({"feedback": "Great!", "account_id": whitespace, "tool_names": ["test_tool"]})
@@ -130,7 +132,7 @@ class TestFeedbackToolValidation:
     @settings(max_examples=50)
     def test_whitespace_tool_names_validation_pbt(self, whitespace_list: list[str]) -> None:
         """PBT: Test validation for lists containing only whitespace tool names."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="At least one tool name"):
             tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": whitespace_list})
@@ -141,7 +143,7 @@ class TestFeedbackToolValidation:
     @settings(max_examples=50)
     def test_whitespace_account_ids_list_validation_pbt(self, whitespace_list: list[str]) -> None:
         """PBT: Test validation for lists containing only whitespace account IDs."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="At least one valid account ID is required"):
             tool.execute(
@@ -156,7 +158,7 @@ class TestFeedbackToolValidation:
     @settings(max_examples=50)
     def test_invalid_json_input_pbt(self, invalid_json: str) -> None:
         """PBT: Test that various invalid JSON inputs raise appropriate error."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         with pytest.raises(StackOneError, match="Invalid JSON"):
             tool.execute(invalid_json)
@@ -164,9 +166,9 @@ class TestFeedbackToolValidation:
     @respx.mock
     def test_json_string_input(self) -> None:
         """Test that JSON string input is properly parsed."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
-        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
             return_value=httpx.Response(200, json={"message": "Success"})
         )
 
@@ -185,10 +187,10 @@ class TestFeedbackToolExecution:
     @respx.mock
     def test_single_account_execution(self) -> None:
         """Test execution with single account ID."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
         api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
-        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
             return_value=httpx.Response(200, json=api_response)
         )
 
@@ -213,10 +215,10 @@ class TestFeedbackToolExecution:
     @respx.mock
     def test_call_method_interface(self) -> None:
         """Test that the .call() method works correctly."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
         api_response = {"message": "Success", "trace_id": "test-trace-id"}
 
-        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
             return_value=httpx.Response(200, json=api_response)
         )
 
@@ -234,9 +236,9 @@ class TestFeedbackToolExecution:
     @respx.mock
     def test_api_error_handling(self) -> None:
         """Test that API errors are handled properly."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
-        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
             return_value=httpx.Response(401, json={"error": "Unauthorized"})
         )
 
@@ -255,11 +257,11 @@ class TestFeedbackToolExecution:
     @respx.mock
     def test_multiple_account_ids_execution(self) -> None:
         """Test execution with multiple account IDs - both success and mixed scenarios."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
         api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
         # Test all successful case
-        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(
+        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
             return_value=httpx.Response(200, json=api_response)
         )
 
@@ -302,7 +304,7 @@ class TestFeedbackToolExecution:
     @respx.mock
     def test_multiple_account_ids_mixed_success(self) -> None:
         """Test execution with multiple account IDs - mixed success and error."""
-        tool = create_feedback_tool(api_key="test_key")
+        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         def custom_side_effect(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
@@ -312,7 +314,7 @@ class TestFeedbackToolExecution:
             else:
                 return httpx.Response(401, json={"error": "Unauthorized"})
 
-        route = respx.post("https://api.stackone.com/ai/tool-feedback").mock(side_effect=custom_side_effect)
+        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(side_effect=custom_side_effect)
 
         result = tool.execute(
             {
@@ -338,7 +340,7 @@ class TestFeedbackToolExecution:
                     "status": "error",
                     "error": (
                         "Client error '401 Unauthorized' for url "
-                        "'https://api.stackone.com/ai/tool-feedback'\n"
+                        f"'{TEST_BASE_URL}/ai/tool-feedback'\n"
                         "For more information check: "
                         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
                     ),
@@ -351,7 +353,7 @@ class TestFeedbackToolExecution:
 
     def test_tool_integration(self) -> None:
         """Test that feedback tool integrates properly with toolset."""
-        feedback_tool = create_feedback_tool(api_key="test_key")
+        feedback_tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
 
         assert feedback_tool is not None
         assert feedback_tool.name == "tool_feedback"
@@ -376,7 +378,7 @@ def test_live_feedback_submission() -> None:
     if not api_key:
         pytest.skip("STACKONE_API_KEY env var required for live feedback test")
 
-    base_url = os.getenv("STACKONE_BASE_URL", "https://api.stackone.com")
+    base_url = os.getenv("STACKONE_BASE_URL", DEFAULT_BASE_URL)
 
     feedback_tool = create_feedback_tool(api_key=api_key, base_url=base_url)
     assert feedback_tool is not None, "Feedback tool must be available"

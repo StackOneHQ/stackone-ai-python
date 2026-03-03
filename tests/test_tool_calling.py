@@ -9,6 +9,7 @@ import respx
 from stackone_ai import StackOneTool
 from stackone_ai.models import ExecuteConfig, ToolParameters
 from stackone_ai.toolset import _StackOneRpcTool
+from tests.conftest import TEST_BASE_URL
 
 
 @pytest.fixture
@@ -154,14 +155,14 @@ class TestStackOneRpcTool:
             description="Get employee details",
             parameters=parameters,
             api_key="test_api_key",
-            base_url="https://api.stackone.com",
+            base_url=TEST_BASE_URL,
             account_id="test_account",
         )
 
     @respx.mock
     def test_execute_basic(self, rpc_tool):
         """Test basic RPC tool execution"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"data": {"id": "123", "name": "John"}})
         )
 
@@ -178,7 +179,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_with_json_string(self, rpc_tool):
         """Test RPC tool execution with JSON string arguments"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -192,7 +193,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_with_body_payload(self, rpc_tool):
         """Test RPC tool execution with nested body payload"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -206,7 +207,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_with_path_payload(self, rpc_tool):
         """Test RPC tool execution with path parameters"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -219,7 +220,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_with_query_payload(self, rpc_tool):
         """Test RPC tool execution with query parameters"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -232,7 +233,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_with_headers_payload(self, rpc_tool):
         """Test RPC tool execution with custom headers"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -246,7 +247,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_headers_strips_authorization(self, rpc_tool):
         """Test that Authorization header is stripped from action headers"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -260,7 +261,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_headers_skips_none_values(self, rpc_tool):
         """Test that None header values are skipped"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -283,11 +284,11 @@ class TestStackOneRpcTool:
             description="Test",
             parameters=parameters,
             api_key="test_key",
-            base_url="https://api.stackone.com",
+            base_url=TEST_BASE_URL,
             account_id=None,
         )
 
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 
@@ -300,7 +301,7 @@ class TestStackOneRpcTool:
     @respx.mock
     def test_execute_with_none_arguments(self, rpc_tool):
         """Test RPC tool execution with None arguments"""
-        route = respx.post("https://api.stackone.com/actions/rpc").mock(
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
             return_value=httpx.Response(200, json={"success": True})
         )
 

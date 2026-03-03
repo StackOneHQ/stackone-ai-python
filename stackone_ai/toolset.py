@@ -25,6 +25,7 @@ from stackone_ai.semantic_search import (
     SemanticSearchError,
     SemanticSearchResult,
 )
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.utils.normalize import _normalize_action_name
 
 logger = logging.getLogger("stackone.tools")
@@ -35,8 +36,6 @@ try:
     _SDK_VERSION = metadata.version("stackone-ai")
 except metadata.PackageNotFoundError:  # pragma: no cover - best-effort fallback when running from source
     _SDK_VERSION = "dev"
-
-DEFAULT_BASE_URL = "https://api.stackone.com"
 _RPC_PARAMETER_LOCATIONS = {
     "action": ParameterLocation.BODY,
     "body": ParameterLocation.BODY,

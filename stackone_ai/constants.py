@@ -1,3 +1,6 @@
+# StackOne API base URL
+DEFAULT_BASE_URL: str = "https://api.stackone.com"
+
 # Hybrid search default weight for BM25 vs TF-IDF
 # alpha=0.2 means: 20% BM25 + 80% TF-IDF
 # This value was optimized through validation testing and provides

@@ -6,7 +6,7 @@ import json
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..models import (
+from stackone_ai.models import (
     ExecuteConfig,
     JsonDict,
     ParameterLocation,
@@ -14,6 +14,7 @@ from ..models import (
     StackOneTool,
     ToolParameters,
 )
+from stackone_ai.constants import DEFAULT_BASE_URL
 
 
 class FeedbackInput(BaseModel):
@@ -147,7 +148,7 @@ class FeedbackTool(StackOneTool):
 def create_feedback_tool(
     api_key: str,
     account_id: str | None = None,
-    base_url: str = "https://api.stackone.com",
+    base_url: str = DEFAULT_BASE_URL,
 ) -> FeedbackTool:
     """
     Create a feedback collection tool.
