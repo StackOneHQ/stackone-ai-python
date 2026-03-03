@@ -88,16 +88,12 @@ def mcp_mock_server() -> Generator[str, None, None]:
             try:
                 stdout, stderr = process.communicate(timeout=5)
                 msg = (
-                    f"MCP mock server failed to start:\n"
-                    f"stdout: {stdout.decode()}\nstderr: {stderr.decode()}"
+                    f"MCP mock server failed to start:\nstdout: {stdout.decode()}\nstderr: {stderr.decode()}"
                 )
             except subprocess.TimeoutExpired:
                 process.kill()
                 stdout, stderr = process.communicate()
-                msg = (
-                    f"MCP mock server timed out:\n"
-                    f"stdout: {stdout.decode()}\nstderr: {stderr.decode()}"
-                )
+                msg = f"MCP mock server timed out:\nstdout: {stdout.decode()}\nstderr: {stderr.decode()}"
             raise RuntimeError(msg)
 
         yield base_url
