@@ -14,8 +14,8 @@ from hypothesis import strategies as st
 
 from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.feedback import create_feedback_tool
-from tests.conftest import TEST_BASE_URL
 from stackone_ai.models import StackOneError
+from tests.conftest import TEST_BASE_URL
 
 # Hypothesis strategies for PBT
 # Various whitespace characters including Unicode

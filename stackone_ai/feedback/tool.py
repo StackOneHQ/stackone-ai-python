@@ -6,6 +6,7 @@ import json
 
 from pydantic import BaseModel, Field, field_validator
 
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.models import (
     ExecuteConfig,
     JsonDict,
@@ -14,7 +15,6 @@ from stackone_ai.models import (
     StackOneTool,
     ToolParameters,
 )
-from stackone_ai.constants import DEFAULT_BASE_URL
 
 
 class FeedbackInput(BaseModel):

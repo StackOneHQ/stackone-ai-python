@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, Literal, TypeVar
 
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.models import (
     ExecuteConfig,
     ParameterLocation,
@@ -25,7 +26,6 @@ from stackone_ai.semantic_search import (
     SemanticSearchError,
     SemanticSearchResult,
 )
-from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.utils.normalize import _normalize_action_name
 
 logger = logging.getLogger("stackone.tools")
