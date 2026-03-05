@@ -387,7 +387,7 @@ class StackOneToolSet:
                 "Search is disabled. Initialize StackOneToolSet with a search config to enable."
             )
 
-        config = dict(self._search_config)
+        config: SearchConfig = {**self._search_config}
         if search is not None:
             config["method"] = search
 
