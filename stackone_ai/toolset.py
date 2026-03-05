@@ -295,13 +295,18 @@ class SearchTool:
         Returns:
             Tools collection with matched tools
         """
+        effective_top_k = top_k if top_k is not None else self._config.get("top_k")
+        effective_min_sim = (
+            min_similarity if min_similarity is not None else self._config.get("min_similarity")
+        )
+        effective_search = search if search is not None else self._config.get("method", "auto")
         return self._toolset.search_tools(
             query,
             connector=connector,
-            top_k=top_k if top_k is not None else self._config.get("top_k"),
-            min_similarity=min_similarity if min_similarity is not None else self._config.get("min_similarity"),
+            top_k=effective_top_k,
+            min_similarity=effective_min_sim,
             account_ids=account_ids,
-            search=search if search is not None else self._config.get("method", "auto"),
+            search=effective_search,
         )
 
 
@@ -494,9 +499,15 @@ class StackOneToolSet:
             )
 
         # Merge constructor defaults with per-call overrides
-        effective_search: SearchMode = search if search is not None else self._search_config.get("method", "auto")
+        effective_search: SearchMode = (
+            search if search is not None else self._search_config.get("method", "auto")
+        )
         effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
-        effective_min_sim = min_similarity if min_similarity is not None else self._search_config.get("min_similarity")
+        effective_min_sim = (
+            min_similarity
+            if min_similarity is not None
+            else self._search_config.get("min_similarity")
+        )
 
         all_tools = self.fetch_tools(account_ids=account_ids)
         available_connectors = all_tools.get_connectors()
