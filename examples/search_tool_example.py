@@ -114,9 +114,37 @@ def example_search_modes():
     print()
 
 
+def example_top_k_config():
+    """Configuring top_k at the constructor level vs per-call.
+
+    Constructor-level top_k applies to all search_tools() and search_action_names()
+    calls. Per-call top_k overrides the constructor default for that single call.
+    """
+    print("Example 3: top_k at constructor vs per-call\n")
+
+    # Constructor-level top_k — all calls default to returning 3 results
+    toolset = StackOneToolSet(search={"top_k": 3})
+
+    query = "manage employee records"
+    print(f'Constructor top_k=3: searching for "{query}"')
+    tools_default = toolset.search_tools(query, account_ids=_account_ids)
+    print(f"  Got {len(tools_default)} tools (constructor default)")
+    for tool in tools_default:
+        print(f"    - {tool.name}")
+    print()
+
+    # Per-call override — this single call returns up to 10 results
+    print("Per-call top_k=10: overriding constructor default")
+    tools_override = toolset.search_tools(query, account_ids=_account_ids, top_k=10)
+    print(f"  Got {len(tools_override)} tools (per-call override)")
+    for tool in tools_override:
+        print(f"    - {tool.name}")
+    print()
+
+
 def example_search_tool_with_execution():
     """Example of discovering and executing tools dynamically"""
-    print("Example 3: Dynamic tool execution\n")
+    print("Example 4: Dynamic tool execution\n")
 
     # Initialize toolset
     toolset = StackOneToolSet()
@@ -151,7 +179,7 @@ def example_search_tool_with_execution():
 
 def example_with_openai():
     """Example of using search tool with OpenAI"""
-    print("Example 4: Using search tool with OpenAI\n")
+    print("Example 5: Using search tool with OpenAI\n")
 
     try:
         from openai import OpenAI
@@ -199,7 +227,7 @@ def example_with_openai():
 
 def example_with_langchain():
     """Example of using tools with LangChain"""
-    print("Example 5: Using tools with LangChain\n")
+    print("Example 6: Using tools with LangChain\n")
 
     try:
         from langchain.agents import AgentExecutor, create_tool_calling_agent
@@ -267,6 +295,7 @@ def main():
     # Basic examples that work without external APIs
     example_search_tool_basic()
     example_search_modes()
+    example_top_k_config()
     example_search_tool_with_execution()
 
     # Examples that require OpenAI API

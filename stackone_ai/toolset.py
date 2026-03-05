@@ -52,7 +52,7 @@ class SearchConfig(TypedDict, total=False):
     """Minimum similarity score threshold 0-1."""
 
 
-_SEARCH_DEFAULT: SearchConfig = {}
+_SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
