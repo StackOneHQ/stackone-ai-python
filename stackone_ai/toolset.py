@@ -11,7 +11,7 @@ import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypedDict, TypeVar
 
 from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.models import (
@@ -31,6 +31,28 @@ from stackone_ai.utils.normalize import _normalize_action_name
 logger = logging.getLogger("stackone.tools")
 
 SearchMode = Literal["auto", "semantic", "local"]
+
+
+class SearchConfig(TypedDict, total=False):
+    """Search configuration for the StackOneToolSet constructor.
+
+    When provided as a dict, sets default search options that flow through
+    to ``search_tools()``, ``get_search_tool()``, and ``search_action_names()``.
+    Per-call options override these defaults.
+
+    When set to ``None``, search is disabled entirely.
+    When omitted, defaults to ``{"method": "auto"}``.
+    """
+
+    method: SearchMode
+    """Search backend to use. Defaults to ``"auto"``."""
+    top_k: int
+    """Maximum number of tools to return."""
+    min_similarity: float
+    """Minimum similarity score threshold 0-1."""
+
+
+_SEARCH_DEFAULT: SearchConfig = {}
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
@@ -246,9 +268,9 @@ class SearchTool:
         tools = search_tool("manage employee records", account_ids=["acc-123"])
     """
 
-    def __init__(self, toolset: StackOneToolSet, search: SearchMode = "auto") -> None:
+    def __init__(self, toolset: StackOneToolSet, config: SearchConfig | None = None) -> None:
         self._toolset = toolset
-        self._search = search
+        self._config: SearchConfig = config or {}
 
     def __call__(
         self,
@@ -265,8 +287,8 @@ class SearchTool:
         Args:
             query: Natural language description of needed functionality
             connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
-            top_k: Maximum number of tools to return
-            min_similarity: Minimum similarity score threshold 0-1
+            top_k: Maximum number of tools to return. Overrides constructor default.
+            min_similarity: Minimum similarity score threshold 0-1. Overrides constructor default.
             account_ids: Optional account IDs (uses set_accounts() if not provided)
             search: Override the default search mode for this call
 
@@ -276,10 +298,10 @@ class SearchTool:
         return self._toolset.search_tools(
             query,
             connector=connector,
-            top_k=top_k,
-            min_similarity=min_similarity,
+            top_k=top_k if top_k is not None else self._config.get("top_k"),
+            min_similarity=min_similarity if min_similarity is not None else self._config.get("min_similarity"),
             account_ids=account_ids,
-            search=search if search is not None else self._search,
+            search=search if search is not None else self._config.get("method", "auto"),
         )
 
 
@@ -291,7 +313,7 @@ class StackOneToolSet:
         api_key: str | None = None,
         account_id: str | None = None,
         base_url: str | None = None,
-        semantic_client: SemanticSearchClient | None = None,
+        search: SearchConfig | None = _SEARCH_DEFAULT,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -299,8 +321,11 @@ class StackOneToolSet:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
             base_url: Optional base URL override for API requests
-            semantic_client: Optional pre-configured SemanticSearchClient instance.
-                If not provided, one will be created lazily using api_key and base_url.
+            search: Search configuration. Controls default search behavior.
+                Omit or pass ``{}`` for defaults (method="auto").
+                Pass ``None`` to disable search.
+                Pass ``{"method": "semantic", "top_k": 5}`` for custom defaults.
+                Per-call options always override these defaults.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -315,7 +340,8 @@ class StackOneToolSet:
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
-        self._semantic_client: SemanticSearchClient | None = semantic_client
+        self._semantic_client: SemanticSearchClient | None = None
+        self._search_config: SearchConfig | None = search
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -329,16 +355,18 @@ class StackOneToolSet:
         self._account_ids = account_ids
         return self
 
-    def get_search_tool(self, *, search: SearchMode = "auto") -> SearchTool:
+    def get_search_tool(self, *, search: SearchMode | None = None) -> SearchTool:
         """Get a callable search tool that returns Tools collections.
 
         Returns a callable that wraps :meth:`search_tools` for use in agent loops.
         The returned tool is directly callable: ``search_tool("query")`` returns
         :class:`Tools`.
 
+        Uses the constructor's search config as defaults. Per-call options override.
+
         Args:
-            search: Default search mode for the returned tool. Can be overridden
-                per-call. See :meth:`search_tools` for details.
+            search: Override the default search mode. If not provided, uses
+                the constructor's search config.
 
         Returns:
             SearchTool instance
@@ -349,7 +377,16 @@ class StackOneToolSet:
             search_tool = toolset.get_search_tool()
             tools = search_tool("manage employee records", account_ids=["acc-123"])
         """
-        return SearchTool(self, search=search)
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+            )
+
+        config = dict(self._search_config)
+        if search is not None:
+            config["method"] = search
+
+        return SearchTool(self, config=config)
 
     @property
     def semantic_client(self) -> SemanticSearchClient:
@@ -405,21 +442,21 @@ class StackOneToolSet:
         top_k: int | None = None,
         min_similarity: float | None = None,
         account_ids: list[str] | None = None,
-        search: SearchMode = "auto",
+        search: SearchMode | None = None,
     ) -> Tools:
         """Search for and fetch tools using semantic or local search.
 
         This method discovers relevant tools based on natural language queries.
+        Constructor search config provides defaults; per-call args override.
 
         Args:
             query: Natural language description of needed functionality
                 (e.g., "create employee", "send a message")
             connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
-            top_k: Maximum number of tools to return. If None, uses the backend default.
-            min_similarity: Minimum similarity score threshold 0-1. If not provided,
-                the server uses its default.
+            top_k: Maximum number of tools to return. Overrides constructor default.
+            min_similarity: Minimum similarity score threshold 0-1. Overrides constructor default.
             account_ids: Optional account IDs (uses set_accounts() if not provided)
-            search: Search backend to use:
+            search: Search backend to use. Overrides constructor default.
                 - ``"auto"`` (default): try semantic search first, fall back to local
                   BM25+TF-IDF if the API is unavailable.
                 - ``"semantic"``: use only the semantic search API; raises
@@ -431,6 +468,7 @@ class StackOneToolSet:
             Tools collection with matched tools from linked accounts
 
         Raises:
+            ToolsetConfigError: If search is disabled (``search=None`` in constructor)
             SemanticSearchError: If the API call fails and search is ``"semantic"``
 
         Examples:
@@ -450,6 +488,16 @@ class StackOneToolSet:
                 search="semantic",
             )
         """
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+            )
+
+        # Merge constructor defaults with per-call overrides
+        effective_search: SearchMode = search if search is not None else self._search_config.get("method", "auto")
+        effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
+        effective_min_sim = min_similarity if min_similarity is not None else self._search_config.get("min_similarity")
+
         all_tools = self.fetch_tools(account_ids=account_ids)
         available_connectors = all_tools.get_connectors()
 
@@ -457,9 +505,9 @@ class StackOneToolSet:
             return Tools([])
 
         # Local-only search — skip semantic API entirely
-        if search == "local":
+        if effective_search == "local":
             return self._local_search(
-                query, all_tools, connector=connector, top_k=top_k, min_similarity=min_similarity
+                query, all_tools, connector=connector, top_k=effective_top_k, min_similarity=effective_min_sim
             )
 
         try:
@@ -474,7 +522,7 @@ class StackOneToolSet:
             # Search each connector in parallel
             def _search_one(c: str) -> list[SemanticSearchResult]:
                 resp = self.semantic_client.search(
-                    query=query, connector=c, top_k=top_k, min_similarity=min_similarity
+                    query=query, connector=c, top_k=effective_top_k, min_similarity=effective_min_sim
                 )
                 return list(resp.results)
 
@@ -495,8 +543,8 @@ class StackOneToolSet:
 
             # Sort by score, apply top_k
             all_results.sort(key=lambda r: r.similarity_score, reverse=True)
-            if top_k is not None:
-                all_results = all_results[:top_k]
+            if effective_top_k is not None:
+                all_results = all_results[:effective_top_k]
 
             if not all_results:
                 return Tools([])
@@ -512,12 +560,12 @@ class StackOneToolSet:
             return Tools(matched_tools)
 
         except SemanticSearchError as e:
-            if search == "semantic":
+            if effective_search == "semantic":
                 raise
 
             logger.warning("Semantic search failed (%s), falling back to local BM25+TF-IDF search", e)
             return self._local_search(
-                query, all_tools, connector=connector, top_k=top_k, min_similarity=min_similarity
+                query, all_tools, connector=connector, top_k=effective_top_k, min_similarity=effective_min_sim
             )
 
     def search_action_names(
@@ -567,6 +615,19 @@ class StackOneToolSet:
             selected = [r.action_name for r in results if r.similarity_score > 0.7]
             tools = toolset.fetch_tools(actions=selected)
         """
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with search config to enable."
+            )
+
+        # Merge constructor defaults with per-call overrides
+        effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
+        effective_min_sim = (
+            min_similarity
+            if min_similarity is not None
+            else self._search_config.get("min_similarity")
+        )
+
         # Resolve available connectors from account_ids (same pattern as search_tools)
         available_connectors: set[str] | None = None
         effective_account_ids = account_ids or self._account_ids
@@ -587,7 +648,10 @@ class StackOneToolSet:
                 def _search_one(c: str) -> list[SemanticSearchResult]:
                     try:
                         resp = self.semantic_client.search(
-                            query=query, connector=c, top_k=top_k, min_similarity=min_similarity
+                            query=query,
+                            connector=c,
+                            top_k=effective_top_k,
+                            min_similarity=effective_min_sim,
                         )
                         return list(resp.results)
                     except SemanticSearchError:
@@ -603,7 +667,10 @@ class StackOneToolSet:
             else:
                 # No account filtering — single global search
                 response = self.semantic_client.search(
-                    query=query, connector=connector, top_k=top_k, min_similarity=min_similarity
+                    query=query,
+                    connector=connector,
+                    top_k=effective_top_k,
+                    min_similarity=effective_min_sim,
                 )
                 all_results = list(response.results)
 
@@ -624,7 +691,7 @@ class StackOneToolSet:
                     description=r.description,
                 )
             )
-        return normalized[:top_k] if top_k is not None else normalized
+        return normalized[:effective_top_k] if effective_top_k is not None else normalized
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

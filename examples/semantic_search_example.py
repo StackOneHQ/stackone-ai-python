@@ -110,7 +110,9 @@ def example_search_action_names():
     print("No account ID needed — results come from all available connectors.")
     print()
 
-    toolset = StackOneToolSet()
+    # Constructor-level config sets defaults; per-call params override them.
+    # Here we set method="semantic" at the constructor level.
+    toolset = StackOneToolSet(search={"method": "semantic"})
 
     query = "get user schedule"
 
@@ -156,19 +158,25 @@ def example_search_tools():
     2. Searches each of your connectors in parallel via the semantic search API
     3. Sorts results by relevance and matches back to tool definitions
     4. Returns a Tools collection ready for any framework (.to_openai(), .to_langchain(), etc.)
+
+    Search config can be set at the constructor level:
+        toolset = StackOneToolSet(search={"method": "semantic", "top_k": 5})
+    Per-call parameters (e.g. top_k, search) override the constructor defaults.
     """
     print("=" * 60)
     print("Example 2: search_tools() — full tool discovery")
     print("=" * 60)
     print()
 
-    toolset = StackOneToolSet()
+    # Constructor-level search config: always use semantic search with top_k=5
+    toolset = StackOneToolSet(search={"method": "semantic", "top_k": 5})
 
     query = "cancel an event"
-    print(f'Step 1: Searching for "{query}" via semantic search...')
+    print(f'Step 1: Searching for "{query}" via semantic search (constructor config)...')
     print()
 
-    tools = toolset.search_tools(query, account_ids=_account_ids, top_k=5)
+    # top_k and method are already set via the constructor — no need to pass them here
+    tools = toolset.search_tools(query, account_ids=_account_ids)
 
     connectors = tools.get_connectors()
     print(f"Found {len(tools)} tools from your linked account(s) ({', '.join(sorted(connectors))}):")

@@ -62,20 +62,24 @@ def example_search_tool_basic():
 def example_search_modes():
     """Comparing semantic vs local search modes.
 
-    The search parameter controls which backend search_tools() uses:
+    Search config can be set at the constructor level or overridden per call:
+    - Constructor: StackOneToolSet(search={"method": "semantic"})
+    - Per-call: toolset.search_tools(query, search="local")
+
+    The search method controls which backend search_tools() uses:
     - "semantic": cloud-based semantic vector search (higher accuracy for natural language)
     - "local": local BM25+TF-IDF hybrid search (no network call to semantic API)
     - "auto" (default): tries semantic first, falls back to local on failure
     """
     print("Example 2: Semantic vs local search modes\n")
 
-    toolset = StackOneToolSet()
     query = "manage employee time off"
 
-    # Semantic search — uses StackOne's semantic search API
-    print('search="semantic": cloud-based semantic vector search')
+    # Constructor-level config — semantic search as the default for this toolset
+    print('Constructor config: StackOneToolSet(search={"method": "semantic"})')
+    toolset_semantic = StackOneToolSet(search={"method": "semantic"})
     try:
-        tools_semantic = toolset.search_tools(query, account_ids=_account_ids, top_k=5, search="semantic")
+        tools_semantic = toolset_semantic.search_tools(query, account_ids=_account_ids, top_k=5)
         print(f"  Found {len(tools_semantic)} tools:")
         for tool in tools_semantic:
             print(f"    - {tool.name}")
@@ -83,17 +87,27 @@ def example_search_modes():
         print(f"  Semantic search unavailable: {e}")
     print()
 
-    # Local search — BM25+TF-IDF, no semantic API call
-    print('search="local": local BM25+TF-IDF hybrid search')
-    tools_local = toolset.search_tools(query, account_ids=_account_ids, top_k=5, search="local")
+    # Constructor-level config — local search (no network call to semantic API)
+    print('Constructor config: StackOneToolSet(search={"method": "local"})')
+    toolset_local = StackOneToolSet(search={"method": "local"})
+    tools_local = toolset_local.search_tools(query, account_ids=_account_ids, top_k=5)
     print(f"  Found {len(tools_local)} tools:")
     for tool in tools_local:
         print(f"    - {tool.name}")
     print()
 
+    # Per-call override — constructor defaults can be overridden on each call
+    print("Per-call override: constructor uses semantic, but this call uses local")
+    tools_override = toolset_semantic.search_tools(query, account_ids=_account_ids, top_k=5, search="local")
+    print(f"  Found {len(tools_override)} tools:")
+    for tool in tools_override:
+        print(f"    - {tool.name}")
+    print()
+
     # Auto (default) — tries semantic, falls back to local
-    print('search="auto" (default): semantic with local fallback')
-    tools_auto = toolset.search_tools(query, account_ids=_account_ids, top_k=5, search="auto")
+    print('Default: StackOneToolSet() uses search="auto" (semantic with local fallback)')
+    toolset_auto = StackOneToolSet()
+    tools_auto = toolset_auto.search_tools(query, account_ids=_account_ids, top_k=5)
     print(f"  Found {len(tools_auto)} tools:")
     for tool in tools_auto:
         print(f"    - {tool.name}")
