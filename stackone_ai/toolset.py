@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import fnmatch
 import json
+import logging
 import os
 import threading
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, TypeVar
+from typing import Any, Literal, TypedDict, TypeVar
 
+from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.models import (
     ExecuteConfig,
     ParameterLocation,
@@ -18,13 +21,43 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
 )
+from stackone_ai.semantic_search import (
+    SemanticSearchClient,
+    SemanticSearchError,
+    SemanticSearchResult,
+)
+from stackone_ai.utils.normalize import _normalize_action_name
+
+logger = logging.getLogger("stackone.tools")
+
+SearchMode = Literal["auto", "semantic", "local"]
+
+
+class SearchConfig(TypedDict, total=False):
+    """Search configuration for the StackOneToolSet constructor.
+
+    When provided as a dict, sets default search options that flow through
+    to ``search_tools()``, ``get_search_tool()``, and ``search_action_names()``.
+    Per-call options override these defaults.
+
+    When set to ``None``, search is disabled entirely.
+    When omitted, defaults to ``{"method": "auto"}``.
+    """
+
+    method: SearchMode
+    """Search backend to use. Defaults to ``"auto"``."""
+    top_k: int
+    """Maximum number of tools to return."""
+    min_similarity: float
+    """Minimum similarity score threshold 0-1."""
+
+
+_SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
 except metadata.PackageNotFoundError:  # pragma: no cover - best-effort fallback when running from source
     _SDK_VERSION = "dev"
-
-DEFAULT_BASE_URL = "https://api.stackone.com"
 _RPC_PARAMETER_LOCATIONS = {
     "action": ParameterLocation.BODY,
     "body": ParameterLocation.BODY,
@@ -33,6 +66,7 @@ _RPC_PARAMETER_LOCATIONS = {
     "query": ParameterLocation.BODY,
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
+
 
 T = TypeVar("T")
 
@@ -222,6 +256,60 @@ class _StackOneRpcTool(StackOneTool):
         return headers
 
 
+class SearchTool:
+    """Callable search tool that wraps StackOneToolSet.search_tools().
+
+    Designed for agent loops — call it with a query to get Tools back.
+
+    Example::
+
+        toolset = StackOneToolSet()
+        search_tool = toolset.get_search_tool()
+        tools = search_tool("manage employee records", account_ids=["acc-123"])
+    """
+
+    def __init__(self, toolset: StackOneToolSet, config: SearchConfig | None = None) -> None:
+        self._toolset = toolset
+        self._config: SearchConfig = config or {}
+
+    def __call__(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        top_k: int | None = None,
+        min_similarity: float | None = None,
+        account_ids: list[str] | None = None,
+        search: SearchMode | None = None,
+    ) -> Tools:
+        """Search for tools using natural language.
+
+        Args:
+            query: Natural language description of needed functionality
+            connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
+            top_k: Maximum number of tools to return. Overrides constructor default.
+            min_similarity: Minimum similarity score threshold 0-1. Overrides constructor default.
+            account_ids: Optional account IDs (uses set_accounts() if not provided)
+            search: Override the default search mode for this call
+
+        Returns:
+            Tools collection with matched tools
+        """
+        effective_top_k = top_k if top_k is not None else self._config.get("top_k")
+        effective_min_sim = (
+            min_similarity if min_similarity is not None else self._config.get("min_similarity")
+        )
+        effective_search = search if search is not None else self._config.get("method", "auto")
+        return self._toolset.search_tools(
+            query,
+            connector=connector,
+            top_k=effective_top_k,
+            min_similarity=effective_min_sim,
+            account_ids=account_ids,
+            search=effective_search,
+        )
+
+
 class StackOneToolSet:
     """Main class for accessing StackOne tools"""
 
@@ -230,6 +318,7 @@ class StackOneToolSet:
         api_key: str | None = None,
         account_id: str | None = None,
         base_url: str | None = None,
+        search: SearchConfig | None = _SEARCH_DEFAULT,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -237,6 +326,11 @@ class StackOneToolSet:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
             base_url: Optional base URL override for API requests
+            search: Search configuration. Controls default search behavior.
+                Omit or pass ``{}`` for defaults (method="auto").
+                Pass ``None`` to disable search.
+                Pass ``{"method": "semantic", "top_k": 5}`` for custom defaults.
+                Per-call options always override these defaults.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -251,6 +345,8 @@ class StackOneToolSet:
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
         self._account_ids: list[str] = []
+        self._semantic_client: SemanticSearchClient | None = None
+        self._search_config: SearchConfig | None = search
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -263,6 +359,346 @@ class StackOneToolSet:
         """
         self._account_ids = account_ids
         return self
+
+    def get_search_tool(self, *, search: SearchMode | None = None) -> SearchTool:
+        """Get a callable search tool that returns Tools collections.
+
+        Returns a callable that wraps :meth:`search_tools` for use in agent loops.
+        The returned tool is directly callable: ``search_tool("query")`` returns
+        :class:`Tools`.
+
+        Uses the constructor's search config as defaults. Per-call options override.
+
+        Args:
+            search: Override the default search mode. If not provided, uses
+                the constructor's search config.
+
+        Returns:
+            SearchTool instance
+
+        Example::
+
+            toolset = StackOneToolSet()
+            search_tool = toolset.get_search_tool()
+            tools = search_tool("manage employee records", account_ids=["acc-123"])
+        """
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+            )
+
+        config: SearchConfig = {**self._search_config}
+        if search is not None:
+            config["method"] = search
+
+        return SearchTool(self, config=config)
+
+    @property
+    def semantic_client(self) -> SemanticSearchClient:
+        """Lazy initialization of semantic search client.
+
+        Returns:
+            SemanticSearchClient instance configured with the toolset's API key and base URL
+        """
+        if self._semantic_client is None:
+            self._semantic_client = SemanticSearchClient(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+        return self._semantic_client
+
+    def _local_search(
+        self,
+        query: str,
+        all_tools: Tools,
+        *,
+        connector: str | None = None,
+        top_k: int | None = None,
+        min_similarity: float | None = None,
+    ) -> Tools:
+        """Run local BM25+TF-IDF search over already-fetched tools."""
+        from stackone_ai.local_search import ToolIndex
+
+        available_connectors = all_tools.get_connectors()
+        if not available_connectors:
+            return Tools([])
+
+        index = ToolIndex(list(all_tools))
+        results = index.search(
+            query,
+            limit=top_k if top_k is not None else 5,
+            min_score=min_similarity if min_similarity is not None else 0.0,
+        )
+        matched_names = [r.name for r in results]
+        tool_map = {t.name: t for t in all_tools}
+        filter_connectors = {connector.lower()} if connector else available_connectors
+        matched_tools = [
+            tool_map[name]
+            for name in matched_names
+            if name in tool_map and name.split("_")[0].lower() in filter_connectors
+        ]
+        return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
+
+    def search_tools(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        top_k: int | None = None,
+        min_similarity: float | None = None,
+        account_ids: list[str] | None = None,
+        search: SearchMode | None = None,
+    ) -> Tools:
+        """Search for and fetch tools using semantic or local search.
+
+        This method discovers relevant tools based on natural language queries.
+        Constructor search config provides defaults; per-call args override.
+
+        Args:
+            query: Natural language description of needed functionality
+                (e.g., "create employee", "send a message")
+            connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
+            top_k: Maximum number of tools to return. Overrides constructor default.
+            min_similarity: Minimum similarity score threshold 0-1. Overrides constructor default.
+            account_ids: Optional account IDs (uses set_accounts() if not provided)
+            search: Search backend to use. Overrides constructor default.
+                - ``"auto"`` (default): try semantic search first, fall back to local
+                  BM25+TF-IDF if the API is unavailable.
+                - ``"semantic"``: use only the semantic search API; raises
+                  ``SemanticSearchError`` on failure.
+                - ``"local"``: use only local BM25+TF-IDF search (no API call to the
+                  semantic search endpoint).
+
+        Returns:
+            Tools collection with matched tools from linked accounts
+
+        Raises:
+            ToolsetConfigError: If search is disabled (``search=None`` in constructor)
+            SemanticSearchError: If the API call fails and search is ``"semantic"``
+
+        Examples:
+            # Semantic search (default with local fallback)
+            tools = toolset.search_tools("manage employee records", top_k=5)
+
+            # Explicit semantic search
+            tools = toolset.search_tools("manage employees", search="semantic")
+
+            # Local BM25+TF-IDF search
+            tools = toolset.search_tools("manage employees", search="local")
+
+            # Filter by connector
+            tools = toolset.search_tools(
+                "create time off request",
+                connector="bamboohr",
+                search="semantic",
+            )
+        """
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+            )
+
+        # Merge constructor defaults with per-call overrides
+        effective_search: SearchMode = (
+            search if search is not None else self._search_config.get("method", "auto")
+        )
+        effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
+        effective_min_sim = (
+            min_similarity if min_similarity is not None else self._search_config.get("min_similarity")
+        )
+
+        all_tools = self.fetch_tools(account_ids=account_ids)
+        available_connectors = all_tools.get_connectors()
+
+        if not available_connectors:
+            return Tools([])
+
+        # Local-only search — skip semantic API entirely
+        if effective_search == "local":
+            return self._local_search(
+                query, all_tools, connector=connector, top_k=effective_top_k, min_similarity=effective_min_sim
+            )
+
+        try:
+            # Determine which connectors to search
+            if connector:
+                connectors_to_search = {connector.lower()} & available_connectors
+                if not connectors_to_search:
+                    return Tools([])
+            else:
+                connectors_to_search = available_connectors
+
+            # Search each connector in parallel
+            def _search_one(c: str) -> list[SemanticSearchResult]:
+                resp = self.semantic_client.search(
+                    query=query, connector=c, top_k=effective_top_k, min_similarity=effective_min_sim
+                )
+                return list(resp.results)
+
+            all_results: list[SemanticSearchResult] = []
+            last_error: SemanticSearchError | None = None
+            max_workers = min(len(connectors_to_search), 10)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {pool.submit(_search_one, c): c for c in connectors_to_search}
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        all_results.extend(future.result())
+                    except SemanticSearchError as e:
+                        last_error = e
+
+            # If ALL connector searches failed, re-raise to trigger fallback
+            if not all_results and last_error is not None:
+                raise last_error
+
+            # Sort by score, apply top_k
+            all_results.sort(key=lambda r: r.similarity_score, reverse=True)
+            if effective_top_k is not None:
+                all_results = all_results[:effective_top_k]
+
+            if not all_results:
+                return Tools([])
+
+            # Match back to fetched tool definitions
+            action_names = {_normalize_action_name(r.action_name) for r in all_results}
+            matched_tools = [t for t in all_tools if t.name in action_names]
+
+            # Sort matched tools by semantic search score order
+            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(all_results)}
+            matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
+
+            return Tools(matched_tools)
+
+        except SemanticSearchError as e:
+            if effective_search == "semantic":
+                raise
+
+            logger.warning("Semantic search failed (%s), falling back to local BM25+TF-IDF search", e)
+            return self._local_search(
+                query, all_tools, connector=connector, top_k=effective_top_k, min_similarity=effective_min_sim
+            )
+
+    def search_action_names(
+        self,
+        query: str,
+        *,
+        connector: str | None = None,
+        account_ids: list[str] | None = None,
+        top_k: int | None = None,
+        min_similarity: float | None = None,
+    ) -> list[SemanticSearchResult]:
+        """Search for action names without fetching tools.
+
+        Useful when you need to inspect search results before fetching,
+        or when building custom filtering logic.
+
+        Args:
+            query: Natural language description of needed functionality
+            connector: Optional provider/connector filter (single connector)
+            account_ids: Optional account IDs to scope results to connectors
+                available in those accounts (uses set_accounts() if not provided).
+                When provided, results are filtered to only matching connectors.
+            top_k: Maximum number of results. If None, uses the backend default.
+            min_similarity: Minimum similarity score threshold 0-1. If not provided,
+                the server uses its default.
+
+        Returns:
+            List of SemanticSearchResult with action names, scores, and metadata.
+            Versioned API names are normalized to MCP format but results are NOT
+            deduplicated — multiple API versions of the same action may appear
+            with their individual scores.
+
+        Examples:
+            # Lightweight: inspect results before fetching
+            results = toolset.search_action_names("manage employees")
+            for r in results:
+                print(f"{r.action_name}: {r.similarity_score:.2f}")
+
+            # Account-scoped: only results for connectors in linked accounts
+            results = toolset.search_action_names(
+                "create employee",
+                account_ids=["acc-123"],
+                top_k=5
+            )
+
+            # Then fetch specific high-scoring actions
+            selected = [r.action_name for r in results if r.similarity_score > 0.7]
+            tools = toolset.fetch_tools(actions=selected)
+        """
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with search config to enable."
+            )
+
+        # Merge constructor defaults with per-call overrides
+        effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
+        effective_min_sim = (
+            min_similarity if min_similarity is not None else self._search_config.get("min_similarity")
+        )
+
+        # Resolve available connectors from account_ids (same pattern as search_tools)
+        available_connectors: set[str] | None = None
+        effective_account_ids = account_ids or self._account_ids
+        if effective_account_ids:
+            all_tools = self.fetch_tools(account_ids=effective_account_ids)
+            available_connectors = all_tools.get_connectors()
+            if not available_connectors:
+                return []
+
+        try:
+            if available_connectors:
+                # Parallel per-connector search (only user's connectors)
+                if connector:
+                    connectors_to_search = {connector.lower()} & available_connectors
+                else:
+                    connectors_to_search = available_connectors
+
+                def _search_one(c: str) -> list[SemanticSearchResult]:
+                    try:
+                        resp = self.semantic_client.search(
+                            query=query,
+                            connector=c,
+                            top_k=effective_top_k,
+                            min_similarity=effective_min_sim,
+                        )
+                        return list(resp.results)
+                    except SemanticSearchError:
+                        return []
+
+                all_results: list[SemanticSearchResult] = []
+                if connectors_to_search:
+                    max_workers = min(len(connectors_to_search), 10)
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                        futures = [pool.submit(_search_one, c) for c in connectors_to_search]
+                        for future in concurrent.futures.as_completed(futures):
+                            all_results.extend(future.result())
+            else:
+                # No account filtering — single global search
+                response = self.semantic_client.search(
+                    query=query,
+                    connector=connector,
+                    top_k=effective_top_k,
+                    min_similarity=effective_min_sim,
+                )
+                all_results = list(response.results)
+
+        except SemanticSearchError as e:
+            logger.warning("Semantic search failed: %s", e)
+            return []
+
+        # Sort by score, normalize action names
+        all_results.sort(key=lambda r: r.similarity_score, reverse=True)
+        normalized: list[SemanticSearchResult] = []
+        for r in all_results:
+            normalized.append(
+                SemanticSearchResult(
+                    action_name=_normalize_action_name(r.action_name),
+                    connector_key=r.connector_key,
+                    similarity_score=r.similarity_score,
+                    label=r.label,
+                    description=r.description,
+                )
+            )
+        return normalized[:effective_top_k] if effective_top_k is not None else normalized
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

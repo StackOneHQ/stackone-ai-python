@@ -98,6 +98,18 @@ class StackOneTool(BaseModel):
         "feedback_metadata",
     }
 
+    @property
+    def connector(self) -> str:
+        """Extract connector from tool name.
+
+        Tool names follow the format: {connector}_{action}_{entity}
+        e.g., 'bamboohr_create_employee' -> 'bamboohr'
+
+        Returns:
+            Connector name in lowercase
+        """
+        return self.name.split("_")[0].lower()
+
     def __init__(
         self,
         description: str,
@@ -318,6 +330,13 @@ class StackOneTool(BaseModel):
 
         return self.execute(kwargs if kwargs else None)
 
+    def __call__(self, *args: Any, options: JsonDict | None = None, **kwargs: Any) -> JsonDict:
+        """Make the tool directly callable.
+
+        Alias for :meth:`call` so that ``tool(query="…")`` works.
+        """
+        return self.call(*args, options=options, **kwargs)
+
     def to_openai_function(self) -> JsonDict:
         """Convert this tool to OpenAI's function format
 
@@ -455,7 +474,10 @@ class StackOneTool(BaseModel):
 class Tools:
     """Container for Tool instances with lookup capabilities"""
 
-    def __init__(self, tools: list[StackOneTool]) -> None:
+    def __init__(
+        self,
+        tools: list[StackOneTool],
+    ) -> None:
         """Initialize Tools container
 
         Args:
@@ -514,6 +536,19 @@ class Tools:
                 return account_id
         return None
 
+    def get_connectors(self) -> set[str]:
+        """Get unique connector names from all tools.
+
+        Returns:
+            Set of connector names (lowercase)
+
+        Example:
+            tools = toolset.fetch_tools()
+            connectors = tools.get_connectors()
+            # {'bamboohr', 'hibob', 'slack', ...}
+        """
+        return {tool.connector for tool in self.tools}
+
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format
 
@@ -529,36 +564,3 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
-
-    def utility_tools(self, hybrid_alpha: float | None = None) -> Tools:
-        """Return utility tools for tool discovery and execution
-
-        Utility tools enable dynamic tool discovery and execution based on natural language queries
-        using hybrid BM25 + TF-IDF search.
-
-        Args:
-            hybrid_alpha: Weight for BM25 in hybrid search (0-1). If not provided, uses
-                ToolIndex.DEFAULT_HYBRID_ALPHA (0.2), which gives more weight to BM25 scoring
-                and has been shown to provide better tool discovery accuracy
-                (10.8% improvement in validation testing).
-
-        Returns:
-            Tools collection containing tool_search and tool_execute
-
-        Note:
-            This feature is in beta and may change in future versions
-        """
-        from stackone_ai.utility_tools import (
-            ToolIndex,
-            create_tool_execute,
-            create_tool_search,
-        )
-
-        # Create search index with hybrid search
-        index = ToolIndex(self.tools, hybrid_alpha=hybrid_alpha)
-
-        # Create utility tools
-        filter_tool = create_tool_search(index)
-        execute_tool = create_tool_execute(self)
-
-        return Tools([filter_tool, execute_tool])

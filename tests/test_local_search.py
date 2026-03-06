@@ -1,18 +1,12 @@
 """Tests for utility tools functionality"""
 
-import httpx
 import pytest
-import respx
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from stackone_ai import StackOneTool, Tools
+from stackone_ai.local_search import ToolIndex
 from stackone_ai.models import ExecuteConfig, ToolParameters
-from stackone_ai.utility_tools import (
-    ToolIndex,
-    create_tool_execute,
-    create_tool_search,
-)
 
 # Hypothesis strategies for PBT
 # Score threshold strategy
@@ -89,63 +83,7 @@ def _create_sample_tools() -> list[StackOneTool]:
 @pytest.fixture
 def sample_tools():
     """Create sample tools for testing"""
-    tools = []
-
-    # Create HiBob tools
-    for action in ["create", "list", "update", "delete"]:
-        for entity in ["employee", "department", "timeoff"]:
-            tool_name = f"hibob_{action}_{entity}"
-            execute_config = ExecuteConfig(
-                name=tool_name,
-                method="POST" if action in ["create", "update"] else "GET",
-                url=f"https://api.example.com/hibob/{entity}",
-                headers={},
-            )
-
-            parameters = ToolParameters(
-                type="object",
-                properties={
-                    "id": {"type": "string", "description": "Entity ID"},
-                    "data": {"type": "object", "description": "Entity data"},
-                },
-            )
-
-            tool = StackOneTool(
-                description=f"{action.capitalize()} {entity} in HiBob system",
-                parameters=parameters,
-                _execute_config=execute_config,
-                _api_key="test_key",
-            )
-            tools.append(tool)
-
-    # Create BambooHR tools
-    for action in ["create", "list", "search"]:
-        for entity in ["candidate", "job", "application"]:
-            tool_name = f"bamboohr_{action}_{entity}"
-            execute_config = ExecuteConfig(
-                name=tool_name,
-                method="POST" if action == "create" else "GET",
-                url=f"https://api.example.com/bamboohr/{entity}",
-                headers={},
-            )
-
-            parameters = ToolParameters(
-                type="object",
-                properties={
-                    "query": {"type": "string", "description": "Search query"},
-                    "filters": {"type": "object", "description": "Filter criteria"},
-                },
-            )
-
-            tool = StackOneTool(
-                description=f"{action.capitalize()} {entity} in BambooHR system",
-                parameters=parameters,
-                _execute_config=execute_config,
-                _api_key="test_key",
-            )
-            tools.append(tool)
-
-    return tools
+    return _create_sample_tools()
 
 
 @pytest.fixture
@@ -236,166 +174,6 @@ class TestToolIndex:
         assert len(results) <= len(tools)
 
 
-class TestToolSearch:
-    """Test the tool_search functionality"""
-
-    def test_filter_tool_creation(self, sample_tools):
-        """Test creating the filter tool"""
-        index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
-
-        assert filter_tool.name == "tool_search"
-        assert "natural language query" in filter_tool.description.lower()
-
-    def test_filter_tool_execute_with_json_string(self, sample_tools):
-        """Test executing the filter tool with JSON string input."""
-        import json
-
-        index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
-
-        # Execute with JSON string
-        json_input = json.dumps({"query": "employee", "limit": 2, "minScore": 0.0})
-        result = filter_tool.execute(json_input)
-
-        assert "tools" in result
-        assert isinstance(result["tools"], list)
-        assert len(result["tools"]) <= 2
-
-    def test_filter_tool_execute(self, sample_tools):
-        """Test executing the filter tool"""
-        index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
-
-        # Execute with a query
-        result = filter_tool.execute(
-            {
-                "query": "manage employees",
-                "limit": 3,
-                "minScore": 0.0,
-            }
-        )
-
-        assert "tools" in result
-        assert isinstance(result["tools"], list)
-        assert len(result["tools"]) <= 3
-
-        # Check tool structure
-        if result["tools"]:
-            tool = result["tools"][0]
-            assert "name" in tool
-            assert "description" in tool
-            assert "score" in tool
-
-    def test_filter_tool_call(self, sample_tools):
-        """Test calling the filter tool with call method"""
-        index = ToolIndex(sample_tools)
-        filter_tool = create_tool_search(index)
-
-        # Call with kwargs
-        result = filter_tool.call(query="candidate", limit=2)
-
-        assert "tools" in result
-        assert len(result["tools"]) <= 2
-
-
-class TestToolExecute:
-    """Test the tool_execute functionality"""
-
-    def test_execute_tool_creation(self, tools_collection):
-        """Test creating the execute tool"""
-        execute_tool = create_tool_execute(tools_collection)
-
-        assert execute_tool.name == "tool_execute"
-        assert "executes a tool" in execute_tool.description.lower()
-
-    def test_execute_tool_missing_name(self, tools_collection):
-        """Test execute tool with missing tool name"""
-        execute_tool = create_tool_execute(tools_collection)
-
-        with pytest.raises(ValueError, match="toolName is required"):
-            execute_tool.execute({"params": {}})
-
-    def test_execute_tool_with_json_string(self, tools_collection):
-        """Test execute tool with JSON string input."""
-        import json
-
-        execute_tool = create_tool_execute(tools_collection)
-
-        # Execute with JSON string - should raise ValueError for invalid tool
-        json_input = json.dumps({"toolName": "nonexistent_tool", "params": {}})
-        with pytest.raises(ValueError, match="Tool 'nonexistent_tool' not found"):
-            execute_tool.execute(json_input)
-
-    def test_execute_tool_invalid_name(self, tools_collection):
-        """Test execute tool with invalid tool name"""
-        execute_tool = create_tool_execute(tools_collection)
-
-        with pytest.raises(ValueError, match="Tool 'invalid_tool' not found"):
-            execute_tool.execute(
-                {
-                    "toolName": "invalid_tool",
-                    "params": {},
-                }
-            )
-
-    @respx.mock
-    def test_execute_tool_call(self, tools_collection):
-        """Test calling the execute tool with call method"""
-        execute_tool = create_tool_execute(tools_collection)
-
-        # Mock the actual tool execution
-        route = respx.get("https://api.example.com/hibob/employee").mock(
-            return_value=httpx.Response(200, json={"success": True, "employees": []})
-        )
-
-        # Call the tool_execute tool
-        result = execute_tool.call(toolName="hibob_list_employee", params={"limit": 10})
-
-        assert result == {"success": True, "employees": []}
-        assert route.called
-        assert route.calls[0].response.status_code == 200
-
-
-class TestToolsUtilityTools:
-    """Test the utility_tools method on Tools collection"""
-
-    def test_utility_tools_creation(self, tools_collection):
-        """Test creating utility tools from a Tools collection"""
-        utility_tools = tools_collection.utility_tools()
-
-        assert isinstance(utility_tools, Tools)
-        assert len(utility_tools) == 2
-
-        # Check tool names
-        tool_names = [tool.name for tool in utility_tools.tools]
-        assert "tool_search" in tool_names
-        assert "tool_execute" in tool_names
-
-    def test_utility_tools_functionality(self, tools_collection):
-        """Test that utility tools work correctly"""
-        utility_tools = tools_collection.utility_tools()
-
-        # Get the filter tool
-        filter_tool = utility_tools.get_tool("tool_search")
-        assert filter_tool is not None
-
-        # Search for tools
-        result = filter_tool.execute(
-            {
-                "query": "create employee",
-                "limit": 1,
-            }
-        )
-
-        assert "tools" in result
-        assert len(result["tools"]) > 0
-
-        # The top result should be related to creating employees
-        top_tool = result["tools"][0]
-        assert "employee" in top_tool["name"].lower() or "create" in top_tool["name"].lower()
-
-
 class TestHybridSearch:
     """Test hybrid search functionality"""
 
@@ -474,21 +252,3 @@ class TestHybridSearch:
         assert any("employee" in r.name and "create" in r.name for r in results_balanced), (
             f"Balanced results: {[r.name for r in results_balanced]}"
         )
-
-    def test_utility_tools_with_custom_alpha(self, sample_tools):
-        """Test that utility_tools() accepts hybrid_alpha parameter"""
-        tools_collection = Tools(sample_tools)
-
-        # Create utility tools with custom alpha
-        utility_tools = tools_collection.utility_tools(hybrid_alpha=0.3)
-
-        filter_tool = utility_tools.get_tool("tool_search")
-        assert filter_tool is not None
-
-        # Check that description mentions the alpha value
-        assert "alpha=0.3" in filter_tool.description
-
-        # Test it works
-        result = filter_tool.execute({"query": "list employees", "limit": 3})
-        assert "tools" in result
-        assert len(result["tools"]) > 0

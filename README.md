@@ -16,10 +16,11 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
 - **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
 - **Advanced Tool Filtering**:
-  - Glob pattern filtering with patterns like `"hris_*"` and exclusions `"!hris_delete_*"`
+  - Glob pattern filtering with patterns like `"salesforce_*"` and exclusions `"!*_delete_*"`
   - Provider and action filtering
   - Multi-account support
-- **Utility Tools** (Beta): Dynamic tool discovery and execution based on natural language queries
+- **Semantic Search**: AI-powered tool discovery using natural language queries
+- **Search Tool**: Callable tool discovery for agent loops via `get_search_tool()`
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
@@ -58,10 +59,10 @@ toolset = StackOneToolSet()  # Uses STACKONE_API_KEY env var
 # Or explicitly: toolset = StackOneToolSet(api_key="your-api-key")
 
 # Get HRIS-related tools with glob patterns
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 
 # Use a specific tool with the call method
-employee_tool = tools.get_tool("hris_get_employee")
+employee_tool = tools.get_tool("bamboohr_get_employee")
 # Call with keyword arguments
 employee = employee_tool.call(id="employee-id")
 # Or with traditional execute method
@@ -107,9 +108,9 @@ tools = toolset.fetch_tools(providers=["hibob"])
 - **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
 - **`providers`**: Filter by provider names (e.g., `["hibob", "bamboohr"]`). Case-insensitive matching.
 - **`actions`**: Filter by action patterns with glob support:
-  - Exact match: `["hris_list_employees"]`
+  - Exact match: `["bamboohr_list_employees"]`
   - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
-  - Provider prefix: `["hris_*"]` matches all HRIS tools
+  - Provider prefix: `["bamboohr_*"]` matches all BambooHR tools
 
 ## Implicit Feedback (Beta)
 
@@ -169,7 +170,7 @@ from stackone_ai import StackOneToolSet
 
 # Initialize StackOne tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 
 # Convert to LangChain format
 langchain_tools = tools.to_langchain()
@@ -216,7 +217,7 @@ from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_too
 
 # Prepare tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 langchain_tools = tools.to_langchain()
 
 class State(TypedDict):
@@ -254,7 +255,7 @@ from stackone_ai import StackOneToolSet
 
 # Get tools and convert to LangChain format
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["hris_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
 langchain_tools = tools.to_langchain()
 
 # Create CrewAI agent with StackOne tools
@@ -296,7 +297,7 @@ feedback_tool = tools.get_tool("tool_feedback")
 result = feedback_tool.call(
     feedback="The HRIS tools are working great! Very fast response times.",
     account_id="acc_123456",
-    tool_names=["hris_list_employees", "hris_get_employee"]
+    tool_names=["bamboohr_list_employees", "bamboohr_get_employee"]
 )
 ```
 
@@ -305,25 +306,58 @@ result = feedback_tool.call(
 - "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
 - Only call the tool after the user explicitly agrees.
 
-## Utility Tools (Beta)
+## Search Tool
 
-Utility tools enable dynamic tool discovery and execution without hardcoding tool names.
+Search for tools using natural language queries. Works with both semantic (cloud) and local BM25+TF-IDF search.
 
 ### Basic Usage
 
 ```python
-# Get utility tools for dynamic discovery
-tools = toolset.fetch_tools(actions=["hris_*"])
-utility_tools = tools.utility_tools()
+# Get a callable search tool
+toolset = StackOneToolSet()
+all_tools = toolset.fetch_tools(account_ids=["your-account-id"])
+search_tool = toolset.get_search_tool()
 
-# Search for relevant tools using natural language
-filter_tool = utility_tools.get_tool("tool_search")
-results = filter_tool.call(query="manage employees", limit=5)
+# Search for relevant tools — returns a Tools collection
+tools = search_tool("manage employees", top_k=5)
 
-# Execute discovered tools dynamically
-execute_tool = utility_tools.get_tool("tool_execute")
-result = execute_tool.call(toolName="hris_list_employees", params={"limit": 10})
+# Execute a discovered tool directly
+tools[0](limit=10)
 ```
+
+## Semantic Search
+
+Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `bamboohr_create_employee`.
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+
+# Search by intent — returns Tools collection ready for any framework
+tools = toolset.search_tools("manage employee records", account_ids=["your-account-id"], top_k=5)
+openai_tools = tools.to_openai()
+
+# Lightweight: inspect results without fetching full tool definitions
+results = toolset.search_action_names("time off requests", top_k=5)
+```
+
+### Search Modes
+
+Control which search backend `search_tools()` uses via the `search` parameter:
+
+```python
+# "auto" (default) — tries semantic search first, falls back to local
+tools = toolset.search_tools("manage employees", search="auto")
+
+# "semantic" — semantic API only, raises if unavailable
+tools = toolset.search_tools("manage employees", search="semantic")
+
+# "local" — local BM25+TF-IDF only, no semantic API call
+tools = toolset.search_tools("manage employees", search="local")
+```
+
+Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for `SearchTool` (`get_search_tool`) integration, OpenAI, and LangChain patterns.
 
 ## Examples
 
@@ -334,7 +368,8 @@ For more examples, check out the [examples/](examples/) directory:
 - [OpenAI Integration](examples/openai_integration.py)
 - [LangChain Integration](examples/langchain_integration.py)
 - [CrewAI Integration](examples/crewai_integration.py)
-- [Utility Tools](examples/utility_tools_example.py)
+- [Search Tool](examples/search_tool_example.py)
+- [Semantic Search](examples/semantic_search_example.py)
 
 ## Development
 
