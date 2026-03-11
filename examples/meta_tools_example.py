@@ -26,11 +26,7 @@ except ModuleNotFoundError:
 
 from stackone_ai import StackOneToolSet
 
-_account_ids = [
-    aid.strip()
-    for aid in os.getenv("STACKONE_ACCOUNT_ID", "").split(",")
-    if aid.strip()
-]
+_account_ids = [aid.strip() for aid in os.getenv("STACKONE_ACCOUNT_ID", "").split(",") if aid.strip()]
 
 
 def example_openai_meta_tools() -> None:

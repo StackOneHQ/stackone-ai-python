@@ -19,7 +19,7 @@ from stackone_ai.models import (
 )
 
 if TYPE_CHECKING:
-    from stackone_ai.toolset import SearchMode, StackOneToolSet
+    from stackone_ai.toolset import StackOneToolSet
 
 
 class MetaToolsOptions(BaseModel):
