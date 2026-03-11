@@ -393,6 +393,57 @@ class StackOneToolSet:
 
         return SearchTool(self, config=config)
 
+    def get_meta_tools(
+        self,
+        *,
+        account_ids: list[str] | None = None,
+        search: SearchMode | None = None,
+        connector: str | None = None,
+        top_k: int | None = None,
+        min_similarity: float | None = None,
+    ) -> Tools:
+        """Get LLM-callable meta tools (tool_search + tool_execute) for agent-driven workflows.
+
+        Returns a Tools collection that can be passed directly to any LLM framework.
+        The LLM uses tool_search to discover available tools, then tool_execute to run them.
+
+        Args:
+            account_ids: Account IDs to scope tool discovery and execution
+            search: Search mode ('auto', 'semantic', or 'local')
+            connector: Optional connector filter (e.g. 'bamboohr')
+            top_k: Maximum number of search results. Defaults to 5.
+            min_similarity: Minimum similarity score threshold 0-1
+
+        Returns:
+            Tools collection containing tool_search and tool_execute
+
+        Example::
+
+            toolset = StackOneToolSet(account_id="acc-123")
+            meta_tools = toolset.get_meta_tools()
+
+            # Pass to OpenAI
+            tools = meta_tools.to_openai()
+
+            # Pass to LangChain
+            tools = meta_tools.to_langchain()
+        """
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+            )
+
+        from stackone_ai.meta_tools import MetaToolsOptions, create_meta_tools
+
+        options = MetaToolsOptions(
+            account_ids=account_ids,
+            search=search,
+            connector=connector,
+            top_k=top_k,
+            min_similarity=min_similarity,
+        )
+        return create_meta_tools(self, options)
+
     @property
     def semantic_client(self) -> SemanticSearchClient:
         """Lazy initialization of semantic search client.
