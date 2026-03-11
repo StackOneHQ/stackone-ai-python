@@ -256,7 +256,7 @@ def _create_execute_tool(api_key: str, opts: MetaToolsOptions) -> ExecuteMetaToo
             },
             "parameters": {
                 "type": "object",
-                "description": "Parameters for the tool. Pass an empty object {} if no parameters are needed.",
+                "description": "Parameters for the tool. Pass {} if none needed.",
             },
         },
     )
