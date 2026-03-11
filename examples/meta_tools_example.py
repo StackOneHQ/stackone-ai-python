@@ -53,7 +53,7 @@ def example_openai_meta_tools() -> None:
 
     if openai_key:
         client = OpenAI()
-        model = "gpt-5.1"
+        model = "gpt-4o"
         provider = "OpenAI"
     elif google_key:
         client = OpenAI(
@@ -85,8 +85,10 @@ def example_openai_meta_tools() -> None:
             "content": (
                 "You are a helpful scheduling assistant. "
                 "Use tool_search to find relevant tools, then tool_execute to run them. "
-                "If a tool execution fails, try different parameters or a different tool. "
-                "Do not repeat the same failed call."
+                "Always read the parameter schemas from tool_search results carefully. "
+                "If a tool needs a user URI, first search for and call a "
+                "'get current user' tool to obtain it. "
+                "If a tool execution fails, fix the parameters and retry."
             ),
         },
         {

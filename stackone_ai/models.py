@@ -422,6 +422,10 @@ class StackOneTool(BaseModel):
                     python_type = int
                 elif type_str == "boolean":
                     python_type = bool
+                elif type_str == "object":
+                    python_type = dict
+                elif type_str == "array":
+                    python_type = list
 
                 field = Field(description=details.get("description", ""))
             else:
