@@ -304,7 +304,7 @@ class TestSemanticSearchIntegration:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         tools = toolset.search_tools("create employee", top_k=5)
 
         # Should only return tools for available connectors (bamboohr, hibob)
@@ -352,7 +352,7 @@ class TestSemanticSearchIntegration:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         tools = toolset.search_tools("create employee", top_k=5, search="auto")
 
         # Should return results from the local BM25+TF-IDF fallback
@@ -394,7 +394,7 @@ class TestSemanticSearchIntegration:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         tools = toolset.search_tools("create employee", connector="bamboohr", search="auto")
 
         assert len(tools) > 0
@@ -423,7 +423,7 @@ class TestSemanticSearchIntegration:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         with pytest.raises(SemanticSearchError):
             toolset.search_tools("create employee", search="semantic")
 
@@ -458,7 +458,7 @@ class TestSemanticSearchIntegration:
             query="create employee",
         )
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         results = toolset.search_action_names("create employee", min_similarity=0.5)
 
         # min_similarity is passed to server; mock returns both results
@@ -511,7 +511,7 @@ class TestSearchModes:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         tools = toolset.search_tools("create employee", top_k=5, search="local")
 
         assert len(tools) > 0
@@ -537,7 +537,7 @@ class TestSearchModes:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         with pytest.raises(SemanticSearchError):
             toolset.search_tools("create employee", search="semantic")
 
@@ -561,7 +561,7 @@ class TestSearchModes:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         tools = toolset.search_tools("create employee", top_k=5, search="auto")
 
         assert len(tools) > 0
@@ -585,7 +585,7 @@ class TestSearchModes:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         search_tool = toolset.get_search_tool(search="local")
         tools = search_tool("list employees", top_k=5)
 
@@ -752,7 +752,7 @@ class TestSearchActionNamesWithAccountIds:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         results = toolset.search_action_names(
             "create employee",
             account_ids=["acc-123"],
@@ -776,7 +776,7 @@ class TestSearchActionNamesWithAccountIds:
 
         mock_search.side_effect = SemanticSearchError("API unavailable")
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         results = toolset.search_action_names("create employee")
 
         assert results == []
@@ -808,7 +808,7 @@ class TestSearchActionNamesWithAccountIds:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         toolset.search_action_names(
             "test",
             account_ids=["acc-123"],
@@ -855,7 +855,7 @@ class TestSearchActionNamesWithAccountIds:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         results = toolset.search_action_names(
             "test",
             account_ids=["acc-123"],
@@ -967,7 +967,7 @@ class TestSemanticSearchDeduplication:
             ),
         ]
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         tools = toolset.search_tools("list employees", top_k=5)
 
         # Should deduplicate: both breathehr versions -> breathehr_list_employees
@@ -1002,7 +1002,7 @@ class TestSemanticSearchDeduplication:
             query="list employees",
         )
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         results = toolset.search_action_names("list employees", top_k=5)
 
         # Both results are returned with normalized names (no dedup in global path)

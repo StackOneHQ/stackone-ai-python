@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from stackone_ai.meta_tools import (
     ExecuteMetaTool,
@@ -18,6 +18,7 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
 )
+from stackone_ai.toolset import StackOneToolSet
 
 
 def _make_mock_tool(name: str = "test_tool", description: str = "A test tool") -> StackOneTool:
@@ -366,3 +367,67 @@ class TestOpenAIConversion:
         assert "query" in required
         assert "connector" not in required
         assert "top_k" not in required
+
+
+class TestToolSetOpenAIMethod:
+    """Tests for StackOneToolSet.openai() convenience method."""
+
+    def test_openai_default_fetches_all_tools(self):
+        toolset = StackOneToolSet(api_key="test-key")
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            result = toolset.openai()
+
+        mock_fetch.assert_called_once_with(account_ids=None)
+        assert len(result) == 1
+        assert result[0]["function"]["name"] == "test_tool"
+
+    def test_openai_search_and_execute_returns_meta_tools(self):
+        toolset = StackOneToolSet(api_key="test-key")
+        mock_meta = Tools([_make_mock_tool(name="tool_search"), _make_mock_tool(name="tool_execute")])
+
+        with patch.object(toolset, "get_meta_tools", return_value=mock_meta) as mock_get:
+            result = toolset.openai(mode="search_and_execute")
+
+        mock_get.assert_called_once_with(account_ids=None)
+        assert len(result) == 2
+        names = [t["function"]["name"] for t in result]
+        assert "tool_search" in names
+        assert "tool_execute" in names
+
+    def test_openai_passes_account_ids(self):
+        toolset = StackOneToolSet(api_key="test-key")
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            toolset.openai(account_ids=["acc-1"])
+
+        mock_fetch.assert_called_once_with(account_ids=["acc-1"])
+
+    def test_openai_uses_execute_config_account_ids(self):
+        toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["acc-from-config"]})
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            toolset.openai()
+
+        mock_fetch.assert_called_once_with(account_ids=["acc-from-config"])
+
+    def test_openai_account_ids_overrides_execute_config(self):
+        toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["from-config"]})
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            toolset.openai(account_ids=["from-call"])
+
+        mock_fetch.assert_called_once_with(account_ids=["from-call"])
+
+    def test_openai_search_and_execute_with_execute_config(self):
+        toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["acc-1"]})
+        mock_meta = Tools([_make_mock_tool(name="tool_search"), _make_mock_tool(name="tool_execute")])
+
+        with patch.object(toolset, "get_meta_tools", return_value=mock_meta) as mock_get:
+            toolset.openai(mode="search_and_execute")
+
+        mock_get.assert_called_once_with(account_ids=["acc-1"])

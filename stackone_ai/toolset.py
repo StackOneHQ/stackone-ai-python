@@ -52,6 +52,20 @@ class SearchConfig(TypedDict, total=False):
     """Minimum similarity score threshold 0-1."""
 
 
+class ExecuteToolsConfig(TypedDict, total=False):
+    """Execution configuration for the StackOneToolSet constructor.
+
+    Controls default account scoping for tool execution in meta tools.
+
+    When set to ``None`` (default), no account scoping is applied.
+    When provided, ``account_ids`` flow through to ``get_meta_tools()``
+    and ``fetch_tools()`` as defaults.
+    """
+
+    account_ids: list[str]
+    """Account IDs to scope tool discovery and execution."""
+
+
 _SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
 
 try:
@@ -318,7 +332,8 @@ class StackOneToolSet:
         api_key: str | None = None,
         account_id: str | None = None,
         base_url: str | None = None,
-        search: SearchConfig | None = _SEARCH_DEFAULT,
+        search: SearchConfig | None = None,
+        execute: ExecuteToolsConfig | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -327,10 +342,14 @@ class StackOneToolSet:
             account_id: Optional account ID
             base_url: Optional base URL override for API requests
             search: Search configuration. Controls default search behavior.
-                Omit or pass ``{}`` for defaults (method="auto").
-                Pass ``None`` to disable search.
+                Pass ``None`` (default) to disable search — ``toolset.openai()``
+                will return all regular tools.
+                Pass ``{}`` or ``{"method": "auto"}`` to enable search with defaults.
                 Pass ``{"method": "semantic", "top_k": 5}`` for custom defaults.
                 Per-call options always override these defaults.
+            execute: Execution configuration. Controls default account scoping
+                for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
+                meta tools to specific accounts.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -347,6 +366,7 @@ class StackOneToolSet:
         self._account_ids: list[str] = []
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
+        self._execute_config: ExecuteToolsConfig | None = execute
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -443,6 +463,44 @@ class StackOneToolSet:
             min_similarity=min_similarity,
         )
         return create_meta_tools(self, options)
+
+    def openai(
+        self,
+        *,
+        mode: Literal["search_and_execute"] | None = None,
+        account_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get tools in OpenAI function calling format.
+
+        Args:
+            mode: Tool mode.
+                ``None`` (default): fetch all tools and convert to OpenAI format.
+                ``"search_and_execute"``: return two meta tools (tool_search + tool_execute)
+                that let the LLM discover and execute tools on-demand.
+            account_ids: Account IDs to scope tools. Overrides the ``execute``
+                config from the constructor.
+
+        Returns:
+            List of tool definitions in OpenAI function format.
+
+        Examples::
+
+            # All tools
+            toolset = StackOneToolSet()
+            tools = toolset.openai()
+
+            # Meta tools for agent-driven discovery
+            toolset = StackOneToolSet()
+            tools = toolset.openai(mode="search_and_execute")
+        """
+        effective_account_ids = account_ids or (
+            self._execute_config.get("account_ids") if self._execute_config else None
+        )
+
+        if mode == "search_and_execute":
+            return self.get_meta_tools(account_ids=effective_account_ids).to_openai()
+
+        return self.fetch_tools(account_ids=effective_account_ids).to_openai()
 
     @property
     def semantic_client(self) -> SemanticSearchClient:
