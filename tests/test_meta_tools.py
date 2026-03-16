@@ -5,12 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from stackone_ai.meta_tools import (
-    ExecuteMetaTool,
-    MetaToolsOptions,
-    SearchMetaTool,
-    create_meta_tools,
-)
 from stackone_ai.models import (
     ExecuteConfig,
     StackOneAPIError,
@@ -18,7 +12,13 @@ from stackone_ai.models import (
     ToolParameters,
     Tools,
 )
-from stackone_ai.toolset import StackOneToolSet
+from stackone_ai.toolset import (
+    StackOneToolSet,
+    _create_execute_tool,
+    _create_search_tool,
+    _ExecuteTool,
+    _SearchTool,
+)
 
 
 def _make_mock_tool(name: str = "test_tool", description: str = "A test tool") -> StackOneTool:
@@ -40,9 +40,22 @@ def _make_mock_tool(name: str = "test_tool", description: str = "A test tool") -
     )
 
 
+def _make_meta_tools(toolset: MagicMock) -> Tools:
+    """Build meta tools using the private helpers, wiring in a mock toolset."""
+    search_tool = _create_search_tool(toolset.api_key)
+    search_tool._toolset = toolset
+
+    execute_tool = _create_execute_tool(toolset.api_key)
+    execute_tool._toolset = toolset
+
+    return Tools([search_tool, execute_tool])
+
+
 def _make_mock_toolset(tools: list[StackOneTool] | None = None) -> MagicMock:
     toolset = MagicMock()
     toolset.api_key = "test-key"
+    toolset._search_config = {"method": "auto"}
+    toolset._account_ids = []
 
     mock_tools = Tools(tools or [_make_mock_tool()])
     toolset.search_tools.return_value = mock_tools
@@ -50,17 +63,17 @@ def _make_mock_toolset(tools: list[StackOneTool] | None = None) -> MagicMock:
     return toolset
 
 
-class TestCreateMetaTools:
+class TestBuildMetaTools:
     def test_returns_tools_collection(self):
         toolset = _make_mock_toolset()
-        result = create_meta_tools(toolset)
+        result = _make_meta_tools(toolset)
 
         assert isinstance(result, Tools)
         assert len(result) == 2
 
     def test_tool_names(self):
         toolset = _make_mock_toolset()
-        result = create_meta_tools(toolset)
+        result = _make_meta_tools(toolset)
 
         names = [t.name for t in result]
         assert "tool_search" in names
@@ -68,40 +81,29 @@ class TestCreateMetaTools:
 
     def test_search_tool_type(self):
         toolset = _make_mock_toolset()
-        result = create_meta_tools(toolset)
+        result = _make_meta_tools(toolset)
         search = result.get_tool("tool_search")
-        assert isinstance(search, SearchMetaTool)
+        assert isinstance(search, _SearchTool)
 
     def test_execute_tool_type(self):
         toolset = _make_mock_toolset()
-        result = create_meta_tools(toolset)
+        result = _make_meta_tools(toolset)
         execute = result.get_tool("tool_execute")
-        assert isinstance(execute, ExecuteMetaTool)
-
-    def test_options_passed_through(self):
-        toolset = _make_mock_toolset()
-        opts = MetaToolsOptions(account_ids=["acc-1"], connector="bamboohr", top_k=3)
-        result = create_meta_tools(toolset, opts)
-
-        search = result.get_tool("tool_search")
-        assert search._options.account_ids == ["acc-1"]
-        assert search._options.connector == "bamboohr"
-        assert search._options.top_k == 3
+        assert isinstance(execute, _ExecuteTool)
 
     def test_private_attrs_excluded_from_serialization(self):
         toolset = _make_mock_toolset()
-        result = create_meta_tools(toolset)
+        result = _make_meta_tools(toolset)
         search = result.get_tool("tool_search")
 
         dumped = search.model_dump()
         assert "_toolset" not in dumped
-        assert "_options" not in dumped
 
 
 class TestToolSearch:
     def test_delegates_to_search_tools(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         search.execute({"query": "find employees"})
@@ -113,7 +115,7 @@ class TestToolSearch:
     def test_returns_tool_names_descriptions_and_schemas(self):
         mock_tool = _make_mock_tool(name="bamboohr_list_employees", description="List employees")
         toolset = _make_mock_toolset([mock_tool])
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         result = search.execute({"query": "list employees"})
@@ -125,21 +127,23 @@ class TestToolSearch:
         assert "parameters" in tool_info
         assert "id" in tool_info["parameters"]
 
-    def test_passes_connector_from_options(self):
+    def test_reads_config_from_toolset(self):
         toolset = _make_mock_toolset()
-        opts = MetaToolsOptions(connector="bamboohr")
-        meta = create_meta_tools(toolset, opts)
+        toolset._search_config = {"method": "semantic", "top_k": 3, "min_similarity": 0.5}
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         search.execute({"query": "employees"})
 
         call_kwargs = toolset.search_tools.call_args[1]
-        assert call_kwargs["connector"] == "bamboohr"
+        assert call_kwargs["search"] == "semantic"
+        assert call_kwargs["top_k"] == 3
+        assert call_kwargs["min_similarity"] == 0.5
 
-    def test_passes_account_ids_from_options(self):
+    def test_reads_account_ids_from_toolset(self):
         toolset = _make_mock_toolset()
-        opts = MetaToolsOptions(account_ids=["acc-1", "acc-2"])
-        meta = create_meta_tools(toolset, opts)
+        toolset._account_ids = ["acc-1", "acc-2"]
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         search.execute({"query": "employees"})
@@ -149,7 +153,7 @@ class TestToolSearch:
 
     def test_string_arguments(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         result = search.execute(json.dumps({"query": "employees"}))
@@ -159,7 +163,7 @@ class TestToolSearch:
 
     def test_validation_error_returns_error_dict(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         result = search.execute({"query": ""})
@@ -169,7 +173,7 @@ class TestToolSearch:
 
     def test_invalid_json_returns_error_dict(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         result = search.execute("not valid json")
@@ -178,7 +182,7 @@ class TestToolSearch:
 
     def test_missing_query_returns_error_dict(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         search = meta.get_tool("tool_search")
 
         result = search.execute({})
@@ -190,8 +194,8 @@ class TestToolExecute:
     def test_delegates_to_fetch_and_execute(self):
         toolset = MagicMock()
         toolset.api_key = "test-key"
+        toolset._account_ids = []
 
-        # Create a mock tool that returns a known result
         mock_tool = MagicMock()
         mock_tool.name = "test_tool"
         mock_tools = MagicMock()
@@ -199,7 +203,7 @@ class TestToolExecute:
         mock_tool.execute.return_value = {"result": "ok"}
         toolset.fetch_tools.return_value = mock_tools
 
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         result = execute.execute({"tool_name": "test_tool", "parameters": {"id": "123"}})
@@ -210,11 +214,12 @@ class TestToolExecute:
     def test_tool_not_found_returns_error(self):
         toolset = MagicMock()
         toolset.api_key = "test-key"
+        toolset._account_ids = []
         mock_tools = MagicMock()
         mock_tools.get_tool.return_value = None
         toolset.fetch_tools.return_value = mock_tools
 
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         result = execute.execute({"tool_name": "nonexistent_tool"})
@@ -225,6 +230,7 @@ class TestToolExecute:
     def test_api_error_returned_as_dict(self):
         toolset = MagicMock()
         toolset.api_key = "test-key"
+        toolset._account_ids = []
 
         mock_tool = MagicMock()
         mock_tool.name = "test_tool"
@@ -235,7 +241,7 @@ class TestToolExecute:
         mock_tools.get_tool.return_value = mock_tool
         toolset.fetch_tools.return_value = mock_tools
 
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         result = execute.execute({"tool_name": "test_tool", "parameters": {}})
@@ -246,7 +252,7 @@ class TestToolExecute:
 
     def test_validation_error_returns_error_dict(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         result = execute.execute({"tool_name": ""})
@@ -255,7 +261,7 @@ class TestToolExecute:
 
     def test_invalid_json_returns_error_dict(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         result = execute.execute("not valid json")
@@ -265,6 +271,7 @@ class TestToolExecute:
     def test_caches_fetched_tools(self):
         toolset = MagicMock()
         toolset.api_key = "test-key"
+        toolset._account_ids = []
 
         mock_tool = MagicMock()
         mock_tool.name = "test_tool"
@@ -273,18 +280,18 @@ class TestToolExecute:
         mock_tools.get_tool.return_value = mock_tool
         toolset.fetch_tools.return_value = mock_tools
 
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         execute.execute({"tool_name": "test_tool"})
         execute.execute({"tool_name": "test_tool"})
 
-        # fetch_tools should only be called once due to caching
         toolset.fetch_tools.assert_called_once()
 
-    def test_passes_account_ids(self):
+    def test_passes_account_ids_from_toolset(self):
         toolset = MagicMock()
         toolset.api_key = "test-key"
+        toolset._account_ids = ["acc-1"]
 
         mock_tool = MagicMock()
         mock_tool.name = "test_tool"
@@ -293,8 +300,7 @@ class TestToolExecute:
         mock_tools.get_tool.return_value = mock_tool
         toolset.fetch_tools.return_value = mock_tools
 
-        opts = MetaToolsOptions(account_ids=["acc-1"])
-        meta = create_meta_tools(toolset, opts)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         execute.execute({"tool_name": "test_tool"})
@@ -304,6 +310,7 @@ class TestToolExecute:
     def test_string_arguments(self):
         toolset = MagicMock()
         toolset.api_key = "test-key"
+        toolset._account_ids = []
 
         mock_tool = MagicMock()
         mock_tool.name = "test_tool"
@@ -312,7 +319,7 @@ class TestToolExecute:
         mock_tools.get_tool.return_value = mock_tool
         toolset.fetch_tools.return_value = mock_tools
 
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute = meta.get_tool("tool_execute")
 
         result = execute.execute(json.dumps({"tool_name": "test_tool", "parameters": {}}))
@@ -323,7 +330,7 @@ class TestToolExecute:
 class TestLangChainConversion:
     def test_meta_tools_convert_to_langchain(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
 
         langchain_tools = meta.to_langchain()
 
@@ -335,7 +342,7 @@ class TestLangChainConversion:
     def test_execute_tool_parameters_field_is_dict_type(self):
         """The 'parameters' field of tool_execute should map to dict, not str."""
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
         execute_tool = meta.get_tool("tool_execute")
 
         langchain_tool = execute_tool.to_langchain()
@@ -347,7 +354,7 @@ class TestLangChainConversion:
 class TestOpenAIConversion:
     def test_meta_tools_convert_to_openai(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
 
         openai_tools = meta.to_openai()
 
@@ -358,7 +365,7 @@ class TestOpenAIConversion:
 
     def test_nullable_fields_not_required(self):
         toolset = _make_mock_toolset()
-        meta = create_meta_tools(toolset)
+        meta = _make_meta_tools(toolset)
 
         openai_tools = meta.to_openai()
         search_fn = next(t for t in openai_tools if t["function"]["name"] == "tool_search")
@@ -387,10 +394,10 @@ class TestToolSetOpenAIMethod:
         toolset = StackOneToolSet(api_key="test-key")
         mock_meta = Tools([_make_mock_tool(name="tool_search"), _make_mock_tool(name="tool_execute")])
 
-        with patch.object(toolset, "get_meta_tools", return_value=mock_meta) as mock_get:
+        with patch.object(toolset, "_build_tools", return_value=mock_meta) as mock_build:
             result = toolset.openai(mode="search_and_execute")
 
-        mock_get.assert_called_once_with(account_ids=None)
+        mock_build.assert_called_once_with(account_ids=None)
         assert len(result) == 2
         names = [t["function"]["name"] for t in result]
         assert "tool_search" in names
@@ -427,10 +434,10 @@ class TestToolSetOpenAIMethod:
         toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["acc-1"]})
         mock_meta = Tools([_make_mock_tool(name="tool_search"), _make_mock_tool(name="tool_execute")])
 
-        with patch.object(toolset, "get_meta_tools", return_value=mock_meta) as mock_get:
+        with patch.object(toolset, "_build_tools", return_value=mock_meta) as mock_build:
             toolset.openai(mode="search_and_execute")
 
-        mock_get.assert_called_once_with(account_ids=["acc-1"])
+        mock_build.assert_called_once_with(account_ids=["acc-1"])
 
 
 class TestToolSetExecuteMethod:
@@ -443,7 +450,7 @@ class TestToolSetExecuteMethod:
         mock_meta = MagicMock()
         mock_meta.get_tool.return_value = mock_tool
 
-        with patch.object(toolset, "get_meta_tools", return_value=mock_meta):
+        with patch.object(toolset, "_build_tools", return_value=mock_meta):
             result = toolset.execute("tool_search", {"query": "employees"})
 
         assert result == {"result": "ok"}
@@ -457,18 +464,18 @@ class TestToolSetExecuteMethod:
         mock_meta = MagicMock()
         mock_meta.get_tool.return_value = mock_tool
 
-        with patch.object(toolset, "get_meta_tools", return_value=mock_meta) as mock_get:
+        with patch.object(toolset, "_build_tools", return_value=mock_meta) as mock_build:
             toolset.execute("tool_search", {"query": "a"})
             toolset.execute("tool_execute", {"tool_name": "b"})
 
-        mock_get.assert_called_once()
+        mock_build.assert_called_once()
 
     def test_execute_returns_error_for_unknown_tool(self):
         toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
         mock_meta = MagicMock()
         mock_meta.get_tool.return_value = None
 
-        with patch.object(toolset, "get_meta_tools", return_value=mock_meta):
+        with patch.object(toolset, "_build_tools", return_value=mock_meta):
             result = toolset.execute("nonexistent", {})
 
         assert "error" in result
@@ -480,8 +487,50 @@ class TestToolSetExecuteMethod:
         mock_meta = MagicMock()
         mock_meta.get_tool.return_value = mock_tool
 
-        with patch.object(toolset, "get_meta_tools", return_value=mock_meta):
+        with patch.object(toolset, "_build_tools", return_value=mock_meta):
             result = toolset.execute("tool_search", '{"query": "test"}')
 
         assert result == {"ok": True}
         mock_tool.execute.assert_called_once_with('{"query": "test"}')
+
+
+class TestToolSetLangChainMethod:
+    """Tests for StackOneToolSet.langchain() convenience method."""
+
+    def test_langchain_default_fetches_all_tools(self):
+        toolset = StackOneToolSet(api_key="test-key")
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            result = toolset.langchain()
+
+        mock_fetch.assert_called_once_with(account_ids=None)
+        assert len(result) == 1
+
+    def test_langchain_search_and_execute_returns_tools(self):
+        toolset = StackOneToolSet(api_key="test-key")
+        mock_tools = Tools([_make_mock_tool(name="tool_search"), _make_mock_tool(name="tool_execute")])
+
+        with patch.object(toolset, "_build_tools", return_value=mock_tools) as mock_build:
+            result = toolset.langchain(mode="search_and_execute")
+
+        mock_build.assert_called_once_with(account_ids=None)
+        assert len(result) == 2
+
+    def test_langchain_passes_account_ids(self):
+        toolset = StackOneToolSet(api_key="test-key")
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            toolset.langchain(account_ids=["acc-1"])
+
+        mock_fetch.assert_called_once_with(account_ids=["acc-1"])
+
+    def test_langchain_uses_execute_config_account_ids(self):
+        toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["acc-from-config"]})
+        mock_tools = Tools([_make_mock_tool()])
+
+        with patch.object(toolset, "fetch_tools", return_value=mock_tools) as mock_fetch:
+            toolset.langchain()
+
+        mock_fetch.assert_called_once_with(account_ids=["acc-from-config"])
