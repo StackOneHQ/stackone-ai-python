@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, Literal, TypedDict, TypeVar
@@ -696,7 +696,7 @@ class StackOneToolSet:
         *,
         mode: Literal["search_and_execute"] | None = None,
         account_ids: list[str] | None = None,
-    ) -> list[Any]:
+    ) -> Sequence[Any]:
         """Get tools in LangChain format.
 
         Args:
