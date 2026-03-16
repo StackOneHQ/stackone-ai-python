@@ -59,7 +59,7 @@ class SearchConfig(TypedDict, total=False):
 class ExecuteToolsConfig(TypedDict, total=False):
     """Execution configuration for the StackOneToolSet constructor.
 
-    Controls default account scoping for tool execution in meta tools.
+    Controls default account scoping for tool execution.
 
     When set to ``None`` (default), no account scoping is applied.
     When provided, ``account_ids`` flow through to ``openai(mode="search_and_execute")``
