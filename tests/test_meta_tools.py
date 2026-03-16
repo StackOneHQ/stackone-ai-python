@@ -431,3 +431,57 @@ class TestToolSetOpenAIMethod:
             toolset.openai(mode="search_and_execute")
 
         mock_get.assert_called_once_with(account_ids=["acc-1"])
+
+
+class TestToolSetExecuteMethod:
+    """Tests for StackOneToolSet.execute() convenience method."""
+
+    def test_execute_delegates_to_meta_tool(self):
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
+        mock_tool = MagicMock()
+        mock_tool.execute.return_value = {"result": "ok"}
+        mock_meta = MagicMock()
+        mock_meta.get_tool.return_value = mock_tool
+
+        with patch.object(toolset, "get_meta_tools", return_value=mock_meta):
+            result = toolset.execute("tool_search", {"query": "employees"})
+
+        assert result == {"result": "ok"}
+        mock_meta.get_tool.assert_called_once_with("tool_search")
+        mock_tool.execute.assert_called_once_with({"query": "employees"})
+
+    def test_execute_caches_meta_tools(self):
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
+        mock_tool = MagicMock()
+        mock_tool.execute.return_value = {"ok": True}
+        mock_meta = MagicMock()
+        mock_meta.get_tool.return_value = mock_tool
+
+        with patch.object(toolset, "get_meta_tools", return_value=mock_meta) as mock_get:
+            toolset.execute("tool_search", {"query": "a"})
+            toolset.execute("tool_execute", {"tool_name": "b"})
+
+        mock_get.assert_called_once()
+
+    def test_execute_returns_error_for_unknown_tool(self):
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
+        mock_meta = MagicMock()
+        mock_meta.get_tool.return_value = None
+
+        with patch.object(toolset, "get_meta_tools", return_value=mock_meta):
+            result = toolset.execute("nonexistent", {})
+
+        assert "error" in result
+
+    def test_execute_accepts_string_arguments(self):
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
+        mock_tool = MagicMock()
+        mock_tool.execute.return_value = {"ok": True}
+        mock_meta = MagicMock()
+        mock_meta.get_tool.return_value = mock_tool
+
+        with patch.object(toolset, "get_meta_tools", return_value=mock_meta):
+            result = toolset.execute("tool_search", '{"query": "test"}')
+
+        assert result == {"ok": True}
+        mock_tool.execute.assert_called_once_with('{"query": "test"}')

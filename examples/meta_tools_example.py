@@ -9,13 +9,12 @@ There are two ways to give tools to an LLM:
    (tool_search + tool_execute). The LLM discovers and runs tools on-demand,
    keeping token usage constant regardless of catalog size.
 
-This example demonstrates approach 2 with OpenAI and LangChain clients.
+This example demonstrates approach 2 with a Gemini client (OpenAI-compatible).
 
 Prerequisites:
     - STACKONE_API_KEY environment variable
     - STACKONE_ACCOUNT_ID environment variable
     - GOOGLE_API_KEY environment variable (for Gemini)
-    - OPENAI_API_KEY environment variable (optional, for LangChain example)
 
 Run with:
     uv run python examples/meta_tools_example.py
@@ -68,8 +67,7 @@ def example_gemini() -> None:
         execute={"account_ids": [account_id]} if account_id else None,
     )
 
-    # 2. Get meta tools in OpenAI format
-    meta_tools = toolset.get_meta_tools()
+    # 2. Get tools in OpenAI format
     openai_tools = toolset.openai(mode="search_and_execute")
 
     # 3. Create Gemini client (OpenAI-compatible) and run agent loop
@@ -100,8 +98,7 @@ def example_gemini() -> None:
         messages.append(choice.message.model_dump(exclude_none=True))
         for tool_call in choice.message.tool_calls:
             print(f"  -> {tool_call.function.name}({tool_call.function.arguments})")
-            tool = meta_tools.get_tool(tool_call.function.name)
-            result = tool.execute(tool_call.function.arguments) if tool else {"error": "Unknown tool"}
+            result = toolset.execute(tool_call.function.name, tool_call.function.arguments)
             messages.append(
                 {
                     "role": "tool",
@@ -109,64 +106,6 @@ def example_gemini() -> None:
                     "content": json.dumps(result),
                 }
             )
-
-    print()
-
-
-def example_langchain() -> None:
-    """Complete LangChain integration with meta tools.
-
-    Shows: init toolset -> bind tools to ChatOpenAI -> agent loop -> final answer.
-    """
-    print("=" * 60)
-    print("Example 2: LangChain client with meta tools")
-    print("=" * 60)
-    print()
-
-    try:
-        from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-        from langchain_google_genai import ChatGoogleGenerativeAI
-    except ImportError:
-        print("Skipped: pip install langchain-google-genai")
-        print()
-        return
-
-    if not os.getenv("GOOGLE_API_KEY"):
-        print("Skipped: Set GOOGLE_API_KEY to run this example.")
-        print()
-        return
-
-    # 1. Init toolset
-    account_id = os.getenv("STACKONE_ACCOUNT_ID")
-    toolset = StackOneToolSet(
-        account_id=account_id,
-        search={"method": "semantic", "top_k": 3},
-        execute={"account_ids": [account_id]} if account_id else None,
-    )
-
-    # 2. Get meta tools in LangChain format and bind to model
-    meta_tools = toolset.get_meta_tools()
-    langchain_tools = meta_tools.to_langchain()
-    model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview").bind_tools(langchain_tools)
-
-    # 3. Run agent loop
-    messages = [HumanMessage(content="List my upcoming Calendly events for the next week.")]
-
-    for _step in range(10):
-        response: AIMessage = model.invoke(messages)
-
-        # 4. If no tool calls, print final answer and stop
-        if not response.tool_calls:
-            print(f"Answer: {response.content}")
-            break
-
-        # 5. Execute tool calls and feed results back
-        messages.append(response)
-        for tool_call in response.tool_calls:
-            print(f"  -> {tool_call['name']}({json.dumps(tool_call['args'])})")
-            tool = meta_tools.get_tool(tool_call["name"])
-            result = tool.execute(tool_call["args"]) if tool else {"error": "Unknown tool"}
-            messages.append(ToolMessage(content=json.dumps(result), tool_call_id=tool_call["id"]))
 
     print()
 
@@ -179,7 +118,6 @@ def main() -> None:
         return
 
     example_gemini()
-    example_langchain()
 
 
 if __name__ == "__main__":

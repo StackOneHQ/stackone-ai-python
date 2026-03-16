@@ -367,6 +367,7 @@ class StackOneToolSet:
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
         self._execute_config: ExecuteToolsConfig | None = execute
+        self._meta_tools_cache: Tools | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -501,6 +502,36 @@ class StackOneToolSet:
             return self.get_meta_tools(account_ids=effective_account_ids).to_openai()
 
         return self.fetch_tools(account_ids=effective_account_ids).to_openai()
+
+
+    def execute(
+        self,
+        tool_name: str,
+        arguments: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute a tool by name.
+
+        Use with ``openai(mode="search_and_execute")`` in manual agent loops —
+        pass the tool name and arguments from the LLM's tool call directly.
+
+        Meta tools are cached after the first call.
+
+        Args:
+            tool_name: The tool name from the LLM's tool call
+                (e.g. ``"tool_search"`` or ``"tool_execute"``).
+            arguments: The arguments from the LLM's tool call,
+                as a JSON string or dict.
+
+        Returns:
+            Tool execution result as a dict.
+        """
+        if self._meta_tools_cache is None:
+            self._meta_tools_cache = self.get_meta_tools()
+
+        tool = self._meta_tools_cache.get_tool(tool_name)
+        if tool is None:
+            return {"error": f'Tool "{tool_name}" not found.'}
+        return tool.execute(arguments)
 
     @property
     def semantic_client(self) -> SemanticSearchClient:
