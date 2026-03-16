@@ -19,7 +19,7 @@ Prerequisites:
     - GOOGLE_API_KEY environment variable (for Gemini/LangChain)
 
 Run with:
-    uv run python examples/meta_tools_example.py
+    uv run python examples/agent_tool_search.py
 """
 
 from __future__ import annotations
