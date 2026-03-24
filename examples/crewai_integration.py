@@ -34,7 +34,7 @@ def crewai_integration():
         goal=f"What is the employee with the id {employee_id}?",
         backstory="With over 10 years of experience in HR and employee management, "
         "you excel at finding patterns in complex datasets.",
-        llm="gpt-4o-mini",
+        llm="gpt-5.4",
         tools=langchain_tools,
         max_iter=2,
     )

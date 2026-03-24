@@ -10,13 +10,13 @@ There are two ways to give tools to an LLM:
    keeping token usage constant regardless of catalog size.
 
 This example demonstrates approach 2 with two patterns:
-- Raw client (Gemini): manual agent loop with ``toolset.execute()``
+- Raw client (OpenAI): manual agent loop with ``toolset.execute()``
 - LangChain: framework handles tool execution automatically
 
 Prerequisites:
     - STACKONE_API_KEY environment variable
     - STACKONE_ACCOUNT_ID environment variable
-    - GOOGLE_API_KEY environment variable (for Gemini/LangChain)
+    - OPENAI_API_KEY environment variable
 
 Run with:
     uv run python examples/agent_tool_search.py
@@ -37,13 +37,13 @@ except ModuleNotFoundError:
 from stackone_ai import StackOneToolSet
 
 
-def example_gemini() -> None:
-    """Raw client: Gemini via OpenAI-compatible API.
+def example_openai() -> None:
+    """Raw client: OpenAI.
 
     Shows: init toolset -> get OpenAI tools -> manual agent loop with toolset.execute().
     """
     print("=" * 60)
-    print("Example 1: Raw client (Gemini) — manual execution")
+    print("Example 1: Raw client (OpenAI) — manual execution")
     print("=" * 60)
     print()
 
@@ -54,9 +54,8 @@ def example_gemini() -> None:
         print()
         return
 
-    google_key = os.getenv("GOOGLE_API_KEY")
-    if not google_key:
-        print("Skipped: Set GOOGLE_API_KEY to run this example.")
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Skipped: Set OPENAI_API_KEY to run this example.")
         print()
         return
 
@@ -71,18 +70,25 @@ def example_gemini() -> None:
     # 2. Get tools in OpenAI format
     openai_tools = toolset.openai(mode="search_and_execute")
 
-    # 3. Create Gemini client (OpenAI-compatible) and run agent loop
-    client = OpenAI(
-        api_key=google_key,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    )
+    # 3. Create OpenAI client and run agent loop
+    client = OpenAI()
     messages: list[dict] = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful scheduling assistant. Use tool_search to find relevant tools, "
+                "then tool_execute to run them. Always read the parameter schemas from tool_search "
+                "results carefully. If a tool needs a user URI, first search for and call a "
+                '"get current user" tool to obtain it. If a tool execution fails, try different '
+                "parameters or a different tool."
+            ),
+        },
         {"role": "user", "content": "List my upcoming Calendly events for the next week."},
     ]
 
     for _step in range(10):
         response = client.chat.completions.create(
-            model="gemini-3-pro-preview",
+            model="gpt-5.4",
             messages=messages,
             tools=openai_tools,
             tool_choice="auto",
@@ -123,15 +129,15 @@ def example_langchain() -> None:
     print()
 
     try:
-        from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+        from langchain_openai import ChatOpenAI
     except ImportError:
-        print("Skipped: pip install langchain-google-genai")
+        print("Skipped: pip install langchain-openai")
         print()
         return
 
-    if not os.getenv("GOOGLE_API_KEY"):
-        print("Skipped: Set GOOGLE_API_KEY to run this example.")
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Skipped: Set OPENAI_API_KEY to run this example.")
         print()
         return
 
@@ -146,10 +152,21 @@ def example_langchain() -> None:
     # 2. Get tools in LangChain format and bind to model
     langchain_tools = toolset.langchain(mode="search_and_execute")
     tools_by_name = {tool.name: tool for tool in langchain_tools}
-    model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview").bind_tools(langchain_tools)
+    model = ChatOpenAI(model="gpt-5.4").bind_tools(langchain_tools)
 
     # 3. Run agent loop
-    messages = [HumanMessage(content="List my upcoming Calendly events for the next week.")]
+    messages = [
+        SystemMessage(
+            content=(
+                "You are a helpful scheduling assistant. Use tool_search to find relevant tools, "
+                "then tool_execute to run them. Always read the parameter schemas from tool_search "
+                "results carefully. If a tool needs a user URI, first search for and call a "
+                '"get current user" tool to obtain it. If a tool execution fails, try different '
+                "parameters or a different tool."
+            ),
+        ),
+        HumanMessage(content="List my upcoming Calendly events for the next week."),
+    ]
 
     for _step in range(10):
         response: AIMessage = model.invoke(messages)
@@ -177,7 +194,7 @@ def main() -> None:
         print("Set STACKONE_API_KEY to run these examples.")
         return
 
-    example_gemini()
+    example_openai()
     example_langchain()
 
 

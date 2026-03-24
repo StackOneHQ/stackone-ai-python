@@ -198,7 +198,7 @@ def example_with_openai():
 
         # Create a chat completion with discovered tools
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-5.4",
             messages=[
                 {
                     "role": "system",
@@ -246,7 +246,7 @@ def example_with_langchain():
             print(f"  - {tool.name}: {tool.description}")
 
         # Create LangChain agent
-        llm = ChatOpenAI(model="gpt-4", temperature=0)
+        llm = ChatOpenAI(model="gpt-5.4", temperature=0)
 
         prompt = ChatPromptTemplate.from_messages(
             [

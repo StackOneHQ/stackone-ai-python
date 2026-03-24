@@ -914,12 +914,23 @@ class StackOneToolSet:
             if not all_results:
                 return Tools([])
 
-            # Match back to fetched tool definitions
-            action_names = {_normalize_action_name(r.action_name) for r in all_results}
-            matched_tools = [t for t in all_tools if t.name in action_names]
+            # 1. Parse composite IDs to MCP-format action names, deduplicate
+            seen_names: set[str] = set()
+            action_names: list[str] = []
+            for result in all_results:
+                name = _normalize_action_name(result.id)
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                action_names.append(name)
 
-            # Sort matched tools by semantic search score order
-            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(all_results)}
+            if not action_names:
+                return Tools([])
+
+            # 2. Use MCP tools (already fetched) — schemas come from the source of truth
+            # 3. Filter to only the tools search found, preserving search relevance order
+            action_order = {name: i for i, name in enumerate(action_names)}
+            matched_tools = [t for t in all_tools if t.name in seen_names]
             matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
 
             return Tools(matched_tools)
@@ -1041,20 +1052,9 @@ class StackOneToolSet:
             logger.warning("Semantic search failed: %s", e)
             return []
 
-        # Sort by score, normalize action names
+        # Sort by score
         all_results.sort(key=lambda r: r.similarity_score, reverse=True)
-        normalized: list[SemanticSearchResult] = []
-        for r in all_results:
-            normalized.append(
-                SemanticSearchResult(
-                    action_name=_normalize_action_name(r.action_name),
-                    connector_key=r.connector_key,
-                    similarity_score=r.similarity_score,
-                    label=r.label,
-                    description=r.description,
-                )
-            )
-        return normalized[:effective_top_k] if effective_top_k is not None else normalized
+        return all_results[:effective_top_k] if effective_top_k is not None else all_results
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

@@ -12,18 +12,16 @@ Each path trades off between speed, filtering, and completeness.
 This is the primary method used when integrating with OpenAI, LangChain, or CrewAI.
 The internal flow is:
 
-1. Fetch ALL tools from linked accounts via MCP (uses account_ids to scope the request)
-2. Extract available connectors from the fetched tools (e.g. {bamboohr, hibob})
-3. Search EACH connector in parallel via the semantic search API (/actions/search)
-4. Collect results, sort by relevance score, apply top_k if specified
-5. Match semantic results back to the fetched tool definitions
+1. Fetch tools from linked accounts via MCP to discover available connectors
+2. Search EACH connector in parallel via the semantic search API (/actions/search)
+3. The search API returns results with full ``input_schema`` for each action
+4. Build executable tools directly from search results (no match-back needed)
+5. Deduplicate by action_id, sort by relevance score, apply top_k
 6. Return Tools sorted by relevance score
 
 Key point: only the user's own connectors are searched — no wasted results
-from connectors the user doesn't have. Tools are fetched first, semantic
-search runs second, and only tools that exist in the user's linked
-accounts AND match the semantic query are returned. This prevents
-suggesting tools the user cannot execute.
+from connectors the user doesn't have. The search API returns ``input_schema``
+with each result, so tools can be built directly without a separate fetch.
 
 If the semantic API is unavailable, the SDK falls back to a local
 BM25 + TF-IDF hybrid search over the fetched tools (unless
@@ -33,10 +31,10 @@ BM25 + TF-IDF hybrid search over the fetched tools (unless
 2. ``search_action_names(query)`` — Lightweight discovery
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Queries the semantic API directly and returns action name metadata
-(name, connector, score, description) **without** fetching full tool
-definitions. This is useful for previewing results before committing
-to a full fetch.
+Queries the semantic API directly and returns action metadata
+(action_id, connector, score, description, input_schema) **without**
+building full tool objects. Useful for previewing results before
+committing to a full fetch.
 
 When ``account_ids`` are provided, each connector is searched in
 parallel (same as ``search_tools``). Without ``account_ids``, results
@@ -71,12 +69,8 @@ class SemanticSearchError(Exception):
 class SemanticSearchResult(BaseModel):
     """Single result from semantic search API."""
 
-    action_name: str
-    connector_key: str
+    id: str
     similarity_score: float
-    label: str
-    description: str
-    project_id: str = "global"
 
 
 class SemanticSearchResponse(BaseModel):
@@ -99,7 +93,7 @@ class SemanticSearchClient:
         client = SemanticSearchClient(api_key="sk-xxx")
         response = client.search("create employee", connector="bamboohr", top_k=5)
         for result in response.results:
-            print(f"{result.action_name}: {result.similarity_score:.2f}")
+            print(f"{result.action_id}: {result.similarity_score:.2f}")
     """
 
     def __init__(
@@ -152,7 +146,7 @@ class SemanticSearchClient:
         Example:
             response = client.search("onboard a new team member", top_k=5)
             for result in response.results:
-                print(f"{result.action_name}: {result.similarity_score:.2f}")
+                print(f"{result.action_id}: {result.similarity_score:.2f}")
         """
         url = f"{self.base_url}/actions/search"
         headers = {
@@ -210,4 +204,4 @@ class SemanticSearchClient:
             )
         """
         response = self.search(query, connector, top_k, project_id, min_similarity=min_similarity)
-        return [r.action_name for r in response.results]
+        return [r.id for r in response.results]

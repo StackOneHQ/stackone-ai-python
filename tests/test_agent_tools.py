@@ -348,7 +348,7 @@ class TestLangChainConversion:
         langchain_tool = execute_tool.to_langchain()
         annotations = langchain_tool.args_schema.__annotations__
 
-        assert annotations["parameters"] is dict
+        assert annotations["parameters"] == dict | None
 
 
 class TestOpenAIConversion:

@@ -33,7 +33,7 @@ def langchain_integration() -> None:
         assert hasattr(tool, "args_schema"), "Expected tool to have args_schema"
 
     # Create model with tools
-    model = ChatOpenAI(model="gpt-4o-mini")
+    model = ChatOpenAI(model="gpt-5.4")
     model_with_tools = model.bind_tools(langchain_tools)
 
     result = model_with_tools.invoke(f"Can you get me information about employee with ID: {employee_id}?")
