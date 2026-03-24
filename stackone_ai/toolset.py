@@ -978,7 +978,7 @@ class StackOneToolSet:
             # Lightweight: inspect results before fetching
             results = toolset.search_action_names("manage employees")
             for r in results:
-                print(f"{r.action_name}: {r.similarity_score:.2f}")
+                print(f"{r.id}: {r.similarity_score:.2f}")
 
             # Account-scoped: only results for connectors in linked accounts
             results = toolset.search_action_names(
@@ -986,10 +986,6 @@ class StackOneToolSet:
                 account_ids=["acc-123"],
                 top_k=5
             )
-
-            # Then fetch specific high-scoring actions
-            selected = [r.action_name for r in results if r.similarity_score > 0.7]
-            tools = toolset.fetch_tools(actions=selected)
         """
         if self._search_config is None:
             raise ToolsetConfigError(
