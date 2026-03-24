@@ -12,16 +12,15 @@ Each path trades off between speed, filtering, and completeness.
 This is the primary method used when integrating with OpenAI, LangChain, or CrewAI.
 The internal flow is:
 
-1. Fetch tools from linked accounts via MCP to discover available connectors
+1. Fetch tools from linked accounts via MCP (provides connectors and tool schemas)
 2. Search EACH connector in parallel via the semantic search API (/actions/search)
-3. The search API returns results with full ``input_schema`` for each action
-4. Build executable tools directly from search results (no match-back needed)
-5. Deduplicate by action_id, sort by relevance score, apply top_k
-6. Return Tools sorted by relevance score
+3. Match search results to MCP tool definitions
+4. Deduplicate, sort by relevance score, apply top_k
+5. Return Tools sorted by relevance score
 
 Key point: only the user's own connectors are searched — no wasted results
-from connectors the user doesn't have. The search API returns ``input_schema``
-with each result, so tools can be built directly without a separate fetch.
+from connectors the user doesn't have. Tool schemas come from MCP (source
+of truth), while the search API provides relevance ranking.
 
 If the semantic API is unavailable, the SDK falls back to a local
 BM25 + TF-IDF hybrid search over the fetched tools (unless
@@ -31,10 +30,9 @@ BM25 + TF-IDF hybrid search over the fetched tools (unless
 2. ``search_action_names(query)`` — Lightweight discovery
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Queries the semantic API directly and returns action metadata
-(action_id, connector, score, description, input_schema) **without**
-building full tool objects. Useful for previewing results before
-committing to a full fetch.
+Queries the semantic API directly and returns action IDs with
+similarity scores, **without** building full tool objects. Useful
+for previewing results before committing to a full fetch.
 
 When ``account_ids`` are provided, each connector is searched in
 parallel (same as ``search_tools``). Without ``account_ids``, results
