@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.4.0...stackone-ai-v2.5.0) (2026-03-25)
+
+
+### Features
+
+* **search-tools:** LLM-driven search and execute and new API ([#151](https://github.com/StackOneHQ/stackone-ai-python/issues/151)) ([a5e5723](https://github.com/StackOneHQ/stackone-ai-python/commit/a5e5723689d702ce4d176194a0d6a43486bcdff7))
+
 ## [2.4.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.3.1...stackone-ai-v2.4.0) (2026-03-06)
 
 
