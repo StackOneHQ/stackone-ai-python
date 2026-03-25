@@ -7,12 +7,13 @@ from stackone_ai.semantic_search import (
     SemanticSearchResponse,
     SemanticSearchResult,
 )
-from stackone_ai.toolset import SearchConfig, SearchMode, SearchTool, StackOneToolSet
+from stackone_ai.toolset import ExecuteToolsConfig, SearchConfig, SearchMode, SearchTool, StackOneToolSet
 
 __all__ = [
     "StackOneToolSet",
     "StackOneTool",
     "Tools",
+    "ExecuteToolsConfig",
     "SearchConfig",
     "SearchMode",
     "SearchTool",

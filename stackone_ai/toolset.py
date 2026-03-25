@@ -8,15 +8,19 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, Literal, TypedDict, TypeVar
 
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
+
 from stackone_ai.constants import DEFAULT_BASE_URL
 from stackone_ai.models import (
     ExecuteConfig,
+    JsonDict,
     ParameterLocation,
+    StackOneAPIError,
     StackOneTool,
     ToolParameters,
     Tools,
@@ -52,6 +56,20 @@ class SearchConfig(TypedDict, total=False):
     """Minimum similarity score threshold 0-1."""
 
 
+class ExecuteToolsConfig(TypedDict, total=False):
+    """Execution configuration for the StackOneToolSet constructor.
+
+    Controls default account scoping for tool execution.
+
+    When set to ``None`` (default), no account scoping is applied.
+    When provided, ``account_ids`` flow through to ``openai(mode="search_and_execute")``
+    and ``fetch_tools()`` as defaults.
+    """
+
+    account_ids: list[str]
+    """Account IDs to scope tool discovery and execution."""
+
+
 _SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
 
 try:
@@ -66,6 +84,223 @@ _RPC_PARAMETER_LOCATIONS = {
     "query": ParameterLocation.BODY,
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
+
+
+# --- Internal tool_search + tool_execute ---
+
+
+class _SearchInput(BaseModel):
+    """Input validation for tool_search."""
+
+    query: str = Field(..., min_length=1)
+    connector: str | None = None
+    top_k: int | None = Field(default=None, ge=1, le=50)
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("query must be a non-empty string")
+        return trimmed
+
+
+class _SearchTool(StackOneTool):
+    """LLM-callable tool that searches for available StackOne tools."""
+
+    _toolset: Any = PrivateAttr(default=None)
+
+    def execute(
+        self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+    ) -> JsonDict:
+        try:
+            if isinstance(arguments, str):
+                raw_params = json.loads(arguments)
+            else:
+                raw_params = arguments or {}
+
+            parsed = _SearchInput(**raw_params)
+
+            search_config = self._toolset._search_config or {}
+            results = self._toolset.search_tools(
+                parsed.query,
+                connector=parsed.connector or search_config.get("connector"),
+                top_k=parsed.top_k or search_config.get("top_k") or 5,
+                min_similarity=search_config.get("min_similarity"),
+                search=search_config.get("method"),
+                account_ids=self._toolset._account_ids,
+            )
+
+            return {
+                "tools": [
+                    {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters.properties,
+                    }
+                    for t in results
+                ],
+                "total": len(results),
+                "query": parsed.query,
+            }
+        except (json.JSONDecodeError, ValidationError) as exc:
+            return {"error": f"Invalid input: {exc}", "query": raw_params if "raw_params" in dir() else None}
+
+
+class _ExecuteInput(BaseModel):
+    """Input validation for tool_execute."""
+
+    tool_name: str = Field(..., min_length=1)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("tool_name")
+    @classmethod
+    def validate_tool_name(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("tool_name must be a non-empty string")
+        return trimmed
+
+
+class _ExecuteTool(StackOneTool):
+    """LLM-callable tool that executes a StackOne tool by name."""
+
+    _toolset: Any = PrivateAttr(default=None)
+    _cached_tools: Any = PrivateAttr(default=None)
+
+    def execute(
+        self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
+    ) -> JsonDict:
+        tool_name = "unknown"
+        try:
+            if isinstance(arguments, str):
+                raw_params = json.loads(arguments)
+            else:
+                raw_params = arguments or {}
+
+            parsed = _ExecuteInput(**raw_params)
+            tool_name = parsed.tool_name
+
+            if self._cached_tools is None:
+                self._cached_tools = self._toolset.fetch_tools(account_ids=self._toolset._account_ids)
+
+            target = self._cached_tools.get_tool(parsed.tool_name)
+
+            if target is None:
+                return {
+                    "error": (
+                        f'Tool "{parsed.tool_name}" not found. Use tool_search to find available tools.'
+                    ),
+                }
+
+            return target.execute(parsed.parameters, options=options)
+        except StackOneAPIError as exc:
+            return {
+                "error": str(exc),
+                "status_code": exc.status_code,
+                "response_body": exc.response_body,
+                "tool_name": tool_name,
+            }
+        except (json.JSONDecodeError, ValidationError) as exc:
+            return {"error": f"Invalid input: {exc}", "tool_name": tool_name}
+
+
+def _create_search_tool(api_key: str) -> _SearchTool:
+    name = "tool_search"
+    description = (
+        "Search for available tools by describing what you need. "
+        "Returns matching tool names, descriptions, and parameter schemas. "
+        "Use the returned parameter schemas to know exactly what to pass "
+        "when calling tool_execute."
+    )
+    parameters = ToolParameters(
+        type="object",
+        properties={
+            "query": {
+                "type": "string",
+                "description": (
+                    "Natural language description of what you need "
+                    '(e.g. "create an employee", "list time off requests")'
+                ),
+            },
+            "connector": {
+                "type": "string",
+                "description": 'Optional connector filter (e.g. "bamboohr")',
+                "nullable": True,
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Max results to return (1-50, default 5)",
+                "minimum": 1,
+                "maximum": 50,
+                "nullable": True,
+            },
+        },
+    )
+    execute_config = ExecuteConfig(
+        name=name,
+        method="POST",
+        url="local://meta/search",
+        parameter_locations={
+            "query": ParameterLocation.BODY,
+            "connector": ParameterLocation.BODY,
+            "top_k": ParameterLocation.BODY,
+        },
+    )
+
+    tool = _SearchTool.__new__(_SearchTool)
+    StackOneTool.__init__(
+        tool,
+        description=description,
+        parameters=parameters,
+        _execute_config=execute_config,
+        _api_key=api_key,
+    )
+    return tool
+
+
+def _create_execute_tool(api_key: str) -> _ExecuteTool:
+    name = "tool_execute"
+    description = (
+        "Execute a tool by name with the given parameters. "
+        "Use tool_search first to find available tools. "
+        "The parameters field must match the parameter schema returned "
+        "by tool_search. Pass parameters as a nested object matching "
+        "the schema structure."
+    )
+    parameters = ToolParameters(
+        type="object",
+        properties={
+            "tool_name": {
+                "type": "string",
+                "description": "Exact tool name from tool_search results",
+            },
+            "parameters": {
+                "type": "object",
+                "description": "Parameters for the tool, matching the schema from tool_search.",
+                "nullable": True,
+            },
+        },
+    )
+    execute_config = ExecuteConfig(
+        name=name,
+        method="POST",
+        url="local://meta/execute",
+        parameter_locations={
+            "tool_name": ParameterLocation.BODY,
+            "parameters": ParameterLocation.BODY,
+        },
+    )
+
+    tool = _ExecuteTool.__new__(_ExecuteTool)
+    StackOneTool.__init__(
+        tool,
+        description=description,
+        parameters=parameters,
+        _execute_config=execute_config,
+        _api_key=api_key,
+    )
+    return tool
 
 
 T = TypeVar("T")
@@ -318,7 +553,8 @@ class StackOneToolSet:
         api_key: str | None = None,
         account_id: str | None = None,
         base_url: str | None = None,
-        search: SearchConfig | None = _SEARCH_DEFAULT,
+        search: SearchConfig | None = None,
+        execute: ExecuteToolsConfig | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -327,10 +563,14 @@ class StackOneToolSet:
             account_id: Optional account ID
             base_url: Optional base URL override for API requests
             search: Search configuration. Controls default search behavior.
-                Omit or pass ``{}`` for defaults (method="auto").
-                Pass ``None`` to disable search.
+                Pass ``None`` (default) to disable search — ``toolset.openai()``
+                will return all regular tools.
+                Pass ``{}`` or ``{"method": "auto"}`` to enable search with defaults.
                 Pass ``{"method": "semantic", "top_k": 5}`` for custom defaults.
                 Per-call options always override these defaults.
+            execute: Execution configuration. Controls default account scoping
+                for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
+                meta tools to specific accounts.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -347,6 +587,8 @@ class StackOneToolSet:
         self._account_ids: list[str] = []
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
+        self._execute_config: ExecuteToolsConfig | None = execute
+        self._tools_cache: Tools | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -392,6 +634,120 @@ class StackOneToolSet:
             config["method"] = search
 
         return SearchTool(self, config=config)
+
+    def _build_tools(self, account_ids: list[str] | None = None) -> Tools:
+        """Build tool_search + tool_execute tools scoped to this toolset."""
+        if self._search_config is None:
+            raise ToolsetConfigError(
+                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+            )
+
+        if account_ids:
+            self._account_ids = account_ids
+
+        search_tool = _create_search_tool(self.api_key)
+        search_tool._toolset = self
+
+        execute_tool = _create_execute_tool(self.api_key)
+        execute_tool._toolset = self
+
+        return Tools([search_tool, execute_tool])
+
+    def openai(
+        self,
+        *,
+        mode: Literal["search_and_execute"] | None = None,
+        account_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get tools in OpenAI function calling format.
+
+        Args:
+            mode: Tool mode.
+                ``None`` (default): fetch all tools and convert to OpenAI format.
+                ``"search_and_execute"``: return two meta tools (tool_search + tool_execute)
+                that let the LLM discover and execute tools on-demand.
+            account_ids: Account IDs to scope tools. Overrides the ``execute``
+                config from the constructor.
+
+        Returns:
+            List of tool definitions in OpenAI function format.
+
+        Examples::
+
+            # All tools
+            toolset = StackOneToolSet()
+            tools = toolset.openai()
+
+            # Meta tools for agent-driven discovery
+            toolset = StackOneToolSet()
+            tools = toolset.openai(mode="search_and_execute")
+        """
+        effective_account_ids = account_ids or (
+            self._execute_config.get("account_ids") if self._execute_config else None
+        )
+
+        if mode == "search_and_execute":
+            return self._build_tools(account_ids=effective_account_ids).to_openai()
+
+        return self.fetch_tools(account_ids=effective_account_ids).to_openai()
+
+    def langchain(
+        self,
+        *,
+        mode: Literal["search_and_execute"] | None = None,
+        account_ids: list[str] | None = None,
+    ) -> Sequence[Any]:
+        """Get tools in LangChain format.
+
+        Args:
+            mode: Tool mode.
+                ``None`` (default): fetch all tools and convert to LangChain format.
+                ``"search_and_execute"``: return two tools (tool_search + tool_execute)
+                that let the LLM discover and execute tools on-demand.
+                The framework handles tool execution automatically.
+            account_ids: Account IDs to scope tools. Overrides the ``execute``
+                config from the constructor.
+
+        Returns:
+            List of LangChain tool objects.
+        """
+        effective_account_ids = account_ids or (
+            self._execute_config.get("account_ids") if self._execute_config else None
+        )
+
+        if mode == "search_and_execute":
+            return self._build_tools(account_ids=effective_account_ids).to_langchain()
+
+        return self.fetch_tools(account_ids=effective_account_ids).to_langchain()
+
+    def execute(
+        self,
+        tool_name: str,
+        arguments: str | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute a tool by name.
+
+        Use with ``openai(mode="search_and_execute")`` in manual agent loops —
+        pass the tool name and arguments from the LLM's tool call directly.
+
+        Tools are cached after the first call.
+
+        Args:
+            tool_name: The tool name from the LLM's tool call
+                (e.g. ``"tool_search"`` or ``"tool_execute"``).
+            arguments: The arguments from the LLM's tool call,
+                as a JSON string or dict.
+
+        Returns:
+            Tool execution result as a dict.
+        """
+        if self._tools_cache is None:
+            self._tools_cache = self._build_tools()
+
+        tool = self._tools_cache.get_tool(tool_name)
+        if tool is None:
+            return {"error": f'Tool "{tool_name}" not found.'}
+        return tool.execute(arguments)
 
     @property
     def semantic_client(self) -> SemanticSearchClient:
@@ -558,12 +914,23 @@ class StackOneToolSet:
             if not all_results:
                 return Tools([])
 
-            # Match back to fetched tool definitions
-            action_names = {_normalize_action_name(r.action_name) for r in all_results}
-            matched_tools = [t for t in all_tools if t.name in action_names]
+            # 1. Parse composite IDs to MCP-format action names, deduplicate
+            seen_names: set[str] = set()
+            action_names: list[str] = []
+            for result in all_results:
+                name = _normalize_action_name(result.id)
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                action_names.append(name)
 
-            # Sort matched tools by semantic search score order
-            action_order = {_normalize_action_name(r.action_name): i for i, r in enumerate(all_results)}
+            if not action_names:
+                return Tools([])
+
+            # 2. Use MCP tools (already fetched) — schemas come from the source of truth
+            # 3. Filter to only the tools search found, preserving search relevance order
+            action_order = {name: i for i, name in enumerate(action_names)}
+            matched_tools = [t for t in all_tools if t.name in seen_names]
             matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
 
             return Tools(matched_tools)
@@ -611,7 +978,7 @@ class StackOneToolSet:
             # Lightweight: inspect results before fetching
             results = toolset.search_action_names("manage employees")
             for r in results:
-                print(f"{r.action_name}: {r.similarity_score:.2f}")
+                print(f"{r.id}: {r.similarity_score:.2f}")
 
             # Account-scoped: only results for connectors in linked accounts
             results = toolset.search_action_names(
@@ -619,10 +986,6 @@ class StackOneToolSet:
                 account_ids=["acc-123"],
                 top_k=5
             )
-
-            # Then fetch specific high-scoring actions
-            selected = [r.action_name for r in results if r.similarity_score > 0.7]
-            tools = toolset.fetch_tools(actions=selected)
         """
         if self._search_config is None:
             raise ToolsetConfigError(
@@ -685,20 +1048,9 @@ class StackOneToolSet:
             logger.warning("Semantic search failed: %s", e)
             return []
 
-        # Sort by score, normalize action names
+        # Sort by score
         all_results.sort(key=lambda r: r.similarity_score, reverse=True)
-        normalized: list[SemanticSearchResult] = []
-        for r in all_results:
-            normalized.append(
-                SemanticSearchResult(
-                    action_name=_normalize_action_name(r.action_name),
-                    connector_key=r.connector_key,
-                    similarity_score=r.similarity_score,
-                    label=r.label,
-                    description=r.description,
-                )
-            )
-        return normalized[:effective_top_k] if effective_top_k is not None else normalized
+        return all_results[:effective_top_k] if effective_top_k is not None else all_results
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Check if a tool name matches any of the provider filters

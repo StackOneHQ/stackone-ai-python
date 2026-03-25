@@ -132,7 +132,7 @@ def example_search_action_names():
     # Show the limited results
     print(f"Top {len(results_limited)} matches from the full catalog:")
     for r in results_limited:
-        print(f"  [{r.similarity_score:.2f}] {r.action_name} ({r.connector_key})")
+        print(f"  [{r.similarity_score:.2f}] {r.id}")
         print(f"         {r.description}")
     print()
 
@@ -143,7 +143,7 @@ def example_search_action_names():
         filtered = toolset.search_action_names(query, account_ids=_account_ids, top_k=5)
         print(f"  Filtered to {len(filtered)} matches (only your connectors):")
         for r in filtered:
-            print(f"    [{r.similarity_score:.2f}] {r.action_name} ({r.connector_key})")
+            print(f"    [{r.similarity_score:.2f}] {r.id}")
     else:
         print("Tip: Set STACKONE_ACCOUNT_ID to see results filtered to your linked connectors.")
 
@@ -197,7 +197,7 @@ def example_search_tools_with_connector():
     print("=" * 60)
     print()
 
-    toolset = StackOneToolSet()
+    toolset = StackOneToolSet(search={})
 
     query = "book a meeting"
     connector = "calendly"
@@ -230,7 +230,7 @@ def example_search_tool_agent_loop():
     print("=" * 60)
     print()
 
-    toolset = StackOneToolSet()
+    toolset = StackOneToolSet(search={})
 
     print("Step 1: Fetching tools from your linked accounts via MCP...")
     all_tools = toolset.fetch_tools(account_ids=_account_ids)
@@ -281,7 +281,7 @@ def example_openai_agent_loop():
 
     if openai_key:
         client = OpenAI()
-        model = "gpt-4o-mini"
+        model = "gpt-5.4"
         provider = "OpenAI"
     elif google_key:
         client = OpenAI(
@@ -298,7 +298,7 @@ def example_openai_agent_loop():
     print(f"Using {provider} ({model})")
     print()
 
-    toolset = StackOneToolSet()
+    toolset = StackOneToolSet(search={})
 
     query = "list upcoming events"
     print(f'Step 1: Discovering tools for "{query}" via semantic search...')
@@ -358,7 +358,7 @@ def example_langchain_semantic():
         print()
         return
 
-    toolset = StackOneToolSet()
+    toolset = StackOneToolSet(search={})
 
     query = "remove a user from the team"
     print(f'Step 1: Searching for "{query}" via semantic search...')

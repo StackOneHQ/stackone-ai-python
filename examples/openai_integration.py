@@ -53,7 +53,7 @@ def openai_integration() -> None:
     ]
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-5.4",
         messages=messages,
         tools=openai_tools,
         tool_choice="auto",
@@ -81,7 +81,7 @@ def openai_integration() -> None:
 
     # Verify the final response
     final_response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-5.4",
         messages=messages,
         tools=openai_tools,
         tool_choice="auto",

@@ -414,21 +414,33 @@ class StackOneTool(BaseModel):
 
         for name, details in self.parameters.properties.items():
             python_type: type = str  # Default to str
+            is_nullable = False
             if isinstance(details, dict):
                 type_str = details.get("type", "string")
+                is_nullable = details.get("nullable", False)
                 if type_str == "number":
                     python_type = float
                 elif type_str == "integer":
                     python_type = int
                 elif type_str == "boolean":
                     python_type = bool
+                elif type_str == "object":
+                    python_type = dict
+                elif type_str == "array":
+                    python_type = list
 
-                field = Field(description=details.get("description", ""))
+                if is_nullable:
+                    field = Field(default=None, description=details.get("description", ""))
+                else:
+                    field = Field(description=details.get("description", ""))
             else:
                 field = Field(description="")
 
             schema_props[name] = field
-            annotations[name] = python_type
+            if is_nullable:
+                annotations[name] = python_type | None
+            else:
+                annotations[name] = python_type
 
         # Create the schema class with proper annotations
         schema_class = type(
