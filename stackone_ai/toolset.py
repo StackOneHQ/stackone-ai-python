@@ -933,6 +933,21 @@ class StackOneToolSet:
             matched_tools = [t for t in all_tools if t.name in seen_names]
             matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
 
+            # Auto mode: if semantic returned results but none matched MCP tools, fall back to local
+            if effective_search == "auto" and len(matched_tools) == 0:
+                logger.warning(
+                    "Semantic search returned %d results but none matched MCP tools, "
+                    "falling back to local search",
+                    len(all_results),
+                )
+                return self._local_search(
+                    query,
+                    all_tools,
+                    connector=connector,
+                    top_k=effective_top_k,
+                    min_similarity=effective_min_sim,
+                )
+
             return Tools(matched_tools)
 
         except SemanticSearchError as e:
