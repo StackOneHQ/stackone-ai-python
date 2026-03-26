@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.5.0...stackone-ai-v2.5.1) (2026-03-26)
+
+
+### Bug Fixes
+
+* **search:** fall back to local search when semantic results don't match MCP tools ([#159](https://github.com/StackOneHQ/stackone-ai-python/issues/159)) ([2c86475](https://github.com/StackOneHQ/stackone-ai-python/commit/2c864759f43dc701d1bfa8407badf4a10f608332))
+
 ## [2.5.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.4.0...stackone-ai-v2.5.0) (2026-03-25)
 
 
