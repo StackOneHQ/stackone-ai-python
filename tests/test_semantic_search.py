@@ -959,3 +959,81 @@ class TestSemanticSearchDeduplication:
         assert results[0].id == "breathehr_1.0.0_breathehr_list_employees_global"
         # Sorted by score descending
         assert results[0].similarity_score == 0.95
+
+
+class TestZeroMatchFallback:
+    """Tests for fallback when semantic results don't match MCP tools."""
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_auto_mode_falls_back_when_no_tools_match(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Auto mode falls back to local search when semantic results don't match any MCP tools."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        # Semantic returns results with IDs that won't match MCP tool names
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    id="unknown_1.0.0_nonexistent_action_global",
+                    similarity_score=0.95,
+                ),
+            ],
+            total_count=1,
+            query="manage employees",
+        )
+
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
+        tools = toolset.search_tools("manage employees", top_k=5)
+
+        # Should fall back to local search and return results (not empty)
+        assert len(tools) > 0
+
+    @patch.object(SemanticSearchClient, "search")
+    @patch("stackone_ai.toolset._fetch_mcp_tools")
+    def test_semantic_mode_does_not_fall_back(
+        self,
+        mock_fetch: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Semantic mode returns empty results when no tools match, does not fall back."""
+        from stackone_ai import StackOneToolSet
+        from stackone_ai.toolset import _McpToolDefinition
+
+        # Semantic returns results with IDs that won't match MCP tool names
+        mock_search.return_value = SemanticSearchResponse(
+            results=[
+                SemanticSearchResult(
+                    id="unknown_1.0.0_nonexistent_action_global",
+                    similarity_score=0.95,
+                ),
+            ],
+            total_count=1,
+            query="manage employees",
+        )
+
+        mock_fetch.return_value = [
+            _McpToolDefinition(
+                name="bamboohr_create_employee",
+                description="Creates a new employee in BambooHR",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ]
+
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "auto"})
+        tools = toolset.search_tools("manage employees", search="semantic", top_k=5)
+
+        # Semantic mode should return empty, not fall back
+        assert len(tools) == 0
