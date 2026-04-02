@@ -205,13 +205,14 @@ class _ExecuteTool(StackOneTool):
             return {"error": f"Invalid input: {exc}", "tool_name": tool_name}
 
 
-def _create_search_tool(api_key: str) -> _SearchTool:
+def _create_search_tool(api_key: str, connectors: str = "") -> _SearchTool:
     name = "tool_search"
+    connector_line = f" Available connectors: {connectors}." if connectors else ""
     description = (
         "Search for available tools by describing what you need. "
         "Returns matching tool names, descriptions, and parameter schemas. "
         "Use the returned parameter schemas to know exactly what to pass "
-        "when calling tool_execute."
+        f"when calling tool_execute.{connector_line}"
     )
     parameters = ToolParameters(
         type="object",
@@ -259,14 +260,14 @@ def _create_search_tool(api_key: str) -> _SearchTool:
     return tool
 
 
-def _create_execute_tool(api_key: str) -> _ExecuteTool:
+def _create_execute_tool(api_key: str, connectors: str = "") -> _ExecuteTool:
     name = "tool_execute"
+    connector_line = f" Available connectors: {connectors}." if connectors else ""
     description = (
         "Execute a tool by name with the given parameters. "
         "Use tool_search first to find available tools. "
         "The parameters field must match the parameter schema returned "
-        "by tool_search. Pass parameters as a nested object matching "
-        "the schema structure."
+        f"by tool_search. Pass parameters as a nested object matching the schema structure.{connector_line}"
     )
     parameters = ToolParameters(
         type="object",
@@ -645,10 +646,20 @@ class StackOneToolSet:
         if account_ids:
             self._account_ids = account_ids
 
-        search_tool = _create_search_tool(self.api_key)
+        # Discover available connectors for dynamic descriptions
+        connectors_str = ""
+        try:
+            all_tools = self.fetch_tools(account_ids=self._account_ids)
+            connectors = sorted(all_tools.get_connectors())
+            if connectors:
+                connectors_str = ", ".join(connectors)
+        except Exception:
+            logger.debug("Could not discover connectors for tool descriptions")
+
+        search_tool = _create_search_tool(self.api_key, connectors=connectors_str)
         search_tool._toolset = self
 
-        execute_tool = _create_execute_tool(self.api_key)
+        execute_tool = _create_execute_tool(self.api_key, connectors=connectors_str)
         execute_tool._toolset = self
 
         return Tools([search_tool, execute_tool])
