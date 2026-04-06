@@ -69,6 +69,9 @@ class ExecuteToolsConfig(TypedDict, total=False):
     account_ids: list[str]
     """Account IDs to scope tool discovery and execution."""
 
+    timeout: float
+    """HTTP request timeout in seconds for tool execution. Defaults to 30."""
+
 
 _SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
 
@@ -415,6 +418,7 @@ class _StackOneRpcTool(StackOneTool):
         api_key: str,
         base_url: str,
         account_id: str | None,
+        timeout: float = 30.0,
     ) -> None:
         execute_config = ExecuteConfig(
             method="POST",
@@ -423,6 +427,7 @@ class _StackOneRpcTool(StackOneTool):
             headers={},
             body_type="json",
             parameter_locations=dict(_RPC_PARAMETER_LOCATIONS),
+            timeout=timeout,
         )
         super().__init__(
             description=description,
@@ -1185,6 +1190,9 @@ class StackOneToolSet:
             type=str(schema.get("type") or "object"),
             properties=self._normalize_schema_properties(schema),
         )
+        timeout = (
+            self._execute_config.get("timeout", 30.0) if self._execute_config else 30.0
+        )
         return _StackOneRpcTool(
             name=tool_def.name,
             description=tool_def.description or "",
@@ -1192,6 +1200,7 @@ class StackOneToolSet:
             api_key=self.api_key,
             base_url=self.base_url,
             account_id=account_id,
+            timeout=timeout,
         )
 
     def _normalize_schema_properties(self, schema: dict[str, Any]) -> dict[str, Any]:
