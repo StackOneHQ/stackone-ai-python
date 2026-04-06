@@ -65,6 +65,7 @@ class ExecuteConfig(BaseModel):
     parameter_locations: dict[str, ParameterLocation] = Field(
         default_factory=dict, description="Maps parameter names to their location in the request"
     )
+    timeout: float = Field(default=30.0, description="HTTP request timeout in seconds")
 
 
 class ToolParameters(BaseModel):
@@ -249,7 +250,7 @@ class StackOneTool(BaseModel):
             if query_params:
                 request_kwargs["params"] = query_params
 
-            response = httpx.request(**request_kwargs)
+            response = httpx.request(**request_kwargs, timeout=self._execute_config.timeout)
             response_status = response.status_code
             response.raise_for_status()
 
