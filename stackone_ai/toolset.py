@@ -562,7 +562,7 @@ class StackOneToolSet:
         base_url: str | None = None,
         search: SearchConfig | None = None,
         execute: ExecuteToolsConfig | None = None,
-        timeout: float = 60.0,
+        timeout: float | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -580,7 +580,8 @@ class StackOneToolSet:
                 for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
                 tools to specific accounts.
             timeout: Request timeout in seconds for tool execution HTTP calls.
-                Default: 60. Increase for slow providers (e.g. Workday).
+                Default: 60. Takes precedence over ``execute.timeout`` if set.
+                Increase for slow providers (e.g. Workday).
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -598,8 +599,8 @@ class StackOneToolSet:
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
         self._execute_config: ExecuteToolsConfig | None = execute
-        execute_timeout = execute.get("timeout", 60.0) if execute else 60.0
-        self._timeout: float = timeout if timeout != 60.0 else execute_timeout
+        execute_timeout = execute.get("timeout") if execute else None
+        self._timeout: float = timeout if timeout is not None else (execute_timeout or 60.0)
         self._tools_cache: Tools | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
