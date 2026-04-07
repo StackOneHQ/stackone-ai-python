@@ -182,9 +182,7 @@ def example_search_tool_with_execution():
     ]
 
     for _step in range(5):
-        response = client.chat.completions.create(
-            model="gpt-5.4", messages=messages, tools=openai_tools
-        )
+        response = client.chat.completions.create(model="gpt-5.4", messages=messages, tools=openai_tools)
         choice = response.choices[0]
 
         if not choice.message.tool_calls:
