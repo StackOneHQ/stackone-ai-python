@@ -33,6 +33,7 @@ OPTIONAL_DEPENDENCIES = {
     "search_tool_example.py": ["mcp"],
     "semantic_search_example.py": ["mcp"],
     "mcp_server.py": ["mcp"],
+    "workday_integration.py": ["openai", "mcp"],
 }
 
 

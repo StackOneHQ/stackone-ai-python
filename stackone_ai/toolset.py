@@ -59,7 +59,7 @@ class SearchConfig(TypedDict, total=False):
 class ExecuteToolsConfig(TypedDict, total=False):
     """Execution configuration for the StackOneToolSet constructor.
 
-    Controls default account scoping for tool execution.
+    Controls default account scoping and timeout for tool execution.
 
     When set to ``None`` (default), no account scoping is applied.
     When provided, ``account_ids`` flow through to ``openai(mode="search_and_execute")``
@@ -68,6 +68,10 @@ class ExecuteToolsConfig(TypedDict, total=False):
 
     account_ids: list[str]
     """Account IDs to scope tool discovery and execution."""
+
+    timeout: float
+    """Request timeout in seconds. Default: 60. Can also be set as a top-level
+    constructor param which takes precedence."""
 
 
 _SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
@@ -205,13 +209,14 @@ class _ExecuteTool(StackOneTool):
             return {"error": f"Invalid input: {exc}", "tool_name": tool_name}
 
 
-def _create_search_tool(api_key: str) -> _SearchTool:
+def _create_search_tool(api_key: str, connectors: str = "") -> _SearchTool:
     name = "tool_search"
+    connector_line = f" Available connectors: {connectors}." if connectors else ""
     description = (
         "Search for available tools by describing what you need. "
         "Returns matching tool names, descriptions, and parameter schemas. "
         "Use the returned parameter schemas to know exactly what to pass "
-        "when calling tool_execute."
+        f"when calling tool_execute.{connector_line}"
     )
     parameters = ToolParameters(
         type="object",
@@ -259,14 +264,14 @@ def _create_search_tool(api_key: str) -> _SearchTool:
     return tool
 
 
-def _create_execute_tool(api_key: str) -> _ExecuteTool:
+def _create_execute_tool(api_key: str, connectors: str = "") -> _ExecuteTool:
     name = "tool_execute"
+    connector_line = f" Available connectors: {connectors}." if connectors else ""
     description = (
         "Execute a tool by name with the given parameters. "
         "Use tool_search first to find available tools. "
         "The parameters field must match the parameter schema returned "
-        "by tool_search. Pass parameters as a nested object matching "
-        "the schema structure."
+        f"by tool_search. Pass parameters as a nested object matching the schema structure.{connector_line}"
     )
     parameters = ToolParameters(
         type="object",
@@ -415,6 +420,7 @@ class _StackOneRpcTool(StackOneTool):
         api_key: str,
         base_url: str,
         account_id: str | None,
+        timeout: float = 60.0,
     ) -> None:
         execute_config = ExecuteConfig(
             method="POST",
@@ -423,6 +429,7 @@ class _StackOneRpcTool(StackOneTool):
             headers={},
             body_type="json",
             parameter_locations=dict(_RPC_PARAMETER_LOCATIONS),
+            timeout=timeout,
         )
         super().__init__(
             description=description,
@@ -555,6 +562,7 @@ class StackOneToolSet:
         base_url: str | None = None,
         search: SearchConfig | None = None,
         execute: ExecuteToolsConfig | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -570,7 +578,10 @@ class StackOneToolSet:
                 Per-call options always override these defaults.
             execute: Execution configuration. Controls default account scoping
                 for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
-                meta tools to specific accounts.
+                tools to specific accounts.
+            timeout: Request timeout in seconds for tool execution HTTP calls.
+                Default: 60. Takes precedence over ``execute.timeout`` if set.
+                Increase for slow providers (e.g. Workday).
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -584,10 +595,12 @@ class StackOneToolSet:
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
-        self._account_ids: list[str] = []
+        self._account_ids: list[str] = execute.get("account_ids", []) if execute else []
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
         self._execute_config: ExecuteToolsConfig | None = execute
+        execute_timeout = execute.get("timeout") if execute else None
+        self._timeout: float = timeout if timeout is not None else (execute_timeout or 60.0)
         self._tools_cache: Tools | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
@@ -645,10 +658,20 @@ class StackOneToolSet:
         if account_ids:
             self._account_ids = account_ids
 
-        search_tool = _create_search_tool(self.api_key)
+        # Discover available connectors for dynamic descriptions
+        connectors_str = ""
+        try:
+            all_tools = self.fetch_tools(account_ids=self._account_ids)
+            connectors = sorted(all_tools.get_connectors())
+            if connectors:
+                connectors_str = ", ".join(connectors)
+        except Exception:
+            logger.debug("Could not discover connectors for tool descriptions")
+
+        search_tool = _create_search_tool(self.api_key, connectors=connectors_str)
         search_tool._toolset = self
 
-        execute_tool = _create_execute_tool(self.api_key)
+        execute_tool = _create_execute_tool(self.api_key, connectors=connectors_str)
         execute_tool._toolset = self
 
         return Tools([search_tool, execute_tool])
@@ -1192,6 +1215,7 @@ class StackOneToolSet:
             api_key=self.api_key,
             base_url=self.base_url,
             account_id=account_id,
+            timeout=self._timeout,
         )
 
     def _normalize_schema_properties(self, schema: dict[str, Any]) -> dict[str, Any]:

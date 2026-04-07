@@ -133,7 +133,6 @@ def example_search_action_names():
     print(f"Top {len(results_limited)} matches from the full catalog:")
     for r in results_limited:
         print(f"  [{r.similarity_score:.2f}] {r.id}")
-        print(f"         {r.description}")
     print()
 
     # Show filtering effect when account_ids are available
