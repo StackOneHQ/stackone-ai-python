@@ -16,6 +16,7 @@ uv run examples/search_tool_example.py
 ```
 """
 
+import json
 import os
 
 from stackone_ai import StackOneToolSet
@@ -36,7 +37,7 @@ def example_search_tool_basic():
     print("Example 1: Dynamic tool discovery\n")
 
     # Initialize StackOne toolset
-    toolset = StackOneToolSet()
+    toolset = StackOneToolSet(search={})
 
     # Get all available tools using MCP-backed fetch_tools()
     all_tools = toolset.fetch_tools(account_ids=_account_ids)
@@ -106,7 +107,7 @@ def example_search_modes():
 
     # Auto (default) — tries semantic, falls back to local
     print('Default: StackOneToolSet() uses search="auto" (semantic with local fallback)')
-    toolset_auto = StackOneToolSet()
+    toolset_auto = StackOneToolSet(search={})
     tools_auto = toolset_auto.search_tools(query, account_ids=_account_ids, top_k=5)
     print(f"  Found {len(tools_auto)} tools:")
     for tool in tools_auto:
@@ -146,33 +147,60 @@ def example_search_tool_with_execution():
     """Example of discovering and executing tools dynamically"""
     print("Example 4: Dynamic tool execution\n")
 
-    # Initialize toolset
-    toolset = StackOneToolSet()
-
-    # Get all tools using MCP-backed fetch_tools()
-    all_tools = toolset.fetch_tools(account_ids=_account_ids)
-
-    if not all_tools:
-        print("No tools found. Check your linked accounts.")
+    try:
+        from openai import OpenAI
+    except ImportError:
+        print("OpenAI not installed: pip install openai")
+        print()
         return
 
-    search_tool = toolset.get_search_tool()
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Skipped: Set OPENAI_API_KEY to run this example.")
+        print()
+        return
+
+    toolset = StackOneToolSet(search={})
 
     # Step 1: Search for relevant tools
-    tools = search_tool("list all employees", top_k=1, account_ids=_account_ids)
+    search_tool = toolset.get_search_tool()
+    tools = search_tool("list all employees", top_k=3, account_ids=_account_ids)
 
-    if tools:
-        best_tool = tools[0]
-        print(f"Best matching tool: {best_tool.name}")
-        print(f"Description: {best_tool.description}")
+    if not tools:
+        print("No matching tools found.")
+        print()
+        return
 
-        # Step 2: Execute the found tool directly
-        try:
-            print(f"\nExecuting {best_tool.name}...")
-            result = best_tool(limit=5)
-            print(f"Execution result: {result}")
-        except Exception as e:
-            print(f"Execution failed (expected in example): {e}")
+    print(f"Found {len(tools)} tools:")
+    for t in tools:
+        print(f"  - {t.name}")
+
+    # Step 2: Let the LLM pick the right tool and params
+    openai_tools = tools.to_openai()
+    client = OpenAI()
+    messages: list[dict] = [
+        {"role": "user", "content": "List all employees. Use the available tools."},
+    ]
+
+    for _step in range(5):
+        response = client.chat.completions.create(
+            model="gpt-5.4", messages=messages, tools=openai_tools
+        )
+        choice = response.choices[0]
+
+        if not choice.message.tool_calls:
+            print(f"\nAnswer: {choice.message.content}")
+            break
+
+        messages.append(choice.message.model_dump(exclude_none=True))
+        for tc in choice.message.tool_calls:
+            print(f"  -> {tc.function.name}({tc.function.arguments[:80]})")
+            tool = tools.get_tool(tc.function.name)
+            if tool:
+                try:
+                    result = tool.execute(json.loads(tc.function.arguments))
+                except Exception as e:
+                    result = {"error": str(e)}
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)})
 
     print()
 
@@ -188,7 +216,7 @@ def example_with_openai():
         client = OpenAI()
 
         # Initialize StackOne toolset
-        toolset = StackOneToolSet()
+        toolset = StackOneToolSet(search={})
 
         # Search for BambooHR employee tools
         tools = toolset.search_tools("manage employees", account_ids=_account_ids, top_k=5)
@@ -230,48 +258,49 @@ def example_with_langchain():
     print("Example 6: Using tools with LangChain\n")
 
     try:
-        from langchain.agents import AgentExecutor, create_tool_calling_agent
-        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.messages import HumanMessage, ToolMessage
         from langchain_openai import ChatOpenAI
-
-        # Initialize StackOne toolset
-        toolset = StackOneToolSet()
-
-        # Get tools and convert to LangChain format using MCP-backed fetch_tools()
-        tools = toolset.search_tools("list employees", account_ids=_account_ids, top_k=5)
-        langchain_tools = list(tools.to_langchain())
-
-        print(f"Available tools for LangChain: {len(langchain_tools)}")
-        for tool in langchain_tools:
-            print(f"  - {tool.name}: {tool.description}")
-
-        # Create LangChain agent
-        llm = ChatOpenAI(model="gpt-5.4", temperature=0)
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are an HR assistant. Use the available tools to help the user.",
-                ),
-                ("human", "{input}"),
-                ("placeholder", "{agent_scratchpad}"),
-            ]
-        )
-
-        agent = create_tool_calling_agent(llm, langchain_tools, prompt)
-        agent_executor = AgentExecutor(agent=agent, tools=langchain_tools, verbose=True)
-
-        # Run the agent
-        result = agent_executor.invoke({"input": "Find tools that can list employee data"})
-
-        print(f"\nAgent result: {result['output']}")
-
     except ImportError as e:
         print(f"LangChain dependencies not installed: {e}")
         print("Install with: pip install langchain-openai")
-    except Exception as e:
-        print(f"LangChain example failed: {e}")
+        print()
+        return
+
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Skipped: Set OPENAI_API_KEY to run this example.")
+        print()
+        return
+
+    toolset = StackOneToolSet(search={})
+
+    # Search for tools and convert to LangChain format
+    tools = toolset.search_tools("list employees", account_ids=_account_ids, top_k=5)
+    langchain_tools = list(tools.to_langchain())
+
+    print(f"Available tools: {len(langchain_tools)}")
+    for tool in langchain_tools:
+        print(f"  - {tool.name}")
+
+    # Bind tools to model and run
+    model = ChatOpenAI(model="gpt-5.4").bind_tools(langchain_tools)
+    tools_by_name = {t.name: t for t in langchain_tools}
+    messages = [HumanMessage(content="What employee tools do I have access to?")]
+
+    for _ in range(5):
+        response = model.invoke(messages)
+        if not response.tool_calls:
+            print(f"\nAnswer: {response.content}")
+            break
+
+        messages.append(response)
+        for tc in response.tool_calls:
+            print(f"  -> {tc['name']}({json.dumps(tc['args'])[:80]})")
+            tool = tools_by_name[tc["name"]]
+            try:
+                result = tool.invoke(tc["args"])
+            except Exception as e:
+                result = {"error": str(e)}
+            messages.append(ToolMessage(content=json.dumps(result), tool_call_id=tc["id"]))
 
     print()
 
