@@ -3,6 +3,11 @@
 Workday can take 10-15s to respond. This example shows how to configure
 timeout and account_ids through the execute config.
 
+Prerequisites:
+    - STACKONE_API_KEY environment variable
+    - STACKONE_ACCOUNT_ID environment variable (a Workday-connected account)
+    - OPENAI_API_KEY environment variable
+
 Run with:
     uv run python examples/workday_integration.py
 """
@@ -25,12 +30,22 @@ from stackone_ai import StackOneToolSet
 
 
 def main() -> None:
-    account_id = os.getenv("STACKONE_ACCOUNT_ID", "")
+    api_key = os.getenv("STACKONE_API_KEY")
+    account_id = os.getenv("STACKONE_ACCOUNT_ID")
 
-    # Timeout and account_ids both live in the execute config
+    if not api_key:
+        print("Set STACKONE_API_KEY to run this example.")
+        return
+    if not account_id:
+        print("Set STACKONE_ACCOUNT_ID to run this example.")
+        return
+
+    # Timeout for slow providers, account_id for scoping
     toolset = StackOneToolSet(
+        api_key=api_key,
+        account_id=account_id,
         search={"method": "auto", "top_k": 5},
-        execute={"account_ids": [account_id], "timeout": 120},
+        timeout=120,
     )
     client = OpenAI()
 
