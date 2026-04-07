@@ -59,7 +59,7 @@ class SearchConfig(TypedDict, total=False):
 class ExecuteToolsConfig(TypedDict, total=False):
     """Execution configuration for the StackOneToolSet constructor.
 
-    Controls default account scoping for tool execution.
+    Controls default account scoping and timeout for tool execution.
 
     When set to ``None`` (default), no account scoping is applied.
     When provided, ``account_ids`` flow through to ``openai(mode="search_and_execute")``
@@ -68,6 +68,10 @@ class ExecuteToolsConfig(TypedDict, total=False):
 
     account_ids: list[str]
     """Account IDs to scope tool discovery and execution."""
+
+    timeout: float
+    """Request timeout in seconds. Default: 60. Can also be set as a top-level
+    constructor param which takes precedence."""
 
 
 _SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
@@ -416,6 +420,7 @@ class _StackOneRpcTool(StackOneTool):
         api_key: str,
         base_url: str,
         account_id: str | None,
+        timeout: float = 60.0,
     ) -> None:
         execute_config = ExecuteConfig(
             method="POST",
@@ -424,6 +429,7 @@ class _StackOneRpcTool(StackOneTool):
             headers={},
             body_type="json",
             parameter_locations=dict(_RPC_PARAMETER_LOCATIONS),
+            timeout=timeout,
         )
         super().__init__(
             description=description,
@@ -556,6 +562,7 @@ class StackOneToolSet:
         base_url: str | None = None,
         search: SearchConfig | None = None,
         execute: ExecuteToolsConfig | None = None,
+        timeout: float = 60.0,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -571,7 +578,9 @@ class StackOneToolSet:
                 Per-call options always override these defaults.
             execute: Execution configuration. Controls default account scoping
                 for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
-                meta tools to specific accounts.
+                tools to specific accounts.
+            timeout: Request timeout in seconds for tool execution HTTP calls.
+                Default: 60. Increase for slow providers (e.g. Workday).
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -585,10 +594,12 @@ class StackOneToolSet:
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
-        self._account_ids: list[str] = []
+        self._account_ids: list[str] = execute.get("account_ids", []) if execute else []
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
         self._execute_config: ExecuteToolsConfig | None = execute
+        execute_timeout = execute.get("timeout", 60.0) if execute else 60.0
+        self._timeout: float = timeout if timeout != 60.0 else execute_timeout
         self._tools_cache: Tools | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
@@ -1203,6 +1214,7 @@ class StackOneToolSet:
             api_key=self.api_key,
             base_url=self.base_url,
             account_id=account_id,
+            timeout=self._timeout,
         )
 
     def _normalize_schema_properties(self, schema: dict[str, Any]) -> dict[str, Any]:
