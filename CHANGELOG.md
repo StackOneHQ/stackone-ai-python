@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.5.1...stackone-ai-v2.6.0) (2026-04-07)
+
+
+### Features
+
+* include available connectors in search/execute tool descriptions ([#165](https://github.com/StackOneHQ/stackone-ai-python/issues/165)) ([544f41e](https://github.com/StackOneHQ/stackone-ai-python/commit/544f41ef1340d11f58be1a34e627aa8e81f1102d))
+
 ## [2.5.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.5.0...stackone-ai-v2.5.1) (2026-03-26)
 
 
