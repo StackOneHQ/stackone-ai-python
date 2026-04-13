@@ -170,7 +170,6 @@ class _ExecuteTool(StackOneTool):
     """LLM-callable tool that executes a StackOne tool by name."""
 
     _toolset: Any = PrivateAttr(default=None)
-    _cached_tools: Any = PrivateAttr(default=None)
 
     def execute(
         self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
@@ -185,10 +184,8 @@ class _ExecuteTool(StackOneTool):
             parsed = _ExecuteInput(**raw_params)
             tool_name = parsed.tool_name
 
-            if self._cached_tools is None:
-                self._cached_tools = self._toolset.fetch_tools(account_ids=self._toolset._account_ids)
-
-            target = self._cached_tools.get_tool(parsed.tool_name)
+            tools = self._toolset.fetch_tools(account_ids=self._toolset._account_ids)
+            target = tools.get_tool(parsed.tool_name)
 
             if target is None:
                 return {
@@ -602,6 +599,8 @@ class StackOneToolSet:
         execute_timeout = execute.get("timeout") if execute else None
         self._timeout: float = timeout if timeout is not None else (execute_timeout or 60.0)
         self._tools_cache: Tools | None = None
+        self._catalog_cache: dict[tuple[Any, ...], Tools] = {}
+        self._tool_index_cache: tuple[int, Any] | None = None
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -613,7 +612,17 @@ class StackOneToolSet:
             This toolset instance for chaining
         """
         self._account_ids = account_ids
+        self.clear_catalog_cache()
         return self
+
+    def clear_catalog_cache(self) -> None:
+        """Invalidate cached tool catalog and local search index.
+
+        Call when linked accounts change outside of ``set_accounts`` or when
+        you need to force a fresh fetch from the StackOne MCP endpoint.
+        """
+        self._catalog_cache.clear()
+        self._tool_index_cache = None
 
     def get_search_tool(self, *, search: SearchMode | None = None) -> SearchTool:
         """Get a callable search tool that returns Tools collections.
@@ -802,7 +811,10 @@ class StackOneToolSet:
         if not available_connectors:
             return Tools([])
 
-        index = ToolIndex(list(all_tools))
+        cache_key = id(all_tools)
+        if self._tool_index_cache is None or self._tool_index_cache[0] != cache_key:
+            self._tool_index_cache = (cache_key, ToolIndex(list(all_tools)))
+        index = self._tool_index_cache[1]
         results = index.search(
             query,
             limit=top_k if top_k is not None else 5,
@@ -1171,14 +1183,31 @@ class StackOneToolSet:
             else:
                 account_scope = [None]
 
-            endpoint = f"{self.base_url.rstrip('/')}/mcp"
-            all_tools: list[StackOneTool] = []
+            cache_key = (
+                tuple(sorted(account_scope, key=lambda a: (a is None, a))),
+                tuple(sorted(providers)) if providers else None,
+                tuple(sorted(actions)) if actions else None,
+            )
+            cached = self._catalog_cache.get(cache_key)
+            if cached is not None:
+                return cached
 
-            for account in account_scope:
+            endpoint = f"{self.base_url.rstrip('/')}/mcp"
+
+            def _fetch_for_account(account: str | None) -> list[StackOneTool]:
                 headers = self._build_mcp_headers(account)
                 catalog = _fetch_mcp_tools(endpoint, headers)
-                for tool_def in catalog:
-                    all_tools.append(self._create_rpc_tool(tool_def, account))
+                return [self._create_rpc_tool(tool_def, account) for tool_def in catalog]
+
+            all_tools: list[StackOneTool] = []
+            if len(account_scope) == 1:
+                all_tools.extend(_fetch_for_account(account_scope[0]))
+            else:
+                max_workers = min(len(account_scope), 10)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    futures = [pool.submit(_fetch_for_account, acc) for acc in account_scope]
+                    for future in concurrent.futures.as_completed(futures):
+                        all_tools.extend(future.result())
 
             if providers:
                 all_tools = [tool for tool in all_tools if self._filter_by_provider(tool.name, providers)]
@@ -1186,7 +1215,9 @@ class StackOneToolSet:
             if actions:
                 all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
 
-            return Tools(all_tools)
+            result = Tools(all_tools)
+            self._catalog_cache[cache_key] = result
+            return result
 
         except ToolsetError:
             raise
