@@ -1185,7 +1185,7 @@ class StackOneToolSet:
 
             cache_key = (
                 tuple(sorted(account_scope, key=lambda a: (a is None, a))),
-                tuple(sorted(providers)) if providers else None,
+                tuple(sorted(p.lower() for p in providers)) if providers else None,
                 tuple(sorted(actions)) if actions else None,
             )
             cached = self._catalog_cache.get(cache_key)
@@ -1206,7 +1206,7 @@ class StackOneToolSet:
                 max_workers = min(len(account_scope), 10)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = [pool.submit(_fetch_for_account, acc) for acc in account_scope]
-                    for future in concurrent.futures.as_completed(futures):
+                    for future in futures:
                         all_tools.extend(future.result())
 
             if providers:
