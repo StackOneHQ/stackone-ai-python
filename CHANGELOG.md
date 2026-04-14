@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.6.0...stackone-ai-v2.7.0) (2026-04-14)
+
+
+### Features
+
+* **search-optimization:** cache tool catalog and parallelize per-account MCP fetches ([#173](https://github.com/StackOneHQ/stackone-ai-python/issues/173)) ([cd635e6](https://github.com/StackOneHQ/stackone-ai-python/commit/cd635e65621e4e84da270a57e4e1453a3734ad95))
+
 ## [2.6.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.5.1...stackone-ai-v2.6.0) (2026-04-07)
 
 
