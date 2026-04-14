@@ -268,7 +268,11 @@ class TestToolExecute:
 
         assert "error" in result
 
-    def test_caches_fetched_tools(self):
+    def test_delegates_catalog_lookup_to_toolset(self):
+        # _ExecuteTool no longer holds a local cache; the toolset's catalog
+        # cache (see StackOneToolSet._catalog_cache) is the single source of
+        # truth. Verify execute always defers to the toolset so it benefits
+        # from that shared cache.
         toolset = MagicMock()
         toolset.api_key = "test-key"
         toolset._account_ids = []
@@ -286,7 +290,8 @@ class TestToolExecute:
         execute.execute({"tool_name": "test_tool"})
         execute.execute({"tool_name": "test_tool"})
 
-        toolset.fetch_tools.assert_called_once()
+        assert toolset.fetch_tools.call_count == 2
+        toolset.fetch_tools.assert_called_with(account_ids=[])
 
     def test_passes_account_ids_from_toolset(self):
         toolset = MagicMock()

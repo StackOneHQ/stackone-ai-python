@@ -34,6 +34,7 @@ OPTIONAL_DEPENDENCIES = {
     "semantic_search_example.py": ["mcp"],
     "mcp_server.py": ["mcp"],
     "workday_integration.py": ["openai", "mcp"],
+    "benchmark_search.py": ["mcp"],
 }
 
 

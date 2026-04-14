@@ -440,3 +440,225 @@ class TestFetchMcpToolsInternal:
             assert result[1].name == "tool_2"
             assert result[1].input_schema == {}  # None should become empty dict
             assert mock_session.list_tools.call_count == 2
+
+
+class TestCatalogCache:
+    """Verify fetch_tools memoization on StackOneToolSet._catalog_cache."""
+
+    def test_repeat_calls_hit_cache(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            calls["count"] += 1
+            return [_McpToolDefinition(name="t", description="d", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.fetch_tools()
+        toolset.fetch_tools()
+        toolset.fetch_tools()
+
+        assert calls["count"] == 1
+
+    def test_different_accounts_separate_cache_entries(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_fetch(_endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            calls["count"] += 1
+            acc = headers.get("x-account-id", "none")
+            return [_McpToolDefinition(name=f"t_{acc}", description="d", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.fetch_tools(account_ids=["a"])
+        toolset.fetch_tools(account_ids=["a"])
+        assert calls["count"] == 1
+
+        toolset.fetch_tools(account_ids=["b"])
+        assert calls["count"] == 2
+
+        toolset.fetch_tools(account_ids=["a"])
+        assert calls["count"] == 2
+
+    def test_provider_and_action_filters_participate_in_cache_key(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            calls["count"] += 1
+            return [
+                _McpToolDefinition(name="prov_list_a", description="", input_schema={}),
+                _McpToolDefinition(name="other_get_b", description="", input_schema={}),
+            ]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.fetch_tools()
+        toolset.fetch_tools(providers=["prov"])
+        toolset.fetch_tools(providers=["prov"])
+        toolset.fetch_tools(actions=["*_list_*"])
+
+        assert calls["count"] == 3
+
+    def test_clear_catalog_cache_forces_refetch(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            calls["count"] += 1
+            return []
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.fetch_tools()
+        toolset.clear_catalog_cache()
+        toolset.fetch_tools()
+
+        assert calls["count"] == 2
+
+    def test_account_id_ordering_does_not_affect_cache_hits(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            calls["count"] += 1
+            return [_McpToolDefinition(name="t", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.fetch_tools(account_ids=["a", "b"])
+        # Reordered account list should hit the cache — matches Node SDK behavior.
+        toolset.fetch_tools(account_ids=["b", "a"])
+
+        assert calls["count"] == 2  # one call per account, total = 2
+
+    def test_set_accounts_invalidates_cache(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_fetch(_endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            calls["count"] += 1
+            acc = headers.get("x-account-id", "none")
+            return [_McpToolDefinition(name=f"t_{acc}", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.set_accounts(["a"])
+        toolset.fetch_tools()
+        toolset.fetch_tools()
+        assert calls["count"] == 1
+
+        toolset.set_accounts(["b"])
+        toolset.fetch_tools()
+        assert calls["count"] == 2
+
+
+class TestParallelFetch:
+    """Verify per-account fetches run concurrently."""
+
+    def test_parallel_across_accounts_bounded_by_slowest(self, monkeypatch):
+        import time
+
+        per_call_delay = 0.15
+
+        def slow_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            time.sleep(per_call_delay)
+            return [_McpToolDefinition(name="t", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", slow_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        account_ids = [f"acc-{i}" for i in range(5)]
+
+        start = time.perf_counter()
+        toolset.fetch_tools(account_ids=account_ids)
+        elapsed = time.perf_counter() - start
+
+        # Sequential would be 5 * 0.15 = 0.75s; parallel should finish in well
+        # under half that. Give generous headroom for CI jitter.
+        assert elapsed < 0.45, f"expected parallel fetch, took {elapsed:.2f}s"
+
+    def test_preserves_all_tools_regardless_of_completion_order(self, monkeypatch):
+        def fake_fetch(_endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            acc = headers.get("x-account-id", "none")
+            return [_McpToolDefinition(name=f"tool_{acc}", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        tools = toolset.fetch_tools(account_ids=["a", "b", "c", "d"])
+        names = {t.name for t in tools.to_list()}
+        assert names == {"tool_a", "tool_b", "tool_c", "tool_d"}
+
+    def test_single_account_failure_propagates(self, monkeypatch):
+        from stackone_ai.toolset import ToolsetLoadError
+
+        def flaky_fetch(_endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            acc = headers.get("x-account-id", "none")
+            if acc == "b":
+                raise RuntimeError("boom")
+            return [_McpToolDefinition(name=f"tool_{acc}", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", flaky_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key")
+        with pytest.raises(ToolsetLoadError):
+            toolset.fetch_tools(account_ids=["a", "b"])
+
+
+class TestToolIndexCache:
+    """Verify local-search ToolIndex is reused across search calls."""
+
+    def test_tool_index_reused_when_tools_identity_unchanged(self, monkeypatch):
+        from stackone_ai import local_search as ls_module
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            return [
+                _McpToolDefinition(name="foo_list_bar", description="list bars", input_schema={}),
+                _McpToolDefinition(name="foo_get_baz", description="get baz", input_schema={}),
+            ]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        build_count = {"count": 0}
+        original_init = ls_module.ToolIndex.__init__
+
+        def counting_init(self, tools, hybrid_alpha=None):
+            build_count["count"] += 1
+            original_init(self, tools, hybrid_alpha)
+
+        monkeypatch.setattr(ls_module.ToolIndex, "__init__", counting_init)
+
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "local"})
+        toolset.search_tools("bar")
+        toolset.search_tools("baz")
+
+        assert build_count["count"] == 1
+
+    def test_tool_index_rebuilt_after_clear_catalog_cache(self, monkeypatch):
+        from stackone_ai import local_search as ls_module
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[_McpToolDefinition]:
+            return [
+                _McpToolDefinition(name="foo_list_bar", description="list bars", input_schema={}),
+            ]
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        build_count = {"count": 0}
+        original_init = ls_module.ToolIndex.__init__
+
+        def counting_init(self, tools, hybrid_alpha=None):
+            build_count["count"] += 1
+            original_init(self, tools, hybrid_alpha)
+
+        monkeypatch.setattr(ls_module.ToolIndex, "__init__", counting_init)
+
+        toolset = StackOneToolSet(api_key="test-key", search={"method": "local"})
+        toolset.search_tools("bar")
+        toolset.clear_catalog_cache()
+        toolset.search_tools("bar")
+
+        assert build_count["count"] == 2
