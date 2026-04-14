@@ -11,6 +11,7 @@ Run with:
     uv run python examples/benchmark_search.py              # default 100 iterations
     uv run python examples/benchmark_search.py -n 50        # fewer for a quick check
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,7 +57,9 @@ def fmt_ms(seconds: float) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark SDK search latency")
-    parser.add_argument("--iterations", "-n", type=int, default=100, help="iterations per benchmark (default 100)")
+    parser.add_argument(
+        "--iterations", "-n", type=int, default=100, help="iterations per benchmark (default 100)"
+    )
     args = parser.parse_args()
     n = args.iterations
 
