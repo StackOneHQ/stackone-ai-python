@@ -27,15 +27,17 @@ from stackone_ai import StackOneToolSet
 
 
 def _to_pydantic_ai_tool(stackone_tool) -> Tool:
-    """Convert a StackOneTool to a Pydantic AI Tool using the public API."""
+    """Convert a StackOneTool to a Pydantic AI Tool with the proper JSON schema."""
+    params_schema = stackone_tool.to_openai_function()["function"]["parameters"]
 
     def execute(**kwargs: object) -> str:
         return json.dumps(stackone_tool.execute(kwargs))
 
-    return Tool(
+    return Tool.from_schema(
         execute,
         name=stackone_tool.name,
         description=stackone_tool.description,
+        json_schema=params_schema,
     )
 
 
