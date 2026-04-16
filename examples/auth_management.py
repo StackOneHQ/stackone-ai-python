@@ -47,7 +47,6 @@ def single_account(account_id: str) -> None:
     print(f"Fetched {len(tools)} tools for configured account")
 
 
-
 def set_accounts_globally(account_id: str) -> None:
     """Use set_accounts() to bind accounts at the toolset level."""
     print("\n--- set_accounts() (global on toolset) ---")
