@@ -91,7 +91,7 @@ def openai_integration() -> None:
 
     # Continue the conversation with all tool call results
     messages.append(response.choices[0].message.model_dump(exclude_none=True))
-    for tc, result in zip(tool_calls, results):
+    for tc, result in zip(tool_calls, results, strict=False):
         messages.append(
             {
                 "role": "tool",
