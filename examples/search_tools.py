@@ -119,7 +119,7 @@ def search_and_execute(account_id: str) -> None:
 
     for step in range(5):
         response = client.chat.completions.create(
-            model="gpt-5.1",
+            model="gpt-5.4",
             messages=messages,
             tools=openai_tools,
             tool_choice="auto",
@@ -131,7 +131,7 @@ def search_and_execute(account_id: str) -> None:
             break
 
         # Append the assistant message (with tool calls) to history
-        messages.append({"role": "assistant", "content": message.content, "tool_calls": message.tool_calls})
+        messages.append(message.model_dump(exclude_none=True))
 
         for tool_call in message.tool_calls:
             name = tool_call.function.name

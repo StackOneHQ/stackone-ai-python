@@ -48,7 +48,7 @@ def crewai_integration():
         goal="List the first 5 employees in the company",
         backstory="With over 10 years of experience in HR and employee management, "
         "you excel at finding patterns in complex datasets.",
-        llm="gpt-5.1",
+        llm="gpt-5.4",
         tools=langchain_tools,
         max_iter=2,
     )
@@ -56,7 +56,7 @@ def crewai_integration():
     task = Task(
         description="List the first 5 employees in the company",
         agent=agent,
-        expected_output="A JSON object containing the employee's information",
+        expected_output="A list of the first 5 employees with their details",
     )
 
     crew = Crew(agents=[agent], tasks=[task])

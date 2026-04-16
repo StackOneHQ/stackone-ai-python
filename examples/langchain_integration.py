@@ -30,6 +30,9 @@ def langchain_integration() -> None:
     if not account_id:
         print("Set STACKONE_ACCOUNT_ID to run this example.")
         return
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Set OPENAI_API_KEY to run this example.")
+        return
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
@@ -44,7 +47,7 @@ def langchain_integration() -> None:
         print(f"  - {tool.name}")
 
     # Create model with tools
-    model = ChatOpenAI(model="gpt-5.1")
+    model = ChatOpenAI(model="gpt-5.4")
     model_with_tools = model.bind_tools(langchain_tools)
 
     result = model_with_tools.invoke("List the first 5 employees")

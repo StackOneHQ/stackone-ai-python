@@ -179,7 +179,7 @@ tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
 langchain_tools = tools.to_langchain()
 
 # Use with LangChain models
-model = ChatOpenAI(model="gpt-4o-mini")
+model = ChatOpenAI(model="gpt-5.4")
 model_with_tools = model.bind_tools(langchain_tools)
 
 # Execute AI-driven tool calls
@@ -233,7 +233,7 @@ graph = StateGraph(State)
 graph.add_node("tools", to_tool_node(langchain_tools))
 
 def call_llm(state: dict):
-    llm = ChatOpenAI(model="gpt-4o-mini")
+    llm = ChatOpenAI(model="gpt-5.4")
     llm = bind_model_with_tools(llm, langchain_tools)
     resp = llm.invoke(state["messages"])  # returns AIMessage with optional tool_calls
     return {"messages": state["messages"] + [resp]}
@@ -271,7 +271,7 @@ agent = Agent(
     goal="Analyze employee data and generate insights",
     backstory="Expert in HR analytics and employee management",
     tools=langchain_tools,
-    llm="gpt-4o-mini"
+    llm="gpt-5.4"
 )
 
 # Define task and execute

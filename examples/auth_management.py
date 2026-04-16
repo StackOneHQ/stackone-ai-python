@@ -86,7 +86,10 @@ def main() -> None:
         print("STACKONE_API_KEY is not set. Please export it or add it to .env")
         return
 
-    account_id = os.getenv("STACKONE_ACCOUNT_ID", "test-account-id")
+    account_id = os.getenv("STACKONE_ACCOUNT_ID")
+    if not account_id:
+        print("Set STACKONE_ACCOUNT_ID to run this example.")
+        return
 
     api_key_setup()
     single_account(account_id)

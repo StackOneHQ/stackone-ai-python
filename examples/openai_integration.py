@@ -11,6 +11,7 @@ You can find out more about the OpenAI Function Calling API format [here](https:
 
 from __future__ import annotations
 
+import json
 import os
 
 try:
@@ -67,7 +68,7 @@ def openai_integration() -> None:
     ]
 
     response = client.chat.completions.create(
-        model="gpt-5.1",
+        model="gpt-5.4",
         messages=messages,
         tools=openai_tools,
         tool_choice="auto",
@@ -88,20 +89,19 @@ def openai_integration() -> None:
     for i, result in enumerate(results):
         print(f"  Result {i + 1}: {str(result)[:200]}...")
 
-    # Continue the conversation with the results
-    messages.extend(
-        [
-            {"role": "assistant", "content": None, "tool_calls": tool_calls},
+    # Continue the conversation with all tool call results
+    messages.append(response.choices[0].message.model_dump(exclude_none=True))
+    for tc, result in zip(tool_calls, results):
+        messages.append(
             {
                 "role": "tool",
-                "tool_call_id": tool_calls[0].id,
-                "content": str(results[0]),
-            },
-        ]
-    )
+                "tool_call_id": tc.id,
+                "content": json.dumps(result),
+            }
+        )
 
     final_response = client.chat.completions.create(
-        model="gpt-5.1",
+        model="gpt-5.4",
         messages=messages,
         tools=openai_tools,
         tool_choice="auto",
