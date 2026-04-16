@@ -27,14 +27,8 @@ OPTIONAL_DEPENDENCIES = {
     "openai_integration.py": ["openai", "mcp"],
     "langchain_integration.py": ["langchain_openai", "mcp"],
     "crewai_integration.py": ["crewai", "mcp"],
-    "index.py": ["mcp"],
-    "file_uploads.py": ["mcp"],
-    "stackone_account_ids.py": ["mcp"],
-    "search_tool_example.py": ["mcp"],
-    "semantic_search_example.py": ["mcp"],
-    "mcp_server.py": ["mcp"],
-    "workday_integration.py": ["openai", "mcp"],
-    "benchmark_search.py": ["mcp"],
+    "search_tools.py": ["mcp"],
+    "auth_management.py": ["mcp"],
 }
 
 

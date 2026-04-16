@@ -26,6 +26,10 @@ test-tools:
 test-examples:
 	uv run pytest examples
 
+# Run a specific example
+run-example file:
+	uv run examples/{{file}}
+
 # Run type checking
 ty:
 	uv run ty check stackone_ai

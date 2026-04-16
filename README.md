@@ -52,17 +52,18 @@ uv add 'stackone-ai[mcp,examples]'
 ## Quick Start
 
 ```python
+import os
 from stackone_ai import StackOneToolSet
 
-# Initialize with API key
-toolset = StackOneToolSet()  # Uses STACKONE_API_KEY env var
-# Or explicitly: toolset = StackOneToolSet(api_key="your-api-key")
+# Initialize — reads STACKONE_API_KEY from environment
+toolset = StackOneToolSet()
 
-# Get HRIS-related tools with glob patterns
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
+# Fetch tools — pass account ID from STACKONE_ACCOUNT_ID env var
+account_id = os.getenv("STACKONE_ACCOUNT_ID")
+tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
 
 # Use a specific tool with the call method
-employee_tool = tools.get_tool("bamboohr_get_employee")
+employee_tool = tools.get_tool("workday_get_worker")
 # Call with keyword arguments
 employee = employee_tool.call(id="employee-id")
 # Or with traditional execute method
@@ -86,7 +87,7 @@ toolset = StackOneToolSet()
 tools = toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 
 # Filter by providers (case-insensitive)
-tools = toolset.fetch_tools(providers=["hibob", "bamboohr"])
+tools = toolset.fetch_tools(providers=["hibob", "workday"])
 
 # Filter by action patterns with glob support
 tools = toolset.fetch_tools(actions=["*_list_employees"])
@@ -106,11 +107,11 @@ tools = toolset.fetch_tools(providers=["hibob"])
 **Filtering Options:**
 
 - **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
-- **`providers`**: Filter by provider names (e.g., `["hibob", "bamboohr"]`). Case-insensitive matching.
+- **`providers`**: Filter by provider names (e.g., `["hibob", "workday"]`). Case-insensitive matching.
 - **`actions`**: Filter by action patterns with glob support:
-  - Exact match: `["bamboohr_list_employees"]`
+  - Exact match: `["workday_list_workers"]`
   - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
-  - Provider prefix: `["bamboohr_*"]` matches all BambooHR tools
+  - Provider prefix: `["workday_*"]` matches all Workday tools
 
 ## Implicit Feedback (Beta)
 
@@ -165,12 +166,14 @@ When two calls for the same session happen within a few seconds, the SDK emits a
 StackOne tools work seamlessly with LangChain, enabling powerful AI agent workflows:
 
 ```python
+import os
 from langchain_openai import ChatOpenAI
 from stackone_ai import StackOneToolSet
 
 # Initialize StackOne tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
+account_id = os.getenv("STACKONE_ACCOUNT_ID")
+tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
 
 # Convert to LangChain format
 langchain_tools = tools.to_langchain()
@@ -204,6 +207,7 @@ pip install langgraph langchain-openai
 ```
 
 ```python
+import os
 from langchain_openai import ChatOpenAI
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -217,7 +221,8 @@ from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_too
 
 # Prepare tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
+account_id = os.getenv("STACKONE_ACCOUNT_ID")
+tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
 langchain_tools = tools.to_langchain()
 
 class State(TypedDict):
@@ -250,12 +255,14 @@ _ = app.invoke({"messages": [("user", "Get employee with id emp123") ]})
 CrewAI uses LangChain tools natively, making integration seamless:
 
 ```python
+import os
 from crewai import Agent, Crew, Task
 from stackone_ai import StackOneToolSet
 
 # Get tools and convert to LangChain format
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
+account_id = os.getenv("STACKONE_ACCOUNT_ID")
+tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
 langchain_tools = tools.to_langchain()
 
 # Create CrewAI agent with StackOne tools
@@ -297,7 +304,7 @@ feedback_tool = tools.get_tool("tool_feedback")
 result = feedback_tool.call(
     feedback="The HRIS tools are working great! Very fast response times.",
     account_id="acc_123456",
-    tool_names=["bamboohr_list_employees", "bamboohr_get_employee"]
+    tool_names=["workday_list_workers", "workday_get_worker"]
 )
 ```
 
@@ -313,9 +320,12 @@ Search for tools using natural language queries. Works with both semantic (cloud
 ### Basic Usage
 
 ```python
+import os
+
 # Get a callable search tool
 toolset = StackOneToolSet()
-all_tools = toolset.fetch_tools(account_ids=["your-account-id"])
+account_id = os.getenv("STACKONE_ACCOUNT_ID")
+all_tools = toolset.fetch_tools(account_ids=[account_id])
 search_tool = toolset.get_search_tool()
 
 # Search for relevant tools — returns a Tools collection
@@ -327,15 +337,17 @@ tools[0](limit=10)
 
 ## Semantic Search
 
-Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `bamboohr_create_employee`.
+Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `workday_create_employee`.
 
 ```python
+import os
 from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 
 # Search by intent — returns Tools collection ready for any framework
-tools = toolset.search_tools("manage employee records", account_ids=["your-account-id"], top_k=5)
+account_id = os.getenv("STACKONE_ACCOUNT_ID")
+tools = toolset.search_tools("manage employee records", account_ids=[account_id], top_k=5)
 openai_tools = tools.to_openai()
 
 # Lightweight: inspect results without fetching full tool definitions
@@ -357,19 +369,31 @@ tools = toolset.search_tools("manage employees", search="semantic")
 tools = toolset.search_tools("manage employees", search="local")
 ```
 
-Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for `SearchTool` (`get_search_tool`) integration, OpenAI, and LangChain patterns.
+Results are automatically scoped to connectors in your linked accounts. See [Search Tools Example](examples/search_tools.py) for `SearchTool` (`get_search_tool`) integration, OpenAI, and LangChain patterns.
 
 ## Examples
 
 For more examples, check out the [examples/](examples/) directory:
 
-- [StackOne Account IDs](examples/stackone_account_ids.py)
-- [File Uploads](examples/file_uploads.py)
-- [OpenAI Integration](examples/openai_integration.py)
-- [LangChain Integration](examples/langchain_integration.py)
-- [CrewAI Integration](examples/crewai_integration.py)
-- [Search Tool](examples/search_tool_example.py)
-- [Semantic Search](examples/semantic_search_example.py)
+- [OpenAI Integration](examples/openai_integration.py) — OpenAI function calling
+- [LangChain Integration](examples/langchain_integration.py) — LangChain tools
+- [CrewAI Integration](examples/crewai_integration.py) — CrewAI agent
+- [Search Tools](examples/search_tools.py) — Tool discovery (semantic, local, auto search)
+- [Auth Management](examples/auth_management.py) — API key and account ID patterns
+
+### Running Examples
+
+```bash
+# 1. Set up credentials
+cp .env.example .env
+# Edit .env with your API keys
+
+# 2. Install dependencies
+uv sync --all-extras
+
+# 3. Run any example
+uv run examples/search_tools.py
+```
 
 ## Development
 

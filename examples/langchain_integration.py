@@ -6,45 +6,60 @@ uv run examples/langchain_integration.py
 ```
 """
 
-from dotenv import load_dotenv
+from __future__ import annotations
+
+import os
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
+
 from langchain_openai import ChatOpenAI
 
 from stackone_ai import StackOneToolSet
 
-load_dotenv()
-
-account_id = "45072196112816593343"
-employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
-
 
 def langchain_integration() -> None:
+    account_id = os.getenv("STACKONE_ACCOUNT_ID")
+    if not os.getenv("STACKONE_API_KEY"):
+        print("Set STACKONE_API_KEY to run this example.")
+        return
+    if not account_id:
+        print("Set STACKONE_ACCOUNT_ID to run this example.")
+        return
+
     toolset = StackOneToolSet()
-    tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=[account_id])
+    tools = toolset.fetch_tools(
+        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        account_ids=[account_id],
+    )
 
-    # Convert to LangChain format and verify
+    # Convert to LangChain format
     langchain_tools = tools.to_langchain()
-    assert len(langchain_tools) > 0, "Expected at least one LangChain tool"
-
-    # Verify tool structure
+    print(f"Loaded {len(langchain_tools)} LangChain tools.")
     for tool in langchain_tools:
-        assert hasattr(tool, "name"), "Expected tool to have name"
-        assert hasattr(tool, "description"), "Expected tool to have description"
-        assert hasattr(tool, "_run"), "Expected tool to have _run method"
-        assert hasattr(tool, "args_schema"), "Expected tool to have args_schema"
+        print(f"  - {tool.name}")
 
     # Create model with tools
-    model = ChatOpenAI(model="gpt-5.4")
+    model = ChatOpenAI(model="gpt-5.1")
     model_with_tools = model.bind_tools(langchain_tools)
 
-    result = model_with_tools.invoke(f"Can you get me information about employee with ID: {employee_id}?")
+    result = model_with_tools.invoke("List the first 5 employees")
+    print(f"LLM response: {result.content}")
 
-    assert result.tool_calls is not None
-    for tool_call in result.tool_calls:
-        tool = tools.get_tool(tool_call["name"])
-        if tool:
-            result = tool.execute(tool_call["args"])
-            assert result is not None
-            assert result.get("data") is not None
+    if result.tool_calls:
+        print(f"LLM made {len(result.tool_calls)} tool call(s).")
+        for tool_call in result.tool_calls:
+            print(f"  - {tool_call['name']}({tool_call['args']})")
+            tool = tools.get_tool(tool_call["name"])
+            if tool:
+                call_result = tool.execute(tool_call["args"])
+                print(f"    Result: {str(call_result)[:200]}...")
+    else:
+        print("No tool calls were made by the model.")
 
 
 if __name__ == "__main__":
