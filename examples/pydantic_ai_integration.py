@@ -19,35 +19,24 @@ except ModuleNotFoundError:
 
 try:
     from pydantic_ai import Agent, Tool
-    from pydantic_ai._function_schema import FunctionSchema
 except ImportError:
     print("Install pydantic-ai to run this example: pip install pydantic-ai")
     raise SystemExit(1) from None
 
-from pydantic_core import SchemaValidator, core_schema
-
 from stackone_ai import StackOneToolSet
-
-_VALIDATOR = SchemaValidator(core_schema.dict_schema(core_schema.str_schema(), core_schema.any_schema()))
 
 
 def _to_pydantic_ai_tool(stackone_tool) -> Tool:
-    """Convert a StackOneTool to a Pydantic AI Tool with proper JSON schema."""
-    params_schema = stackone_tool.to_openai_function()["function"]["parameters"]
+    """Convert a StackOneTool to a Pydantic AI Tool using the public API."""
 
-    def execute(**kwargs) -> str:
+    def execute(**kwargs: object) -> str:
         return json.dumps(stackone_tool.execute(kwargs))
 
-    fs = FunctionSchema(
-        function=execute,
+    return Tool(
+        execute,
         name=stackone_tool.name,
         description=stackone_tool.description,
-        validator=_VALIDATOR,
-        json_schema=params_schema,
-        takes_ctx=False,
-        is_async=False,
     )
-    return Tool(execute, name=stackone_tool.name, description=stackone_tool.description, function_schema=fs)
 
 
 def pydantic_ai_integration() -> None:
