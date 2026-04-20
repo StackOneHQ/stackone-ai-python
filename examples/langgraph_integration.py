@@ -1,8 +1,10 @@
 """
-This example demonstrates how to use StackOne tools with LangChain.
+This example demonstrates how to use StackOne tools with LangGraph.
+
+LangGraph uses LangChain tools natively with its prebuilt ReAct agent.
 
 ```bash
-uv run examples/langchain_integration.py
+uv run examples/langgraph_integration.py
 ```
 """
 
@@ -18,11 +20,12 @@ except ModuleNotFoundError:
     pass
 
 from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 
 from stackone_ai import StackOneToolSet
 
 
-def langchain_integration() -> None:
+def langgraph_integration() -> None:
     account_id = os.getenv("STACKONE_ACCOUNT_ID")
     if not os.getenv("STACKONE_API_KEY"):
         print("Set STACKONE_API_KEY to run this example.")
@@ -40,30 +43,20 @@ def langchain_integration() -> None:
         account_ids=[account_id],
     )
 
-    # Convert to LangChain format
+    # LangGraph uses LangChain tools natively
     langchain_tools = tools.to_langchain()
-    print(f"Loaded {len(langchain_tools)} LangChain tools.")
+    print(f"Loaded {len(langchain_tools)} LangGraph tools.")
     for tool in langchain_tools:
         print(f"  - {tool.name}")
 
-    # Create model with tools
+    # Create a ReAct agent with LangGraph
     model = ChatOpenAI(model="gpt-5.4")
-    model_with_tools = model.bind_tools(langchain_tools)
+    agent = create_react_agent(model, langchain_tools)
 
-    result = model_with_tools.invoke("List the first 5 employees")
-    print(f"LLM response: {result.content}")
-
-    if result.tool_calls:
-        print(f"LLM made {len(result.tool_calls)} tool call(s).")
-        for tool_call in result.tool_calls:
-            print(f"  - {tool_call['name']}({tool_call['args']})")
-            tool = tools.get_tool(tool_call["name"])
-            if tool:
-                call_result = tool.execute(tool_call["args"])
-                print(f"    Result: {str(call_result)[:200]}...")
-    else:
-        print("No tool calls were made by the model.")
+    result = agent.invoke({"messages": [("user", "List the first 5 employees")]})
+    final_message = result["messages"][-1]
+    print(f"Agent response:\n{final_message.content}")
 
 
 if __name__ == "__main__":
-    langchain_integration()
+    langgraph_integration()

@@ -9,15 +9,21 @@ uv run examples/openai_integration.py
 You can find out more about the OpenAI Function Calling API format [here](https://platform.openai.com/docs/guides/function-calling).
 """
 
-from dotenv import load_dotenv
+from __future__ import annotations
+
+import json
+import os
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
+
 from openai import OpenAI
 
 from stackone_ai import StackOneToolSet
-
-load_dotenv()
-
-account_id = "45072196112816593343"
-employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
 
 
 def handle_tool_calls(tools, tool_calls) -> list[dict]:
@@ -30,25 +36,34 @@ def handle_tool_calls(tools, tool_calls) -> list[dict]:
 
 
 def openai_integration() -> None:
+    account_id = os.getenv("STACKONE_ACCOUNT_ID")
+    if not os.getenv("STACKONE_API_KEY"):
+        print("Set STACKONE_API_KEY to run this example.")
+        return
+    if not account_id:
+        print("Set STACKONE_ACCOUNT_ID to run this example.")
+        return
+
     client = OpenAI()
     toolset = StackOneToolSet()
 
     # Filter tools to only the ones we need to avoid context window limits
     tools = toolset.fetch_tools(
         actions=[
-            "bamboohr_get_employee",
-            "bamboohr_list_employee_employments",
-            "bamboohr_get_employee_employment",
+            "workday_list_workers",
+            "workday_get_worker",
+            "workday_get_current_user",
         ],
         account_ids=[account_id],
     )
     openai_tools = tools.to_openai()
+    print(f"Loaded {len(openai_tools)} tools for OpenAI function calling.")
 
     messages = [
         {"role": "system", "content": "You are a helpful HR assistant."},
         {
             "role": "user",
-            "content": f"Can you get me information about employee with ID: {employee_id}?",
+            "content": "List the first 5 employees",
         },
     ]
 
@@ -59,34 +74,39 @@ def openai_integration() -> None:
         tool_choice="auto",
     )
 
-    # Verify we got a response with tool calls
-    assert response.choices[0].message.tool_calls is not None, "Expected tool calls in response"
+    tool_calls = response.choices[0].message.tool_calls
+    if not tool_calls:
+        print("No tool calls were made by the model.")
+        return
 
-    # Handle the tool calls and verify results
-    results = handle_tool_calls(tools, response.choices[0].message.tool_calls)
-    assert results is not None and len(results) > 0, "Expected tool call results"
-    assert "data" in results[0], "Expected data in tool call result"
+    print(f"LLM made {len(tool_calls)} tool call(s):")
+    for tc in tool_calls:
+        print(f"  - {tc.function.name}({tc.function.arguments})")
 
-    # Verify we can continue the conversation with the results
-    messages.extend(
-        [
-            {"role": "assistant", "content": None, "tool_calls": response.choices[0].message.tool_calls},
+    # Handle the tool calls
+    results = handle_tool_calls(tools, tool_calls)
+    print(f"Received {len(results)} tool call result(s).")
+    for i, result in enumerate(results):
+        print(f"  Result {i + 1}: {str(result)[:200]}...")
+
+    # Continue the conversation with all tool call results
+    messages.append(response.choices[0].message.model_dump(exclude_none=True))
+    for tc, result in zip(tool_calls, results, strict=False):
+        messages.append(
             {
                 "role": "tool",
-                "tool_call_id": response.choices[0].message.tool_calls[0].id,
-                "content": str(results[0]),
-            },
-        ]
-    )
+                "tool_call_id": tc.id,
+                "content": json.dumps(result),
+            }
+        )
 
-    # Verify the final response
     final_response = client.chat.completions.create(
         model="gpt-5.4",
         messages=messages,
         tools=openai_tools,
         tool_choice="auto",
     )
-    assert final_response.choices[0].message.content is not None, "Expected final response content"
+    print(f"Final response:\n{final_response.choices[0].message.content}")
 
 
 if __name__ == "__main__":
