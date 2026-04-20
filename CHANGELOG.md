@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.7.0...stackone-ai-v2.8.0) (2026-04-20)
+
+
+### Features
+
+* **examples:** streamline examples, standardize auth patterns and migrate examples to Workday ([#179](https://github.com/StackOneHQ/stackone-ai-python/issues/179)) ([0bdc939](https://github.com/StackOneHQ/stackone-ai-python/commit/0bdc939e2844a0dae6bf527c8c8209df0a90d1f7))
+
 ## [2.7.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.6.0...stackone-ai-v2.7.0) (2026-04-14)
 
 
