@@ -783,18 +783,14 @@ class StackOneToolSet:
             # Meta tools for agent-driven discovery
             tools = toolset.pydantic_ai(mode="search_and_execute")
         """
-        from stackone_ai.integrations.pydantic_ai import _tool_from_stackone_tool
-
         effective_account_ids = account_ids or (
             self._execute_config.get("account_ids") if self._execute_config else None
         )
 
-        source = (
-            self._build_tools(account_ids=effective_account_ids)
-            if mode == "search_and_execute"
-            else self.fetch_tools(account_ids=effective_account_ids)
-        )
-        return [_tool_from_stackone_tool(tool) for tool in source]
+        if mode == "search_and_execute":
+            return self._build_tools(account_ids=effective_account_ids).to_pydantic_ai()
+
+        return self.fetch_tools(account_ids=effective_account_ids).to_pydantic_ai()
 
     def execute(
         self,

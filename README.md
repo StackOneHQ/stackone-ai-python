@@ -199,7 +199,7 @@ for tool_call in response.tool_calls:
 <details>
 <summary>Pydantic AI Integration</summary>
 
-Use `StackOneToolset` as a drop-in Pydantic AI toolset, or expose your StackOne tools via `StackOneToolSet.pydantic_ai()`:
+StackOne tools convert to Pydantic AI `Tool` instances via `.to_pydantic_ai()`, parallel to `.to_openai()` and `.to_langchain()`:
 
 Prerequisites:
 
@@ -210,28 +210,25 @@ pip install 'stackone-ai[pydantic-ai]'
 ```python
 import os
 from pydantic_ai import Agent
-from stackone_ai.integrations.pydantic_ai import StackOneToolset
+from stackone_ai import StackOneToolSet
 
-toolset = StackOneToolset(
-    tools=["workday_list_workers", "workday_get_worker"],
-    account_ids=[os.getenv("STACKONE_ACCOUNT_ID")],
-)
+toolset = StackOneToolSet()
+tools = toolset.fetch_tools(
+    actions=["workday_list_workers", "workday_get_worker"],
+    account_ids=[os.environ["STACKONE_ACCOUNT_ID"]],
+).to_pydantic_ai()
 
-agent = Agent("openai:gpt-5.4", toolsets=[toolset])
+agent = Agent("openai:gpt-5.4", tools=tools)
 result = agent.run_sync("List the first 5 employees")
 print(result.output)
 ```
 
-For users already working with `StackOneToolSet`, the native method mirrors `.openai()` / `.langchain()`:
+For the full catalog (or the meta search/execute tools), use the `.pydantic_ai()` method on `StackOneToolSet` — parallel to `.openai()` / `.langchain()`:
 
 ```python
-from stackone_ai import StackOneToolSet
-from pydantic_ai import Agent
-
 toolset = StackOneToolSet()
-tools = toolset.pydantic_ai()  # or pydantic_ai(mode="search_and_execute")
-
-agent = Agent("openai:gpt-5.4", tools=tools)
+tools = toolset.pydantic_ai(account_ids=[os.environ["STACKONE_ACCOUNT_ID"]])
+# or pydantic_ai(mode="search_and_execute") for agent-driven discovery
 ```
 
 </details>

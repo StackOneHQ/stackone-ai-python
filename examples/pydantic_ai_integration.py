@@ -25,7 +25,7 @@ except ImportError:
     print("Install pydantic-ai to run this example: pip install 'stackone-ai[pydantic-ai]'")
     raise SystemExit(1) from None
 
-from stackone_ai.integrations.pydantic_ai import StackOneToolset
+from stackone_ai import StackOneToolSet
 
 
 def pydantic_ai_integration() -> None:
@@ -34,14 +34,16 @@ def pydantic_ai_integration() -> None:
             print(f"Set {var} to run this example.")
             return
 
-    toolset = StackOneToolset(
-        tools=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
-    )
+    toolset = StackOneToolSet()
+    tools = toolset.fetch_tools(
+        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        account_ids=[os.environ["STACKONE_ACCOUNT_ID"]],
+    ).to_pydantic_ai()
 
     agent = Agent(
         "openai:gpt-5.4",
         system_prompt="You are a helpful HR assistant.",
-        toolsets=[toolset],
+        tools=tools,
     )
     result = agent.run_sync("List the first 5 employees")
     print(f"Result:\n{result.output}")
