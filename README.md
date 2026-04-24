@@ -26,6 +26,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - LangChain Tools
   - CrewAI Tools
   - LangGraph Tool Node
+  - Pydantic AI Toolset
 
 ## Requirements
 
@@ -191,6 +192,46 @@ for tool_call in response.tool_calls:
     if tool:
         result = tool.execute(tool_call["args"])
         print(f"Result: {result}")
+```
+
+</details>
+
+<details>
+<summary>Pydantic AI Integration</summary>
+
+Use `StackOneToolset` as a drop-in Pydantic AI toolset, or expose your StackOne tools via `StackOneToolSet.pydantic_ai()`:
+
+Prerequisites:
+
+```bash
+pip install 'stackone-ai[pydantic-ai]'
+```
+
+```python
+import os
+from pydantic_ai import Agent
+from stackone_ai.integrations.pydantic_ai import StackOneToolset
+
+toolset = StackOneToolset(
+    tools=["workday_list_workers", "workday_get_worker"],
+    account_ids=[os.getenv("STACKONE_ACCOUNT_ID")],
+)
+
+agent = Agent("openai:gpt-5.4", toolsets=[toolset])
+result = agent.run_sync("List the first 5 employees")
+print(result.output)
+```
+
+For users already working with `StackOneToolSet`, the native method mirrors `.openai()` / `.langchain()`:
+
+```python
+from stackone_ai import StackOneToolSet
+from pydantic_ai import Agent
+
+toolset = StackOneToolSet()
+tools = toolset.pydantic_ai()  # or pydantic_ai(mode="search_and_execute")
+
+agent = Agent("openai:gpt-5.4", tools=tools)
 ```
 
 </details>

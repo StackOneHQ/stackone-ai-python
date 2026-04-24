@@ -752,6 +752,50 @@ class StackOneToolSet:
 
         return self.fetch_tools(account_ids=effective_account_ids).to_langchain()
 
+    def pydantic_ai(
+        self,
+        *,
+        mode: Literal["search_and_execute"] | None = None,
+        account_ids: list[str] | None = None,
+    ) -> list[Any]:
+        """Get tools as Pydantic AI ``Tool`` instances.
+
+        Args:
+            mode: Tool mode.
+                ``None`` (default): fetch all tools and convert to Pydantic AI tools.
+                ``"search_and_execute"``: return two meta tools (tool_search + tool_execute)
+                that let the LLM discover and execute tools on-demand.
+            account_ids: Account IDs to scope tools. Overrides the ``execute``
+                config from the constructor.
+
+        Returns:
+            List of Pydantic AI ``Tool`` objects ready to pass to ``Agent(tools=...)``.
+
+        Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
+
+        Examples::
+
+            # All tools
+            toolset = StackOneToolSet()
+            tools = toolset.pydantic_ai()
+            agent = Agent("openai:gpt-5.4", tools=tools)
+
+            # Meta tools for agent-driven discovery
+            tools = toolset.pydantic_ai(mode="search_and_execute")
+        """
+        from stackone_ai.integrations.pydantic_ai import _tool_from_stackone_tool
+
+        effective_account_ids = account_ids or (
+            self._execute_config.get("account_ids") if self._execute_config else None
+        )
+
+        source = (
+            self._build_tools(account_ids=effective_account_ids)
+            if mode == "search_and_execute"
+            else self.fetch_tools(account_ids=effective_account_ids)
+        )
+        return [_tool_from_stackone_tool(tool) for tool in source]
+
     def execute(
         self,
         tool_name: str,
