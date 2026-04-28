@@ -26,6 +26,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - LangChain Tools
   - CrewAI Tools
   - LangGraph Tool Node
+  - Pydantic AI Toolset
 
 ## Requirements
 
@@ -191,6 +192,43 @@ for tool_call in response.tool_calls:
     if tool:
         result = tool.execute(tool_call["args"])
         print(f"Result: {result}")
+```
+
+</details>
+
+<details>
+<summary>Pydantic AI Integration</summary>
+
+StackOne tools convert to Pydantic AI `Tool` instances via `.to_pydantic_ai()`, parallel to `.to_openai()` and `.to_langchain()`:
+
+Prerequisites:
+
+```bash
+pip install 'stackone-ai[pydantic-ai]'
+```
+
+```python
+import os
+from pydantic_ai import Agent
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+tools = toolset.fetch_tools(
+    actions=["workday_list_workers", "workday_get_worker"],
+    account_ids=[os.environ["STACKONE_ACCOUNT_ID"]],
+).to_pydantic_ai()
+
+agent = Agent("openai:gpt-5.4", tools=tools)
+result = agent.run_sync("List the first 5 employees")
+print(result.output)
+```
+
+For the full catalog (or the meta search/execute tools), use the `.pydantic_ai()` method on `StackOneToolSet` — parallel to `.openai()` / `.langchain()`:
+
+```python
+toolset = StackOneToolSet()
+tools = toolset.pydantic_ai(account_ids=[os.environ["STACKONE_ACCOUNT_ID"]])
+# or pydantic_ai(mode="search_and_execute") for agent-driven discovery
 ```
 
 </details>

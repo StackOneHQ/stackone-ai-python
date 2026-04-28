@@ -4786,6 +4786,9 @@ examples = [
 mcp = [
     { name = "mcp" },
 ]
+pydantic-ai = [
+    { name = "pydantic-ai-slim" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -4813,10 +4816,11 @@ requires-dist = [
     { name = "openai", marker = "extra == 'examples'", specifier = ">=2.32.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-ai", marker = "extra == 'examples'", specifier = ">=1.83.0" },
+    { name = "pydantic-ai-slim", marker = "extra == 'pydantic-ai'", specifier = ">=1.83.0,<2.0.0" },
     { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.0.1" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
 ]
-provides-extras = ["mcp", "examples"]
+provides-extras = ["mcp", "pydantic-ai", "examples"]
 
 [package.metadata.requires-dev]
 dev = [
