@@ -11,7 +11,7 @@ import threading
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Literal, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
 
@@ -31,6 +31,9 @@ from stackone_ai.semantic_search import (
     SemanticSearchResult,
 )
 from stackone_ai.utils.normalize import _normalize_action_name
+
+if TYPE_CHECKING:
+    from pydantic_ai.tools import Tool as PydanticAITool
 
 logger = logging.getLogger("stackone.tools")
 
@@ -757,7 +760,7 @@ class StackOneToolSet:
         *,
         mode: Literal["search_and_execute"] | None = None,
         account_ids: list[str] | None = None,
-    ) -> list[Any]:
+    ) -> list[PydanticAITool]:
         """Get tools as Pydantic AI ``Tool`` instances.
 
         Args:

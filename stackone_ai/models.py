@@ -496,7 +496,7 @@ class StackOneTool(BaseModel):
         return Tool.from_schema(
             function=implementation,
             name=self.name,
-            description=self.description or "",
+            description=self.description,
             json_schema=json_schema,
         )
 
