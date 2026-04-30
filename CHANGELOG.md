@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.8.0...stackone-ai-v2.9.0) (2026-04-30)
+
+
+### Features
+
+* **integrations:** add native Pydantic AI support ([#184](https://github.com/StackOneHQ/stackone-ai-python/issues/184)) ([8216ab6](https://github.com/StackOneHQ/stackone-ai-python/commit/8216ab6c0776b0753cf3e68461bf5e8a9b044b06))
+
 ## [2.8.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.7.0...stackone-ai-v2.8.0) (2026-04-20)
 
 
