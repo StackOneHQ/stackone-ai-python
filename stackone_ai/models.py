@@ -6,12 +6,15 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, ClassVar, TypeAlias, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias, cast
 from urllib.parse import quote
 
 import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
+
+if TYPE_CHECKING:
+    from pydantic_ai.tools import Tool as PydanticAITool
 
 # Type aliases for common types
 JsonDict: TypeAlias = dict[str, Any]
@@ -467,6 +470,36 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
+    def to_pydantic_ai_tool(self) -> PydanticAITool:
+        """Convert this tool to a Pydantic AI ``Tool``.
+
+        Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
+
+        Returns:
+            A ``pydantic_ai.tools.Tool`` ready to pass to ``Agent(tools=[...])``.
+        """
+        try:
+            from pydantic_ai.tools import Tool
+        except ImportError as e:
+            raise ImportError(
+                "Install `pydantic-ai-slim` (or `stackone-ai[pydantic-ai]`) "
+                "to use the Pydantic AI integration."
+            ) from e
+
+        openai_function = self.to_openai_function()
+        json_schema = openai_function["function"]["parameters"]
+        parent_tool = self
+
+        def implementation(**kwargs: Any) -> Any:
+            return parent_tool.execute(kwargs)
+
+        return Tool.from_schema(
+            function=implementation,
+            name=self.name,
+            description=self.description,
+            json_schema=json_schema,
+        )
+
     def set_account_id(self, account_id: str | None) -> None:
         """Set the account ID for this tool
 
@@ -577,3 +610,13 @@ class Tools:
             Sequence of tools in LangChain format
         """
         return [tool.to_langchain() for tool in self.tools]
+
+    def to_pydantic_ai(self) -> list[PydanticAITool]:
+        """Convert all tools to Pydantic AI ``Tool`` instances.
+
+        Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
+
+        Returns:
+            List of ``pydantic_ai.tools.Tool`` ready to pass to ``Agent(tools=[...])``.
+        """
+        return [tool.to_pydantic_ai_tool() for tool in self.tools]

@@ -11,7 +11,7 @@ import threading
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Literal, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
 
@@ -31,6 +31,9 @@ from stackone_ai.semantic_search import (
     SemanticSearchResult,
 )
 from stackone_ai.utils.normalize import _normalize_action_name
+
+if TYPE_CHECKING:
+    from pydantic_ai.tools import Tool as PydanticAITool
 
 logger = logging.getLogger("stackone.tools")
 
@@ -751,6 +754,46 @@ class StackOneToolSet:
             return self._build_tools(account_ids=effective_account_ids).to_langchain()
 
         return self.fetch_tools(account_ids=effective_account_ids).to_langchain()
+
+    def pydantic_ai(
+        self,
+        *,
+        mode: Literal["search_and_execute"] | None = None,
+        account_ids: list[str] | None = None,
+    ) -> list[PydanticAITool]:
+        """Get tools as Pydantic AI ``Tool`` instances.
+
+        Args:
+            mode: Tool mode.
+                ``None`` (default): fetch all tools and convert to Pydantic AI tools.
+                ``"search_and_execute"``: return two meta tools (tool_search + tool_execute)
+                that let the LLM discover and execute tools on-demand.
+            account_ids: Account IDs to scope tools. Overrides the ``execute``
+                config from the constructor.
+
+        Returns:
+            List of Pydantic AI ``Tool`` objects ready to pass to ``Agent(tools=...)``.
+
+        Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
+
+        Examples::
+
+            # All tools
+            toolset = StackOneToolSet()
+            tools = toolset.pydantic_ai()
+            agent = Agent("openai:gpt-5.4", tools=tools)
+
+            # Meta tools for agent-driven discovery
+            tools = toolset.pydantic_ai(mode="search_and_execute")
+        """
+        effective_account_ids = account_ids or (
+            self._execute_config.get("account_ids") if self._execute_config else None
+        )
+
+        if mode == "search_and_execute":
+            return self._build_tools(account_ids=effective_account_ids).to_pydantic_ai()
+
+        return self.fetch_tools(account_ids=effective_account_ids).to_pydantic_ai()
 
     def execute(
         self,
