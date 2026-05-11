@@ -197,6 +197,49 @@ for tool_call in response.tool_calls:
 </details>
 
 <details>
+<summary>Google ADK Integration</summary>
+
+StackOne is a [first-party integration in Google's Agent Development Kit](https://adk.dev/integrations/stackone/), shipped as the `stackone-adk` plugin and compatible with [ADK 2.0](https://adk.dev/2.0/). The plugin implements ADK's `BasePlugin` interface and provides tool discovery, account auto-discovery, and lifecycle hooks.
+
+```bash
+uv add stackone-adk
+```
+
+```python
+import asyncio
+
+from google.adk.agents import Agent
+from google.adk.apps import App
+from google.adk.runners import InMemoryRunner
+from stackone_adk import StackOnePlugin
+
+
+async def main():
+    plugin = StackOnePlugin()
+    # Or scope to a specific account:
+    # plugin = StackOnePlugin(account_id="YOUR_ACCOUNT_ID")
+
+    agent = Agent(
+        model="gemini-flash-latest",
+        name="stackone_agent",
+        instruction="You are a helpful assistant powered by StackOne.",
+        tools=plugin.get_tools(),
+    )
+
+    app = App(name="stackone_app", root_agent=agent, plugins=[plugin])
+
+    async with InMemoryRunner(app=app) as runner:
+        await runner.run_debug("List the first 3 workers.", quiet=True)
+
+
+asyncio.run(main())
+```
+
+For configuration details and the `search_and_execute` mode, see the [stackone-adk repository](https://github.com/StackOneHQ/stackone-adk-plugin).
+
+</details>
+
+<details>
 <summary>Pydantic AI Integration</summary>
 
 StackOne tools convert to Pydantic AI `Tool` instances via `.to_pydantic_ai()`, parallel to `.to_openai()` and `.to_langchain()`:
