@@ -362,15 +362,15 @@ Search for tools using natural language queries. Works with both semantic (cloud
 
 ```python
 import os
+from stackone_ai import StackOneToolSet
 
 # Get a callable search tool — search must be enabled on the toolset
 toolset = StackOneToolSet(search={"method": "auto"})
 account_id = os.getenv("STACKONE_ACCOUNT_ID")
-all_tools = toolset.fetch_tools(account_ids=[account_id])
 search_tool = toolset.get_search_tool()
 
-# Search for relevant tools — returns a Tools collection
-tools = search_tool("manage employees", top_k=5)
+# Search for relevant tools — returns a Tools collection scoped to the account
+tools = search_tool("manage employees", top_k=5, account_ids=[account_id])
 
 # Execute a discovered tool directly
 tools[0](limit=10)

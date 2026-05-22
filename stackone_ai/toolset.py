@@ -652,7 +652,7 @@ class StackOneToolSet:
         if self._search_config is None:
             raise ToolsetConfigError(
                 "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
-                "StackOneToolSet(...) to enable. See README 'Search Tools' for options."
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         config: SearchConfig = {**self._search_config}
@@ -666,7 +666,7 @@ class StackOneToolSet:
         if self._search_config is None:
             raise ToolsetConfigError(
                 "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
-                "StackOneToolSet(...) to enable. See README 'Search Tools' for options."
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         if account_ids:
@@ -933,7 +933,7 @@ class StackOneToolSet:
         if self._search_config is None:
             raise ToolsetConfigError(
                 "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
-                "StackOneToolSet(...) to enable. See README 'Search Tools' for options."
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         # Merge constructor defaults with per-call overrides
@@ -1087,7 +1087,7 @@ class StackOneToolSet:
         if self._search_config is None:
             raise ToolsetConfigError(
                 "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
-                "StackOneToolSet(...) to enable. See README 'Search Tools' for options."
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         # Merge constructor defaults with per-call overrides
