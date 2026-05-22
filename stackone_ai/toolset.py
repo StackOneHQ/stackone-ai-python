@@ -645,13 +645,14 @@ class StackOneToolSet:
 
         Example::
 
-            toolset = StackOneToolSet()
+            toolset = StackOneToolSet(search={"method": "auto"})
             search_tool = toolset.get_search_tool()
             tools = search_tool("manage employee records", account_ids=["acc-123"])
         """
         if self._search_config is None:
             raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+                "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         config: SearchConfig = {**self._search_config}
@@ -664,7 +665,8 @@ class StackOneToolSet:
         """Build tool_search + tool_execute tools scoped to this toolset."""
         if self._search_config is None:
             raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+                "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         if account_ids:
@@ -713,8 +715,8 @@ class StackOneToolSet:
             toolset = StackOneToolSet()
             tools = toolset.openai()
 
-            # Meta tools for agent-driven discovery
-            toolset = StackOneToolSet()
+            # Meta tools for agent-driven discovery — search must be enabled
+            toolset = StackOneToolSet(search={"method": "auto"})
             tools = toolset.openai(mode="search_and_execute")
         """
         effective_account_ids = account_ids or (
@@ -783,7 +785,8 @@ class StackOneToolSet:
             tools = toolset.pydantic_ai()
             agent = Agent("openai:gpt-5.4", tools=tools)
 
-            # Meta tools for agent-driven discovery
+            # Meta tools for agent-driven discovery — search must be enabled
+            toolset = StackOneToolSet(search={"method": "auto"})
             tools = toolset.pydantic_ai(mode="search_and_execute")
         """
         effective_account_ids = account_ids or (
@@ -929,7 +932,8 @@ class StackOneToolSet:
         """
         if self._search_config is None:
             raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
+                "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         # Merge constructor defaults with per-call overrides
@@ -1082,7 +1086,8 @@ class StackOneToolSet:
         """
         if self._search_config is None:
             raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with search config to enable."
+                "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
+                "StackOneToolSet(...) to enable. See README 'Search Tool' for options."
             )
 
         # Merge constructor defaults with per-call overrides
