@@ -228,7 +228,10 @@ For the full catalog (or the meta search/execute tools), use the `.pydantic_ai()
 ```python
 toolset = StackOneToolSet()
 tools = toolset.pydantic_ai(account_ids=[os.environ["STACKONE_ACCOUNT_ID"]])
-# or pydantic_ai(mode="search_and_execute") for agent-driven discovery
+
+# For agent-driven discovery, enable search on the constructor:
+# toolset = StackOneToolSet(search={"method": "auto"})
+# tools = toolset.pydantic_ai(mode="search_and_execute")
 ```
 
 </details>
@@ -360,8 +363,8 @@ Search for tools using natural language queries. Works with both semantic (cloud
 ```python
 import os
 
-# Get a callable search tool
-toolset = StackOneToolSet()
+# Get a callable search tool — search must be enabled on the toolset
+toolset = StackOneToolSet(search={"method": "auto"})
 account_id = os.getenv("STACKONE_ACCOUNT_ID")
 all_tools = toolset.fetch_tools(account_ids=[account_id])
 search_tool = toolset.get_search_tool()
@@ -381,7 +384,9 @@ Discover tools using natural language instead of exact names. Queries like "onbo
 import os
 from stackone_ai import StackOneToolSet
 
-toolset = StackOneToolSet()
+# Search must be enabled on the constructor — pass `search={}` for defaults,
+# or set a backend / top_k explicitly.
+toolset = StackOneToolSet(search={"method": "auto"})
 
 # Search by intent — returns Tools collection ready for any framework
 account_id = os.getenv("STACKONE_ACCOUNT_ID")
