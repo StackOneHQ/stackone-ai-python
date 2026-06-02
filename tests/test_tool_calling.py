@@ -7,7 +7,12 @@ import pytest
 import respx
 
 from stackone_ai import StackOneTool
-from stackone_ai.models import ExecuteConfig, ToolParameters
+from stackone_ai.models import (
+    ExecuteConfig,
+    ToolParameters,
+    _filename_from_content_disposition,
+    _is_json_content_type,
+)
 from stackone_ai.toolset import _StackOneRpcTool
 from tests.conftest import TEST_BASE_URL
 
@@ -332,3 +337,177 @@ class TestStackOneRpcTool:
         assert rpc_tool._extract_record("string") is None
         assert rpc_tool._extract_record(123) is None
         assert rpc_tool._extract_record(None) is None
+
+
+class TestBinaryDownloadResponse:
+    """File-download actions return raw bytes + metadata instead of failing on JSON parsing.
+
+    The StackOne API serves file downloads as raw binary with the file's own MIME type
+    (e.g. application/pdf) and a Content-Disposition header - never JSON. The returned
+    shape mirrors the StackOne generated SDKs' download response (content + content_type +
+    status_code + headers), with content as raw bytes (the Python analog of the Java
+    client's byte[] body / the TypeScript client's response stream).
+    """
+
+    @respx.mock
+    def test_binary_response_returns_content_dict(self, mock_tool):
+        """A non-JSON (binary) body is returned as bytes + metadata, not JSON-parsed."""
+        # Leading bytes of a real PDF; the 0xc4 byte is invalid UTF-8 and is exactly
+        # what makes the unconditional response.json() raise UnicodeDecodeError.
+        pdf_bytes = b"%PDF-1.4\n%\xc4\xe5\xf2\xe5\xeb\xa7\xf3\xa0\xd0\xc4\xc6\n1 0 obj\n"
+        respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(
+                200,
+                headers={
+                    "content-type": "application/pdf",
+                    "content-disposition": 'attachment; filename="download.pdf"',
+                },
+                content=pdf_bytes,
+            )
+        )
+
+        result = mock_tool.execute({"name": "report", "value": 1})
+
+        assert result["content"] == pdf_bytes
+        assert result["content_type"] == "application/pdf"
+        assert result["status_code"] == 200
+        assert result["file_name"] == "download.pdf"
+        assert result["headers"]["content-type"] == "application/pdf"
+
+    @respx.mock
+    def test_rpc_download_action_returns_content_dict(self):
+        """The RPC download path (e.g. googledrive_unified_download_file) returns bytes.
+
+        Reproduces the reported failure: a download action invoked through /actions/rpc
+        previously raised UnicodeDecodeError because the binary body was JSON-parsed.
+        """
+        parameters = ToolParameters(
+            type="object",
+            properties={"id": {"type": "string", "description": "File ID"}},
+        )
+        tool = _StackOneRpcTool(
+            name="googledrive_unified_download_file",
+            description="Download a file",
+            parameters=parameters,
+            api_key="test_api_key",
+            base_url=TEST_BASE_URL,
+            account_id="test_account",
+        )
+
+        rtf_bytes = b"{\\rtf1\\ansi\\ansicpg1252\\\xc4\xe5 hello}"
+        respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
+            return_value=httpx.Response(
+                200,
+                headers={
+                    "content-type": "application/rtf",
+                    "content-disposition": 'attachment; filename="download.rtf"',
+                },
+                content=rtf_bytes,
+            )
+        )
+
+        result = tool.execute({"path": {"id": "file-123"}})
+
+        assert result["content"] == rtf_bytes
+        assert result["content_type"] == "application/rtf"
+        assert result["file_name"] == "download.rtf"
+
+    @respx.mock
+    def test_octet_stream_without_filename(self, mock_tool):
+        """A binary body with no Content-Disposition still returns content with file_name=None."""
+        blob = b"\x00\x01\x02\xc4\xff\xfe"
+        respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(
+                200,
+                headers={"content-type": "application/octet-stream"},
+                content=blob,
+            )
+        )
+
+        result = mock_tool.execute({})
+
+        assert result["content"] == blob
+        assert result["content_type"] == "application/octet-stream"
+        assert result["file_name"] is None
+
+    @respx.mock
+    def test_json_response_still_parsed(self, mock_tool):
+        """Regression guard: JSON responses are unchanged - parsed to a dict, not wrapped."""
+        respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(200, json={"id": "123", "ok": True})
+        )
+
+        result = mock_tool.execute({"name": "x", "value": 1})
+
+        assert result == {"id": "123", "ok": True}
+        assert "content" not in result
+
+    @respx.mock
+    def test_json_with_charset_param_still_parsed(self, mock_tool):
+        """A JSON Content-Type with parameters (charset) is still parsed as JSON."""
+        respx.post("https://api.example.com/test").mock(
+            return_value=httpx.Response(
+                200,
+                headers={"content-type": "application/json; charset=utf-8"},
+                content=b'{"ok": true}',
+            )
+        )
+
+        result = mock_tool.execute({})
+
+        assert result == {"ok": True}
+
+    @respx.mock
+    def test_missing_content_type_returns_bytes(self, mock_tool):
+        """A body with no Content-Type is treated as opaque content (bytes), not JSON.
+
+        Pins the deliberate contract: the SDK trusts Content-Type to decide JSON vs
+        file, so an absent Content-Type is returned as raw bytes rather than risking
+        a UTF-8/JSON decode of binary. (StackOne always labels JSON as application/json.)
+        """
+        blob = b"\xff\xd8\xff\xe0\x00\x10JFIF"  # JPEG magic bytes, no content-type
+        respx.post("https://api.example.com/test").mock(return_value=httpx.Response(200, content=blob))
+
+        result = mock_tool.execute({})
+
+        assert result["content"] == blob
+        assert result["content_type"] == "application/octet-stream"
+        assert result["file_name"] is None
+
+
+class TestResponseHelpers:
+    """Unit tests for the Content-Type and Content-Disposition helpers."""
+
+    @pytest.mark.parametrize(
+        ("content_type", "expected"),
+        [
+            ("application/json", True),
+            ("application/json; charset=utf-8", True),
+            ("APPLICATION/JSON", True),
+            ("application/problem+json", True),
+            ("application/vnd.api+json", True),
+            ("", False),
+            ("application/pdf", False),
+            ("application/octet-stream", False),
+            ("text/plain", False),
+            ("text/json-but-not-really", False),
+        ],
+    )
+    def test_is_json_content_type(self, content_type, expected):
+        assert _is_json_content_type(content_type) is expected
+
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [
+            ('attachment; filename="download.pdf"', "download.pdf"),
+            ("attachment; filename=download.pdf", "download.pdf"),
+            ('inline; filename="my report.docx"', "my report.docx"),
+            # RFC 5987 extended form is percent-decoded and takes precedence.
+            ("attachment; filename=\"fallback.txt\"; filename*=UTF-8''na%C3%AFve.txt", "naïve.txt"),
+            ("attachment", None),
+            (None, None),
+            ("", None),
+        ],
+    )
+    def test_filename_from_content_disposition(self, header, expected):
+        assert _filename_from_content_disposition(header) == expected

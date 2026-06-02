@@ -3,11 +3,12 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias, cast
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 from langchain_core.tools import BaseTool
@@ -55,6 +56,39 @@ def validate_method(v: str) -> str:
     if method not in {"GET", "POST", "PUT", "DELETE", "PATCH"}:
         raise ValueError(f"Unsupported HTTP method: {method}")
     return method
+
+
+def _is_json_content_type(content_type: str) -> bool:
+    """Whether a response body should be parsed as JSON based on its Content-Type.
+
+    Only genuine JSON media types are parsed (``application/json`` and structured
+    suffixes such as ``application/problem+json``). Anything else - including a
+    missing Content-Type - is treated as opaque content (a file download), so the
+    raw bytes are returned instead of being force-decoded as UTF-8/JSON. This mirrors
+    how the StackOne generated SDKs default unknown bodies to ``application/octet-stream``.
+    """
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def _filename_from_content_disposition(value: str | None) -> str | None:
+    """Extract the filename from a Content-Disposition header value, if present.
+
+    Handles both the plain ``filename="example.pdf"`` form and the RFC 5987 extended
+    ``filename*=UTF-8''example%20file.pdf`` form (which takes precedence when present).
+    """
+    if not value:
+        return None
+    extended = re.search(r"filename\*\s*=\s*[^']*'[^']*'([^;]+)", value, re.IGNORECASE)
+    if extended:
+        return unquote(extended.group(1).strip())
+    quoted = re.search(r'filename\s*=\s*"([^"]*)"', value, re.IGNORECASE)
+    if quoted:
+        return quoted.group(1).strip() or None
+    bare = re.search(r"filename\s*=\s*([^;]+)", value, re.IGNORECASE)
+    if bare:
+        return bare.group(1).strip().strip('"') or None
+    return None
 
 
 class ExecuteConfig(BaseModel):
@@ -206,7 +240,14 @@ class StackOneTool(BaseModel):
             options: Execution options (e.g. feedback metadata)
 
         Returns:
-            API response as dict
+            For JSON responses, the parsed API response as a dict.
+
+            For file downloads (any non-JSON Content-Type, e.g. a
+            ``documents_download_file`` action), a dict describing the file:
+            ``{"content": <bytes>, "content_type": str, "status_code": int,
+            "headers": dict, "file_name": str | None}``. Note ``content`` holds
+            the raw bytes and is therefore not JSON-serializable - callers that
+            re-serialize tool results (e.g. for an LLM) should handle this key.
 
         Raises:
             StackOneAPIError: If the API request fails
@@ -257,9 +298,23 @@ class StackOneTool(BaseModel):
             response_status = response.status_code
             response.raise_for_status()
 
-            result = response.json()
-            result_payload = cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
-            return result_payload
+            content_type = response.headers.get("content-type", "")
+            if _is_json_content_type(content_type):
+                result = response.json()
+                result_payload = cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
+                return result_payload
+
+            # Non-JSON bodies are file downloads (e.g. documents_download_file), which the
+            # API serves as raw binary with the file's own MIME type and a Content-Disposition
+            # header. Return the bytes plus metadata rather than forcing a JSON/UTF-8 decode.
+            # The shape mirrors the StackOne generated SDKs' download response.
+            return {
+                "content": response.content,
+                "content_type": content_type or "application/octet-stream",
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "file_name": _filename_from_content_disposition(response.headers.get("content-disposition")),
+            }
 
         except json.JSONDecodeError as exc:
             status = "error"
