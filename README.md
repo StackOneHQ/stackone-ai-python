@@ -114,6 +114,35 @@ tools = toolset.fetch_tools(providers=["hibob"])
   - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
   - Provider prefix: `["workday_*"]` matches all Workday tools
 
+## File Downloads
+
+Actions that return a file — e.g. `googledrive_unified_download_file`, `documents_download_file`, any `*_unified_download_file` — resolve to **raw bytes plus metadata**, not parsed JSON. The SDK decides this from the response `Content-Type`: a JSON content type is parsed as before; anything else is treated as a file download. This applies to both `tool.execute()` and `tool.call()`.
+
+```python
+tools = toolset.fetch_tools(actions=["googledrive_*"], account_ids=[account_id])
+download = tools.get_tool("googledrive_unified_download_file")
+
+result = download.execute({"id": "file-id"})
+
+# `result` is a dict describing the file — write the bytes straight to disk:
+with open(result["file_name"] or "download.bin", "wb") as f:
+    f.write(result["content"])
+```
+
+The returned dict:
+
+| Key            | Type          | Description                                                                                  |
+| -------------- | ------------- | -------------------------------------------------------------------------------------------- |
+| `content`      | `bytes`       | Raw file bytes. **Not JSON-serializable** — see the caveat below.                            |
+| `content_type` | `str`         | The file's MIME type (e.g. `application/pdf`), or `application/octet-stream` if unspecified. |
+| `status_code`  | `int`         | HTTP status of the download response.                                                        |
+| `headers`      | `dict`        | Response headers.                                                                            |
+| `file_name`    | `str \| None` | Filename from the `Content-Disposition` header (handles RFC 5987 `filename*`), else `None`.  |
+
+> **Caveat:** `content` holds raw bytes, which are not JSON-serializable. If you forward tool results to an LLM — or anywhere that re-serializes them to JSON — handle or strip the `content` key (for example, base64-encode it on the LLM-facing path).
+
+JSON responses are unchanged: any action returning `application/json` (or a `…+json` type) is parsed and returned as a dict exactly as before.
+
 ## Implicit Feedback (Beta)
 
 The Python SDK can emit implicit behavioral feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
