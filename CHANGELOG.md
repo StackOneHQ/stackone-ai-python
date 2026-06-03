@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.9.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.9.0...stackone-ai-v2.9.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **models:** handle binary file downloads in tool execution ([#190](https://github.com/StackOneHQ/stackone-ai-python/issues/190)) ([8983c68](https://github.com/StackOneHQ/stackone-ai-python/commit/8983c68dd2fdbdbdd52af531a9a9f1de6d72e1b8))
+* **search:** make ToolsetConfigError actionable and fix misleading docs ([#188](https://github.com/StackOneHQ/stackone-ai-python/issues/188)) ([d332c27](https://github.com/StackOneHQ/stackone-ai-python/commit/d332c27d2f7b827e7ca043f60c37cb0831a92361))
+
 ## [2.9.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.8.0...stackone-ai-v2.9.0) (2026-04-30)
 
 
