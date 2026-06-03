@@ -504,6 +504,12 @@ class TestResponseHelpers:
             ('inline; filename="my report.docx"', "my report.docx"),
             # RFC 5987 extended form is percent-decoded and takes precedence.
             ("attachment; filename=\"fallback.txt\"; filename*=UTF-8''na%C3%AFve.txt", "naïve.txt"),
+            # Non-UTF-8 charset is honoured: 0xA3 is "£" in ISO-8859-1, not UTF-8.
+            ("attachment; filename*=ISO-8859-1'en'%A3%20rates.txt", "£ rates.txt"),
+            # Unknown charset label falls back to UTF-8 instead of raising.
+            ("attachment; filename*=bogus-charset''%C2%A3.txt", "£.txt"),
+            # Non-conformant quoted extended value: surrounding quotes are stripped.
+            ("attachment; filename*=\"UTF-8''na%C3%AFve.txt\"", "naïve.txt"),
             ("attachment", None),
             (None, None),
             ("", None),

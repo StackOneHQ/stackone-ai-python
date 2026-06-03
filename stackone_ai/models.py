@@ -76,12 +76,20 @@ def _filename_from_content_disposition(value: str | None) -> str | None:
 
     Handles both the plain ``filename="example.pdf"`` form and the RFC 5987 extended
     ``filename*=UTF-8''example%20file.pdf`` form (which takes precedence when present).
+    The extended form is percent-decoded using its declared charset (RFC 5987 permits
+    both ``UTF-8`` and ``ISO-8859-1``); an unknown or empty charset falls back to UTF-8.
     """
     if not value:
         return None
-    extended = re.search(r"filename\*\s*=\s*[^']*'[^']*'([^;]+)", value, re.IGNORECASE)
+    extended = re.search(r"filename\*\s*=\s*([^']*)'[^']*'([^;]+)", value, re.IGNORECASE)
     if extended:
-        return unquote(extended.group(1).strip())
+        charset = extended.group(1).strip() or "utf-8"
+        encoded = extended.group(2).strip().strip('"')
+        try:
+            return unquote(encoded, encoding=charset, errors="replace") or None
+        except LookupError:
+            # Unrecognised charset label - decode as UTF-8 rather than failing.
+            return unquote(encoded, encoding="utf-8", errors="replace") or None
     quoted = re.search(r'filename\s*=\s*"([^"]*)"', value, re.IGNORECASE)
     if quoted:
         return quoted.group(1).strip() or None
