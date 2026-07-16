@@ -61,3 +61,28 @@ class TestFeedbackInheritedFromMcp:
         tool_names = [tool.name for tool in toolset.fetch_tools(account_ids=["acc1", "acc2"]).to_list()]
 
         assert tool_names.count("submit_feedback") == 1
+
+
+class TestFeedbackInSearchAndExecute:
+    """search-and-execute agents inherit submit_feedback alongside the meta tools."""
+
+    def test_build_tools_includes_feedback_by_default(self, monkeypatch):
+        monkeypatch.setattr(toolset_module, "_fetch_mcp_tools", _fake_catalog)
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1", search={"method": "local"})
+
+        tools = toolset._build_tools(account_ids=["acc1"])
+        tool_names = [tool.name for tool in tools.to_list()]
+
+        # the two meta tools + the inherited feedback tool
+        assert len(tool_names) == 3
+        assert "submit_feedback" in tool_names
+
+    def test_build_tools_excludes_feedback_when_disabled(self, monkeypatch):
+        monkeypatch.setattr(toolset_module, "_fetch_mcp_tools", _fake_catalog)
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1", search={"method": "local"})
+
+        tools = toolset._build_tools(account_ids=["acc1"], feedback=False)
+        tool_names = [tool.name for tool in tools.to_list()]
+
+        assert "submit_feedback" not in tool_names
+        assert len(tool_names) == 2

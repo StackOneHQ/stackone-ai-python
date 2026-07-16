@@ -664,8 +664,12 @@ class StackOneToolSet:
 
         return SearchTool(self, config=config)
 
-    def _build_tools(self, account_ids: list[str] | None = None) -> Tools:
-        """Build tool_search + tool_execute tools scoped to this toolset."""
+    def _build_tools(self, account_ids: list[str] | None = None, *, feedback: bool = True) -> Tools:
+        """Build tool_search + tool_execute tools scoped to this toolset.
+
+        The global ``submit_feedback`` tool (exposed by the MCP catalog) is appended by default so
+        search-and-execute agents can report feedback too; pass ``feedback=False`` to omit it.
+        """
         if self._search_config is None:
             raise ToolsetConfigError(
                 "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
@@ -675,13 +679,19 @@ class StackOneToolSet:
         if account_ids:
             self._account_ids = account_ids
 
-        # Discover available connectors for dynamic descriptions
+        # Discover available connectors for dynamic descriptions, and grab the global feedback tool
+        # from the same (cached) catalog fetch so search-and-execute agents inherit it from MCP too.
         connectors_str = ""
+        feedback_tool: StackOneTool | None = None
         try:
             all_tools = self.fetch_tools(account_ids=self._account_ids)
             connectors = sorted(all_tools.get_connectors())
             if connectors:
                 connectors_str = ", ".join(connectors)
+            if feedback:
+                feedback_tool = next(
+                    (tool for tool in all_tools.to_list() if tool.name == _FEEDBACK_TOOL_NAME), None
+                )
         except Exception:
             logger.debug("Could not discover connectors for tool descriptions")
 
@@ -691,7 +701,10 @@ class StackOneToolSet:
         execute_tool = _create_execute_tool(self.api_key, connectors=connectors_str)
         execute_tool._toolset = self
 
-        return Tools([search_tool, execute_tool])
+        built: list[StackOneTool] = [search_tool, execute_tool]
+        if feedback_tool is not None:
+            built.append(feedback_tool)
+        return Tools(built)
 
     def openai(
         self,
