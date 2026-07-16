@@ -92,6 +92,9 @@ _RPC_PARAMETER_LOCATIONS = {
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
 
+# The global feedback tool the StackOne MCP server exposes on every account.
+_FEEDBACK_TOOL_NAME = "submit_feedback"
+
 
 # --- Internal tool_search + tool_execute ---
 
@@ -1183,6 +1186,7 @@ class StackOneToolSet:
         account_ids: list[str] | None = None,
         providers: list[str] | None = None,
         actions: list[str] | None = None,
+        feedback: bool = True,
     ) -> Tools:
         """Fetch tools with optional filtering by account IDs, providers, and actions
 
@@ -1193,6 +1197,10 @@ class StackOneToolSet:
                 Case-insensitive matching.
             actions: Optional list of action patterns with glob support
                 (e.g., ['*_list_employees', 'hibob_create_employees'])
+            feedback: Whether to include the global feedback tool (``submit_feedback``),
+                which the StackOne MCP server exposes on every account. Enabled by default and
+                kept available even when ``providers``/``actions`` filters are applied.
+                Set to ``False`` to remove it. Defaults to True.
 
         Returns:
             Collection of tools matching the filter criteria
@@ -1235,6 +1243,7 @@ class StackOneToolSet:
                 tuple(sorted(account_scope, key=lambda a: (a is None, a))),
                 tuple(sorted(p.lower() for p in providers)) if providers else None,
                 tuple(sorted(actions)) if actions else None,
+                feedback,
             )
             cached = self._catalog_cache.get(cache_key)
             if cached is not None:
@@ -1257,13 +1266,29 @@ class StackOneToolSet:
                     for future in futures:
                         all_tools.extend(future.result())
 
+            # submit_feedback is a global MCP tool returned once per account fetch. Pull it aside so
+            # the connector-keyed provider/action filters don't drop it, collapse it to a single
+            # instance, and re-attach it unless the caller disabled feedback.
+            feedback_tool = next(
+                (tool for tool in all_tools if tool.name == _FEEDBACK_TOOL_NAME), None
+            )
+            connector_tools = [tool for tool in all_tools if tool.name != _FEEDBACK_TOOL_NAME]
+
             if providers:
-                all_tools = [tool for tool in all_tools if self._filter_by_provider(tool.name, providers)]
+                connector_tools = [
+                    tool for tool in connector_tools if self._filter_by_provider(tool.name, providers)
+                ]
 
             if actions:
-                all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
+                connector_tools = [
+                    tool for tool in connector_tools if self._filter_by_action(tool.name, actions)
+                ]
 
-            result = Tools(all_tools)
+            final_tools = connector_tools
+            if feedback and feedback_tool is not None:
+                final_tools = [*connector_tools, feedback_tool]
+
+            result = Tools(final_tools)
             self._catalog_cache[cache_key] = result
             return result
 
