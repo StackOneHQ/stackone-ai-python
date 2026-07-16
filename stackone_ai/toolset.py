@@ -92,6 +92,9 @@ _RPC_PARAMETER_LOCATIONS = {
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
 
+# The global feedback tool the StackOne MCP server exposes on every account.
+_FEEDBACK_TOOL_NAME = "submit_feedback"
+
 
 # --- Internal tool_search + tool_execute ---
 
@@ -661,8 +664,12 @@ class StackOneToolSet:
 
         return SearchTool(self, config=config)
 
-    def _build_tools(self, account_ids: list[str] | None = None) -> Tools:
-        """Build tool_search + tool_execute tools scoped to this toolset."""
+    def _build_tools(self, account_ids: list[str] | None = None, *, feedback: bool = True) -> Tools:
+        """Build tool_search + tool_execute tools scoped to this toolset.
+
+        The global ``submit_feedback`` tool (exposed by the MCP catalog) is appended by default so
+        search-and-execute agents can report feedback too; pass ``feedback=False`` to omit it.
+        """
         if self._search_config is None:
             raise ToolsetConfigError(
                 "Search is disabled. Pass search={} (or search={'method': 'auto'}) to "
@@ -672,13 +679,19 @@ class StackOneToolSet:
         if account_ids:
             self._account_ids = account_ids
 
-        # Discover available connectors for dynamic descriptions
+        # Discover available connectors for dynamic descriptions, and grab the global feedback tool
+        # from the same (cached) catalog fetch so search-and-execute agents inherit it from MCP too.
         connectors_str = ""
+        feedback_tool: StackOneTool | None = None
         try:
             all_tools = self.fetch_tools(account_ids=self._account_ids)
             connectors = sorted(all_tools.get_connectors())
             if connectors:
                 connectors_str = ", ".join(connectors)
+            if feedback:
+                feedback_tool = next(
+                    (tool for tool in all_tools.to_list() if tool.name == _FEEDBACK_TOOL_NAME), None
+                )
         except Exception:
             logger.debug("Could not discover connectors for tool descriptions")
 
@@ -688,7 +701,10 @@ class StackOneToolSet:
         execute_tool = _create_execute_tool(self.api_key, connectors=connectors_str)
         execute_tool._toolset = self
 
-        return Tools([search_tool, execute_tool])
+        built: list[StackOneTool] = [search_tool, execute_tool]
+        if feedback_tool is not None:
+            built.append(feedback_tool)
+        return Tools(built)
 
     def openai(
         self,
@@ -1183,6 +1199,7 @@ class StackOneToolSet:
         account_ids: list[str] | None = None,
         providers: list[str] | None = None,
         actions: list[str] | None = None,
+        feedback: bool = True,
     ) -> Tools:
         """Fetch tools with optional filtering by account IDs, providers, and actions
 
@@ -1193,6 +1210,10 @@ class StackOneToolSet:
                 Case-insensitive matching.
             actions: Optional list of action patterns with glob support
                 (e.g., ['*_list_employees', 'hibob_create_employees'])
+            feedback: Whether to include the global feedback tool (``submit_feedback``),
+                which the StackOne MCP server exposes on every account. Enabled by default and
+                kept available even when ``providers``/``actions`` filters are applied.
+                Set to ``False`` to remove it. Defaults to True.
 
         Returns:
             Collection of tools matching the filter criteria
@@ -1235,6 +1256,7 @@ class StackOneToolSet:
                 tuple(sorted(account_scope, key=lambda a: (a is None, a))),
                 tuple(sorted(p.lower() for p in providers)) if providers else None,
                 tuple(sorted(actions)) if actions else None,
+                feedback,
             )
             cached = self._catalog_cache.get(cache_key)
             if cached is not None:
@@ -1257,13 +1279,29 @@ class StackOneToolSet:
                     for future in futures:
                         all_tools.extend(future.result())
 
+            # submit_feedback is a global MCP tool returned once per account fetch. Pull it aside so
+            # the connector-keyed provider/action filters don't drop it, collapse it to a single
+            # instance, and re-attach it unless the caller disabled feedback.
+            feedback_tool = next(
+                (tool for tool in all_tools if tool.name == _FEEDBACK_TOOL_NAME), None
+            )
+            connector_tools = [tool for tool in all_tools if tool.name != _FEEDBACK_TOOL_NAME]
+
             if providers:
-                all_tools = [tool for tool in all_tools if self._filter_by_provider(tool.name, providers)]
+                connector_tools = [
+                    tool for tool in connector_tools if self._filter_by_provider(tool.name, providers)
+                ]
 
             if actions:
-                all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
+                connector_tools = [
+                    tool for tool in connector_tools if self._filter_by_action(tool.name, actions)
+                ]
 
-            result = Tools(all_tools)
+            final_tools = connector_tools
+            if feedback and feedback_tool is not None:
+                final_tools = [*connector_tools, feedback_tool]
+
+            result = Tools(final_tools)
             self._catalog_cache[cache_key] = result
             return result
 
