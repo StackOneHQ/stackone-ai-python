@@ -7,6 +7,7 @@ import fnmatch
 import json
 import logging
 import os
+import re
 import threading
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
@@ -91,6 +92,14 @@ _RPC_PARAMETER_LOCATIONS = {
     "query": ParameterLocation.BODY,
 }
 _USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
+
+# Param-style pinned on the /mcp tool-listing URL. The MCP schema and the RPC-execution unwrap
+# (_split_envelope_params) must agree on this, so it is pinned rather than following the server
+# default — the server default is free to change without breaking the SDK.
+_MCP_PARAM_STYLE = "flat_prefixed"
+
+# Matches a flat_prefixed envelope key: `<location>_<field>` (e.g. `path_id`, `query_limit`).
+_FLAT_ENVELOPE_KEY_PATTERN = re.compile(r"^(path|query|body|headers)_(.+)$")
 
 
 # --- Internal tool_search + tool_execute ---
@@ -444,24 +453,17 @@ class _StackOneRpcTool(StackOneTool):
     ) -> dict[str, Any]:
         parsed_arguments = self._parse_arguments(arguments)
 
-        body_payload = self._extract_record(parsed_arguments.pop("body", None))
-        headers_payload = self._extract_record(parsed_arguments.pop("headers", None))
-        path_payload = self._extract_record(parsed_arguments.pop("path", None))
-        query_payload = self._extract_record(parsed_arguments.pop("query", None))
-
-        rpc_body: dict[str, Any] = dict(body_payload or {})
-        for key, value in parsed_arguments.items():
-            rpc_body[key] = value
+        envelope = self._split_envelope_params(parsed_arguments)
 
         payload: dict[str, Any] = {
             "action": self.name,
-            "body": rpc_body,
-            "headers": self._build_action_headers(headers_payload),
+            "body": envelope["body"],
+            "headers": self._build_action_headers(envelope["headers"] or None),
         }
-        if path_payload:
-            payload["path"] = path_payload
-        if query_payload:
-            payload["query"] = query_payload
+        if envelope["path"]:
+            payload["path"] = envelope["path"]
+        if envelope["query"]:
+            payload["query"] = envelope["query"]
 
         return super().execute(payload, options=options)
 
@@ -477,10 +479,28 @@ class _StackOneRpcTool(StackOneTool):
         return dict(parsed)
 
     @staticmethod
-    def _extract_record(value: Any) -> dict[str, Any] | None:
-        if isinstance(value, dict):
-            return dict(value)
-        return None
+    def _split_envelope_params(params: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Split LLM-supplied tool arguments into the RPC envelope (path/query/headers/body).
+
+        Tools are listed with ``?param-style=flat_prefixed``, so keys arrive as
+        ``<location>_<field>`` (for example ``path_id``, ``query_limit``). The prefix carries
+        the parameter location, so the split needs no per-action schema. A bare dict-valued
+        ``path``/``query``/``headers``/``body`` key is still bucketed for clients holding a
+        cached nested schema, and any other key falls through to the body.
+        """
+        buckets: dict[str, dict[str, Any]] = {"path": {}, "query": {}, "headers": {}, "body": {}}
+        for key, value in params.items():
+            match = _FLAT_ENVELOPE_KEY_PATTERN.match(key)
+            if match:
+                location, field = match.group(1), match.group(2)
+                buckets[location].setdefault(field, value)
+                continue
+            if key in ("path", "query", "headers", "body") and isinstance(value, dict):
+                for field, field_value in value.items():
+                    buckets[key].setdefault(field, field_value)
+                continue
+            buckets["body"][key] = value
+        return buckets
 
     def _build_action_headers(self, additional_headers: dict[str, Any] | None) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -1240,7 +1260,7 @@ class StackOneToolSet:
             if cached is not None:
                 return cached
 
-            endpoint = f"{self.base_url.rstrip('/')}/mcp"
+            endpoint = f"{self.base_url.rstrip('/')}/mcp?param-style={_MCP_PARAM_STYLE}"
 
             def _fetch_for_account(account: str | None) -> list[StackOneTool]:
                 headers = self._build_mcp_headers(account)
