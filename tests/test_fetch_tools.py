@@ -679,4 +679,4 @@ class TestMcpParamStylePinning:
         toolset = StackOneToolSet(api_key="test-key", base_url="https://api.example.com")
         toolset.fetch_tools(account_ids=["acc1"])
 
-        assert "param-style=flat_prefixed" in captured["endpoint"]
+        assert captured["endpoint"] == "https://api.example.com/mcp?param-style=flat_prefixed"
