@@ -4762,7 +4762,7 @@ wheels = [
 
 [[package]]
 name = "stackone-ai"
-version = "2.9.1"
+version = "2.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s" },

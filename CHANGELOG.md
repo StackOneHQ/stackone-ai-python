@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.9.1...stackone-ai-v2.10.0) (2026-07-27)
+
+
+### Features
+
+* **ENG-733:** support flat_prefixed MCP param style ([#192](https://github.com/StackOneHQ/stackone-ai-python/issues/192)) ([ff8fb9a](https://github.com/StackOneHQ/stackone-ai-python/commit/ff8fb9a41add55e9c31bd84e04447bb3685ab024))
+
 ## [2.9.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.9.0...stackone-ai-v2.9.1) (2026-06-03)
 
 
