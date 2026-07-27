@@ -327,16 +327,33 @@ class TestStackOneRpcTool:
         with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
             rpc_tool._parse_arguments("[1, 2, 3]")
 
-    def test_extract_record_with_dict(self, rpc_tool):
-        """Test _extract_record with dict input"""
-        result = rpc_tool._extract_record({"key": "value"})
-        assert result == {"key": "value"}
+    def test_split_envelope_params_routes_flat_prefixed_keys(self, rpc_tool):
+        """flat_prefixed keys are bucketed into the RPC envelope by their location prefix"""
+        actual = rpc_tool._split_envelope_params(
+            {
+                "path_id": "123",
+                "query_limit": 10,
+                "headers_x-custom": "value",
+                "body_name": "test",
+            }
+        )
+        assert actual["path"] == {"id": "123"}
+        assert actual["query"] == {"limit": 10}
+        assert actual["headers"] == {"x-custom": "value"}
+        assert actual["body"] == {"name": "test"}
 
-    def test_extract_record_with_non_dict(self, rpc_tool):
-        """Test _extract_record with non-dict input"""
-        assert rpc_tool._extract_record("string") is None
-        assert rpc_tool._extract_record(123) is None
-        assert rpc_tool._extract_record(None) is None
+    def test_split_envelope_params_buckets_nested_and_unprefixed_keys(self, rpc_tool):
+        """Bare nested envelopes are accepted and unprefixed keys fall through to the body"""
+        actual = rpc_tool._split_envelope_params(
+            {
+                "body": {"nested": "value"},
+                "path": {"id": "1"},
+                "extra": "x",
+            }
+        )
+        assert actual["path"] == {"id": "1"}
+        assert actual["query"] == {}
+        assert actual["body"] == {"nested": "value", "extra": "x"}
 
 
 class TestBinaryDownloadResponse:

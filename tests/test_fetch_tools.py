@@ -662,3 +662,21 @@ class TestToolIndexCache:
         toolset.search_tools("bar")
 
         assert build_count["count"] == 2
+
+
+class TestMcpParamStylePinning:
+    """The /mcp listing URL must pin param-style so the schema matches the RPC unwrap."""
+
+    def test_fetch_tools_pins_flat_prefixed_param_style(self, monkeypatch):
+        captured: dict[str, str] = {}
+
+        def fake_fetch(endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
+            captured["endpoint"] = endpoint
+            return []
+
+        monkeypatch.setattr("stackone_ai.toolset._fetch_mcp_tools", fake_fetch)
+
+        toolset = StackOneToolSet(api_key="test-key", base_url="https://api.example.com")
+        toolset.fetch_tools(account_ids=["acc1"])
+
+        assert captured["endpoint"] == "https://api.example.com/mcp?param-style=flat_prefixed"
