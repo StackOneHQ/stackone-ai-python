@@ -43,7 +43,7 @@ examples = [
   "langchain-openai>=1.1.14",
   "langgraph>=1.1.6",
   "openai>=2.32.0",
-  "pydantic-ai>=1.83.0",
+  "pydantic-ai>=1.83.0,<2.0.0",
   "python-dotenv>=1.0.1",
 ]
 
