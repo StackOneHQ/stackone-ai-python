@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.0...stackone-ai-v2.10.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deps:** cap pydantic-ai in examples extra below 2.0 ([#195](https://github.com/StackOneHQ/stackone-ai-python/issues/195)) ([66f3f2b](https://github.com/StackOneHQ/stackone-ai-python/commit/66f3f2b8d2d41989852b850a0555c94c977e6afc))
+
 ## [2.10.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.9.1...stackone-ai-v2.10.0) (2026-07-27)
 
 
