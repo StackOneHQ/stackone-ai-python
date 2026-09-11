@@ -57,7 +57,7 @@ StackOne AI SDK is a Python library that provides a unified interface for access
 
 ```python
 # Use glob patterns for tool selection
-tools = StackOneToolSet(include_tools=["bamboohr_*", "!bamboohr_create_*"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"])
 ```
 
 ### Authentication

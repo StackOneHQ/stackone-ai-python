@@ -589,7 +589,8 @@ class StackOneToolSet:
         Args:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
-            base_url: Optional base URL override for API requests
+            base_url: Optional base URL override. If not provided, will try to get from
+                STACKONE_BASE_URL env var, then fall back to the production default
             search: Search configuration. Controls default search behavior.
                 Pass ``None`` (default) to disable search — ``toolset.openai()``
                 will return all regular tools.
@@ -614,7 +615,7 @@ class StackOneToolSet:
             )
         self.api_key: str = api_key_value
         self.account_id = account_id
-        self.base_url = base_url or DEFAULT_BASE_URL
+        self.base_url = base_url or os.getenv("STACKONE_BASE_URL") or DEFAULT_BASE_URL
         self._account_ids: list[str] = execute.get("account_ids", []) if execute else []
         self._semantic_client: SemanticSearchClient | None = None
         self._search_config: SearchConfig | None = search
