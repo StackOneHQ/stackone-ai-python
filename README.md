@@ -16,7 +16,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 - **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
 - **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
 - **Advanced Tool Filtering**:
-  - Glob pattern filtering with patterns like `"salesforce_*"` and exclusions `"!*_delete_*"`
+  - Glob pattern filtering with patterns like `"salesforce_*"`
   - Provider and action filtering
   - Multi-account support
 - **Semantic Search**: AI-powered tool discovery using natural language queries
@@ -142,51 +142,6 @@ The returned dict:
 > **Caveat:** `content` holds raw bytes, which are not JSON-serializable. If you forward tool results to an LLM — or anywhere that re-serializes them to JSON — handle or strip the `content` key (for example, base64-encode it on the LLM-facing path).
 
 JSON responses are unchanged: any action returning `application/json` (or a `…+json` type) is parsed and returned as a dict exactly as before.
-
-## Implicit Feedback (Beta)
-
-The Python SDK can emit implicit behavioral feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
-
-### Automatic configuration
-
-Set `LANGSMITH_API_KEY` in your environment and the SDK will initialize the implicit feedback manager on first tool execution. You can optionally fine-tune behavior with:
-
-- `STACKONE_IMPLICIT_FEEDBACK_ENABLED` (`true`/`false`, defaults to `true` when an API key is present)
-- `STACKONE_IMPLICIT_FEEDBACK_PROJECT` to pin a LangSmith project name
-- `STACKONE_IMPLICIT_FEEDBACK_TAGS` with a comma-separated list of tags applied to every run
-
-### Manual configuration
-
-If you want custom session or user resolvers, call `configure_implicit_feedback` during start-up:
-
-```python
-from stackone_ai import configure_implicit_feedback
-
-configure_implicit_feedback(
-    api_key="/path/to/langsmith.key",
-    project_name="stackone-agents",
-    default_tags=["python-sdk"],
-)
-```
-
-Providing your own `session_resolver`/`user_resolver` callbacks lets you derive identifiers from the request context before events are sent to LangSmith.
-
-### Attaching session context to tool calls
-
-Both `tool.execute` and `tool.call` accept an `options` keyword that is excluded from the API request but forwarded to the feedback manager:
-
-```python
-tool.execute(
-    {"id": "employee-id"},
-    options={
-        "feedback_session_id": "chat-42",
-        "feedback_user_id": "user-123",
-        "feedback_metadata": {"conversation_id": "abc"},
-    },
-)
-```
-
-When two calls for the same session happen within a few seconds, the SDK emits a `refinement_needed` event, and you can inspect suitability scores directly in LangSmith.
 
 ## Integration Examples
 
@@ -359,16 +314,14 @@ result = crew.kickoff()
 
 ## Feedback Collection
 
-The SDK includes a feedback collection tool (`tool_feedback`) that allows users to submit feedback about their experience with StackOne tools. This tool is automatically included in the toolset and is designed to be invoked by AI agents after user permission.
+StackOne serves a feedback tool (`stackone_submit_feedback`) from the MCP endpoint, so it arrives in `fetch_tools()` alongside your action tools when it is enabled for your project. It is designed to be invoked by AI agents after user permission.
+
+A client-side equivalent is also available for constructing the tool yourself:
 
 ```python
-from stackone_ai import StackOneToolSet
+from stackone_ai.feedback.tool import create_feedback_tool
 
-toolset = StackOneToolSet()
-
-# Get the feedback tool (included with "tool_*" pattern or all tools)
-tools = toolset.fetch_tools(actions=["tool_*"])
-feedback_tool = tools.get_tool("tool_feedback")
+feedback_tool = create_feedback_tool(api_key="your-api-key", account_id="acc_123456")
 
 # Submit feedback (typically invoked by AI after user consent)
 result = feedback_tool.call(
