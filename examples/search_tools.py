@@ -152,13 +152,11 @@ def search_and_execute(account_id: str) -> None:
 
 def main() -> None:
     if not os.getenv("STACKONE_API_KEY"):
-        print("Set STACKONE_API_KEY to run this example.")
-        return
+        raise ValueError("STACKONE_API_KEY is not set. Export it or add it to .env")
 
     account_id = os.getenv("STACKONE_ACCOUNT_ID")
     if not account_id:
-        print("Set STACKONE_ACCOUNT_ID to run this example.")
-        return
+        raise ValueError("STACKONE_ACCOUNT_ID is not set. Export it or add it to .env")
 
     direct_fetch(account_id)
     semantic_search(account_id)

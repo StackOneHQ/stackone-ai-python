@@ -31,8 +31,7 @@ from stackone_ai import StackOneToolSet
 def pydantic_ai_integration() -> None:
     for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
         if not os.getenv(var):
-            print(f"Set {var} to run this example.")
-            return
+            raise ValueError(f"{var} is not set. Export it or add it to .env")
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(

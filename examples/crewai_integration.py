@@ -27,11 +27,11 @@ from stackone_ai import StackOneToolSet
 def crewai_integration():
     account_id = os.getenv("STACKONE_ACCOUNT_ID")
     if not os.getenv("STACKONE_API_KEY"):
-        print("Set STACKONE_API_KEY to run this example.")
-        return
+        raise ValueError("STACKONE_API_KEY is not set. Export it or add it to .env")
     if not account_id:
-        print("Set STACKONE_ACCOUNT_ID to run this example.")
-        return
+        raise ValueError("STACKONE_ACCOUNT_ID is not set. Export it or add it to .env")
+    if not os.getenv("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY is not set. Export it or add it to .env")
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(

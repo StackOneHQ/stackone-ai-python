@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -34,6 +35,25 @@ OPTIONAL_DEPENDENCIES = {
 }
 
 
+# Every example talks to StackOne, so without these it cannot exercise the SDK.
+STACKONE_CREDENTIALS = ("STACKONE_API_KEY", "STACKONE_ACCOUNT_ID")
+
+# These additionally drive a live LLM, so pointing STACKONE_BASE_URL at a mock is
+# not enough to make them runnable.
+LLM_CREDENTIALS = ("OPENAI_API_KEY",)
+LLM_EXAMPLES = {
+    "crewai_integration.py",
+    "langchain_integration.py",
+    "langgraph_integration.py",
+    "openai_integration.py",
+    "pydantic_ai_integration.py",
+}
+
+
+def _missing(variables: tuple[str, ...]) -> list[str]:
+    return [name for name in variables if not os.getenv(name)]
+
+
 def test_example_files_exist() -> None:
     """Verify that we found example files to test"""
     assert len(EXAMPLES) > 0, "No example files found"
@@ -50,6 +70,20 @@ def test_run_example(example_file: str) -> None:
                 __import__(module)
             except ImportError:
                 pytest.skip(f"Skipping {example_file}: {module} not installed")
+
+    # Credentials are checked here rather than left to the example's own guard:
+    # a guard that returns early makes the test pass while exercising nothing.
+    missing_stackone = _missing(STACKONE_CREDENTIALS)
+    if missing_stackone:
+        pytest.skip(f"Skipping {example_file}: {', '.join(missing_stackone)} not set")
+
+    if example_file in LLM_EXAMPLES:
+        missing_llm = _missing(LLM_CREDENTIALS)
+        if missing_llm:
+            pytest.skip(
+                f"Skipping {example_file}: needs a live LLM ({', '.join(missing_llm)}), "
+                "so it cannot run against a mock StackOne server"
+            )
 
     example_path = Path(__file__).parent / example_file
 
