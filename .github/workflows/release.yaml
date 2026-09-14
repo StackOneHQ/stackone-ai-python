@@ -26,16 +26,14 @@ jobs:
         with:
           ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
 
-      - name: Setup Nix (for PR update)
+      - name: Setup uv (for PR update)
         if: ${{ steps.release.outputs.pr }}
-        uses: ./.github/actions/setup-nix
-        with:
-          skip-uv-sync: "true"
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Update uv.lock
         if: ${{ steps.release.outputs.pr }}
         run: |
-          nix develop --command uv lock
+          uv lock
           if git diff --quiet uv.lock; then
             echo "uv.lock is already up to date"
           else
@@ -51,16 +49,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: ${{ steps.release.outputs.release_created }}
 
-      - name: Setup Nix
+      - name: Setup uv
         if: ${{ steps.release.outputs.release_created }}
-        uses: ./.github/actions/setup-nix
-        with:
-          skip-uv-sync: "true"
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Build and publish package
         if: ${{ steps.release.outputs.release_created }}
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          nix develop --command just build
-          nix develop --command just publish
+          make build
+          make publish

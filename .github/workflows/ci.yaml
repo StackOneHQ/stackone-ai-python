@@ -24,14 +24,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          tools: gitleaks
-          skip-uv-sync: "true"
-
       - name: Run Gitleaks
-        run: gitleaks detect --source . --config .gitleaks.toml
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
 
   ci:
     runs-on: ubuntu-latest
@@ -44,19 +40,35 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          tools: uv ty just bun pnpm_10 typescript-go
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras --locked
+
+      - name: Install Node dependencies (MCP mock server)
+        run: pnpm install --frozen-lockfile
 
       - name: Run Lint
-        run: just lint
+        run: make lint
 
       - name: Run Ty
-        run: just ty
+        run: make ty
 
       - name: Run Tests
-        run: just test
+        run: make test
 
   coverage:
     runs-on: ubuntu-latest
@@ -67,13 +79,29 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          tools: uv just bun pnpm_10 typescript-go
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras --locked
+
+      - name: Install Node dependencies (MCP mock server)
+        run: pnpm install --frozen-lockfile
 
       - name: Run Tests with Coverage
-        run: just coverage
+        run: make coverage
 
       - name: Create Coverage Badge
         uses: jaywcjlove/coverage-badges-cli@4e8975aa2628e3329126e7eee36724d07ed86fda # v2.2.0

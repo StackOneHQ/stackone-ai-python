@@ -469,37 +469,37 @@ uv run examples/search_tools.py
 
 ## Development
 
-### Using Nix (Recommended)
+### Setup
 
-This project includes a Nix flake for reproducible development environments. All development tools are defined in [flake.nix](./flake.nix) and provided via Nix.
-
-#### Installing Nix
+Development uses [uv](https://docs.astral.sh/uv/) for Python and `make` as the task runner.
 
 ```bash
-# Install Nix with flakes enabled (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf -L https://artifacts.nixos.org/experimental-installer | \
-  sh -s -- install
-
-# If flakes are not enabled, enable them with:
-mkdir -p ~/.config/nix && echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+# Install Python dependencies
+make install EXTRAS="--all-extras"
 ```
 
-#### Activating the Development Environment
+### Common Commands
 
 ```bash
-# Automatic activation with direnv (recommended)
-direnv allow
-
-# Or manual activation
-nix develop
+make lint     # ruff lint + format check
+make format   # auto-fix and format
+make ty       # type checking
+make test     # run all tests
 ```
 
-The Nix development environment includes:
+Linting, type checking and tests run in CI on every push; there are no git hooks.
 
-- Python with uv package manager
-- Automatic dependency installation
-- Git hooks (treefmt + ty) auto-configured
-- Consistent environment across all platforms
+### Integration Tests
+
+Tests that exercise the MCP mock server need the vendored submodule and its Node
+dependencies ([pnpm](https://pnpm.io/) provides `tsx`, which runs the server):
+
+```bash
+git submodule update --init --recursive
+pnpm install
+```
+
+Without these, those tests are skipped.
 
 ## License
 

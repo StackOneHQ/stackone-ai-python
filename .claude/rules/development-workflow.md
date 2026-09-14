@@ -12,35 +12,33 @@ This rule provides code style guidelines and project conventions for the StackOn
 - Use [ruff](https://docs.astral.sh/ruff/) for linting and formatting
 - Follow PEP 8 style guidelines
 - Maximum line length: 88 characters (ruff default)
-- Run `just lint` to check, `just lint-fix` to auto-fix
+- Run `make lint` to check, `make format` to auto-fix
 
 ## Type Annotations
 
 - Full type annotations required for all public APIs
 - Use Python 3.10+ typing features
-- Run `just ty` to verify type correctness
+- Run `make ty` to verify type correctness
 - Strict ty configuration is enforced
 
-## Pre-commit Hooks
+## Checks
 
-Pre-commit hooks are configured for:
-
-- ruff linting
-- ty type checking
-
-Run `just install` to set up hooks.
+There are no git hooks. Linting, type checking and tests run in CI on every push.
+Run them locally before pushing with `make lint`, `make ty` and `make test`.
 
 ## Essential Commands
 
 ```bash
-just install       # Install dependencies and pre-commit hooks
-just lint          # Run ruff linting
-just lint-fix      # Auto-fix linting issues
-just ty            # Run type checking
-just test          # Run all tests
-just test-tools    # Run tool-specific tests
-just test-examples # Run example tests
+make install       # Install Python dependencies (EXTRAS="--all-extras" for optional groups)
+make lint          # Run ruff lint + format check
+make format        # Auto-fix lint issues and format
+make ty            # Run type checking
+make test          # Run all tests
+make test-tools    # Run tool-specific tests
+make test-examples # Run example tests
 ```
+
+Integration tests need the MCP mock server: `git submodule update --init` and `pnpm install`.
 
 ## File Naming
 
