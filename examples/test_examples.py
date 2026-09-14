@@ -29,7 +29,6 @@ OPTIONAL_DEPENDENCIES = {
     "crewai_integration.py": ["crewai", "mcp"],
     "langgraph_integration.py": ["langgraph", "langchain_openai", "mcp"],
     "pydantic_ai_integration.py": ["pydantic_ai", "mcp"],
-    "search_tools.py": ["mcp"],
     "auth_management.py": ["mcp"],
 }
 

@@ -17,7 +17,7 @@ import {
   defaultMcpTools,
   exampleBamboohrTools,
   mixedProviderTools,
-} from "../../vendor/stackone-ai-node/mocks/mcp-server";
+} from "./mcp-server";
 
 const port = parseInt(process.env.PORT || process.argv[2] || "8787", 10);
 

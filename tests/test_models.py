@@ -8,15 +8,13 @@ from hypothesis import strategies as st
 from langchain_core.tools import BaseTool as LangChainBaseTool
 from pydantic import ValidationError
 
-from stackone_ai.models import (
+from stackone_ai.tools import StackOneTool, Tools
+from stackone_ai.types import (
     ExecuteConfig,
     ParameterLocation,
     StackOneAPIError,
     StackOneError,
-    StackOneTool,
-    ToolDefinition,
     ToolParameters,
-    Tools,
     validate_method,
 )
 
@@ -97,28 +95,6 @@ def mock_tool() -> StackOneTool:
         ),
         _api_key="test_key",
     )
-
-
-@pytest.fixture
-def mock_specs() -> dict:
-    """Create mock tool specifications"""
-    return {
-        "hris": {
-            "get_employee": ToolDefinition(
-                description="Get employee details",
-                parameters=ToolParameters(
-                    type="object",
-                    properties={"id": {"type": "string"}},
-                ),
-                execute=ExecuteConfig(
-                    headers={},
-                    method="GET",
-                    url="https://api.example.com/employee/{id}",
-                    name="get_employee",
-                ),
-            )
-        }
-    }
 
 
 def test_tool_execution(mock_tool):
@@ -758,96 +734,6 @@ class TestStackOneToolLangChainConversion:
             assert result == {"result": "async_test"}
 
 
-class TestStackOneToolFeedbackOptions:
-    """Test feedback options handling."""
-
-    def test_split_feedback_options_extracts_from_params(self):
-        """Test that feedback options are extracted from params."""
-        tool = StackOneTool(
-            description="Test",
-            parameters=ToolParameters(type="object", properties={}),
-            _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com",
-                name="test",
-            ),
-            _api_key="test_key",
-        )
-
-        params = {
-            "regular_param": "value",
-            "feedback_session_id": "session123",
-            "feedback_user_id": "user456",
-        }
-
-        new_params, feedback_options = tool._split_feedback_options(params, None)
-
-        # Feedback options should be extracted
-        assert "feedback_session_id" in feedback_options
-        assert feedback_options["feedback_session_id"] == "session123"
-        assert "feedback_user_id" in feedback_options
-        assert feedback_options["feedback_user_id"] == "user456"
-
-        # Original params should have them removed
-        assert "feedback_session_id" not in new_params
-        assert "feedback_user_id" not in new_params
-        assert new_params["regular_param"] == "value"
-
-    def test_split_feedback_options_with_existing_options(self):
-        """Test that existing options take precedence."""
-        tool = StackOneTool(
-            description="Test",
-            parameters=ToolParameters(type="object", properties={}),
-            _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com",
-                name="test",
-            ),
-            _api_key="test_key",
-        )
-
-        params = {"feedback_session_id": "from_params"}
-        options = {"feedback_session_id": "from_options"}
-
-        _, feedback_options = tool._split_feedback_options(params, options)
-
-        # Options should take precedence
-        assert feedback_options["feedback_session_id"] == "from_options"
-
-    def test_execute_with_feedback_metadata(self):
-        """Test execution with feedback_metadata in options."""
-        tool = StackOneTool(
-            description="Test",
-            parameters=ToolParameters(type="object", properties={}),
-            _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com/test",
-                name="test",
-            ),
-            _api_key="test_key",
-        )
-
-        with patch("httpx.request") as mock_request:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"success": True}
-            mock_response.status_code = 200
-            mock_response.raise_for_status = MagicMock()
-            mock_request.return_value = mock_response
-
-            result = tool.execute(
-                {},
-                options={
-                    "feedback_metadata": {"custom_field": "custom_value"},
-                    "feedback_session_id": "sess123",
-                },
-            )
-
-            assert result == {"success": True}
-
-
 class TestStackOneToolAccountId:
     """Test account ID methods"""
 
@@ -960,3 +846,102 @@ class TestToolsContainer:
         )
         tools = Tools([tool])
         assert tools.get_account_id() is None
+
+
+class TestOpenAISchemaPassThrough:
+    """The served schema must reach the model intact.
+
+    The conformance suite's --strict-schema gate requires that the schema listed
+    to a model is the schema the server served. An earlier allowlist copied only
+    type/description/enum, silently dropping every constraint, so a model could
+    not generate valid arguments for a constrained field.
+    """
+
+    @staticmethod
+    def _tool(properties: dict) -> StackOneTool:
+        return StackOneTool(
+            description="Test tool",
+            parameters=ToolParameters(type="object", properties=properties),
+            _execute_config=ExecuteConfig(
+                headers={}, method="POST", url="https://api.example.com/x", name="schema_tool"
+            ),
+            _api_key="key",
+        )
+
+    def test_preserves_constraint_keywords(self):
+        tool = self._tool(
+            {
+                "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": r"^\S+@\S+$",
+                    "nullable": False,
+                },
+                "count": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+            }
+        )
+
+        props = tool.to_openai_function()["function"]["parameters"]["properties"]
+
+        assert props["email"]["format"] == "email"
+        assert props["email"]["pattern"] == r"^\S+@\S+$"
+        assert props["count"]["minimum"] == 1
+        assert props["count"]["maximum"] == 100
+        assert props["count"]["default"] == 10
+
+    def test_preserves_composition_and_nested_required(self):
+        tool = self._tool(
+            {
+                "payload": {
+                    "type": "object",
+                    "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+                    "required": ["a"],
+                    "nullable": False,
+                },
+                "either": {"oneOf": [{"type": "string"}, {"type": "integer"}], "nullable": True},
+            }
+        )
+
+        props = tool.to_openai_function()["function"]["parameters"]["properties"]
+
+        assert props["payload"]["required"] == ["a"]
+        assert props["payload"]["properties"]["b"]["type"] == "integer"
+        assert props["either"]["oneOf"] == [{"type": "string"}, {"type": "integer"}]
+
+    def test_preserves_unknown_keywords(self):
+        """A keyword this SDK has never heard of must still reach the model."""
+        tool = self._tool({"x": {"type": "string", "x-vendor-hint": "something", "nullable": True}})
+
+        props = tool.to_openai_function()["function"]["parameters"]["properties"]
+
+        assert props["x"]["x-vendor-hint"] == "something"
+
+    def test_strips_internal_nullable_marker_and_derives_required(self):
+        """`nullable` is an SDK-internal marker; it becomes JSON Schema `required`."""
+        tool = self._tool(
+            {
+                "needed": {"type": "string", "nullable": False},
+                "optional": {"type": "string", "nullable": True},
+            }
+        )
+
+        params = tool.to_openai_function()["function"]["parameters"]
+
+        assert "nullable" not in params["properties"]["needed"]
+        assert "nullable" not in params["properties"]["optional"]
+        assert params["required"] == ["needed"]
+
+    def test_strips_nested_internal_marker(self):
+        tool = self._tool(
+            {
+                "obj": {
+                    "type": "object",
+                    "properties": {"inner": {"type": "string", "nullable": True}},
+                    "nullable": False,
+                }
+            }
+        )
+
+        props = tool.to_openai_function()["function"]["parameters"]["properties"]
+
+        assert "nullable" not in props["obj"]["properties"]["inner"]

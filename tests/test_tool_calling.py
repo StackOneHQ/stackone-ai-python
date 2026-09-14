@@ -7,13 +7,13 @@ import pytest
 import respx
 
 from stackone_ai import StackOneTool
-from stackone_ai.models import (
+from stackone_ai.tools import StackOneRpcTool
+from stackone_ai.types import (
     ExecuteConfig,
     ToolParameters,
-    _filename_from_content_disposition,
-    _is_json_content_type,
+    filename_from_content_disposition,
+    is_json_content_type,
 )
-from stackone_ai.toolset import _StackOneRpcTool
 from tests.conftest import TEST_BASE_URL
 
 
@@ -144,7 +144,7 @@ class TestToolCalling:
 
 
 class TestStackOneRpcTool:
-    """Test _StackOneRpcTool functionality"""
+    """Test StackOneRpcTool functionality"""
 
     @pytest.fixture
     def rpc_tool(self):
@@ -155,7 +155,7 @@ class TestStackOneRpcTool:
                 "employee_id": {"type": "string", "description": "Employee ID"},
             },
         )
-        return _StackOneRpcTool(
+        return StackOneRpcTool(
             name="hibob_get_employee",
             description="Get employee details",
             parameters=parameters,
@@ -320,7 +320,7 @@ class TestStackOneRpcTool:
             type="object",
             properties={},
         )
-        tool = _StackOneRpcTool(
+        tool = StackOneRpcTool(
             name="test_tool",
             description="Test",
             parameters=parameters,
@@ -438,7 +438,7 @@ class TestBinaryDownloadResponse:
             type="object",
             properties={"id": {"type": "string", "description": "File ID"}},
         )
-        tool = _StackOneRpcTool(
+        tool = StackOneRpcTool(
             name="googledrive_unified_download_file",
             description="Download a file",
             parameters=parameters,
@@ -547,7 +547,7 @@ class TestResponseHelpers:
         ],
     )
     def test_is_json_content_type(self, content_type, expected):
-        assert _is_json_content_type(content_type) is expected
+        assert is_json_content_type(content_type) is expected
 
     @pytest.mark.parametrize(
         ("header", "expected"),
@@ -569,4 +569,4 @@ class TestResponseHelpers:
         ],
     )
     def test_filename_from_content_disposition(self, header, expected):
-        assert _filename_from_content_disposition(header) == expected
+        assert filename_from_content_disposition(header) == expected

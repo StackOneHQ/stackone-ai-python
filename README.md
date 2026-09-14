@@ -19,18 +19,15 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
   - Glob pattern filtering with patterns like `"salesforce_*"` and exclusions `"!*_delete_*"`
   - Provider and action filtering
   - Multi-account support
-- **Semantic Search**: AI-powered tool discovery using natural language queries
-- **Search Tool**: Callable tool discovery for agent loops via `get_search_tool()`
 - Integration with popular AI frameworks:
   - OpenAI Functions
   - LangChain Tools
   - CrewAI Tools
-  - LangGraph Tool Node
   - Pydantic AI Toolset
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 
 ## Installation
 
@@ -143,51 +140,6 @@ The returned dict:
 
 JSON responses are unchanged: any action returning `application/json` (or a `…+json` type) is parsed and returned as a dict exactly as before.
 
-## Implicit Feedback (Beta)
-
-The Python SDK can emit implicit behavioral feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
-
-### Automatic configuration
-
-Set `LANGSMITH_API_KEY` in your environment and the SDK will initialize the implicit feedback manager on first tool execution. You can optionally fine-tune behavior with:
-
-- `STACKONE_IMPLICIT_FEEDBACK_ENABLED` (`true`/`false`, defaults to `true` when an API key is present)
-- `STACKONE_IMPLICIT_FEEDBACK_PROJECT` to pin a LangSmith project name
-- `STACKONE_IMPLICIT_FEEDBACK_TAGS` with a comma-separated list of tags applied to every run
-
-### Manual configuration
-
-If you want custom session or user resolvers, call `configure_implicit_feedback` during start-up:
-
-```python
-from stackone_ai import configure_implicit_feedback
-
-configure_implicit_feedback(
-    api_key="/path/to/langsmith.key",
-    project_name="stackone-agents",
-    default_tags=["python-sdk"],
-)
-```
-
-Providing your own `session_resolver`/`user_resolver` callbacks lets you derive identifiers from the request context before events are sent to LangSmith.
-
-### Attaching session context to tool calls
-
-Both `tool.execute` and `tool.call` accept an `options` keyword that is excluded from the API request but forwarded to the feedback manager:
-
-```python
-tool.execute(
-    {"id": "employee-id"},
-    options={
-        "feedback_session_id": "chat-42",
-        "feedback_user_id": "user-123",
-        "feedback_metadata": {"conversation_id": "abc"},
-    },
-)
-```
-
-When two calls for the same session happen within a few seconds, the SDK emits a `refinement_needed` event, and you can inspect suitability scores directly in LangSmith.
-
 ## Integration Examples
 
 <details>
@@ -260,7 +212,6 @@ tools = toolset.pydantic_ai(account_ids=[os.environ["STACKONE_ACCOUNT_ID"]])
 
 # For agent-driven discovery, enable search on the constructor:
 # toolset = StackOneToolSet(search={"method": "auto"})
-# tools = toolset.pydantic_ai(mode="search_and_execute")
 ```
 
 </details>
@@ -286,8 +237,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import tools_condition
 
+from langgraph.prebuilt import ToolNode
+
 from stackone_ai import StackOneToolSet
-from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_tools
 
 # Prepare tools
 toolset = StackOneToolSet()
@@ -300,11 +252,11 @@ class State(TypedDict):
 
 # Build a small agent loop: LLM -> maybe tools -> back to LLM
 graph = StateGraph(State)
-graph.add_node("tools", to_tool_node(langchain_tools))
+graph.add_node("tools", ToolNode(langchain_tools))
 
 def call_llm(state: dict):
     llm = ChatOpenAI(model="gpt-5.4")
-    llm = bind_model_with_tools(llm, langchain_tools)
+    llm = llm.bind_tools(langchain_tools)
     resp = llm.invoke(state["messages"])  # returns AIMessage with optional tool_calls
     return {"messages": state["messages"] + [resp]}
 
@@ -357,92 +309,6 @@ result = crew.kickoff()
 
 </details>
 
-## Feedback Collection
-
-The SDK includes a feedback collection tool (`tool_feedback`) that allows users to submit feedback about their experience with StackOne tools. This tool is automatically included in the toolset and is designed to be invoked by AI agents after user permission.
-
-```python
-from stackone_ai import StackOneToolSet
-
-toolset = StackOneToolSet()
-
-# Get the feedback tool (included with "tool_*" pattern or all tools)
-tools = toolset.fetch_tools(actions=["tool_*"])
-feedback_tool = tools.get_tool("tool_feedback")
-
-# Submit feedback (typically invoked by AI after user consent)
-result = feedback_tool.call(
-    feedback="The HRIS tools are working great! Very fast response times.",
-    account_id="acc_123456",
-    tool_names=["workday_list_workers", "workday_get_worker"]
-)
-```
-
-**Important**: The AI agent should always ask for user permission before submitting feedback:
-
-- "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
-- Only call the tool after the user explicitly agrees.
-
-## Search Tool
-
-Search for tools using natural language queries. Works with both semantic (cloud) and local BM25+TF-IDF search.
-
-### Basic Usage
-
-```python
-import os
-from stackone_ai import StackOneToolSet
-
-# Get a callable search tool — search must be enabled on the toolset
-toolset = StackOneToolSet(search={"method": "auto"})
-account_id = os.getenv("STACKONE_ACCOUNT_ID")
-search_tool = toolset.get_search_tool()
-
-# Search for relevant tools — returns a Tools collection scoped to the account
-tools = search_tool("manage employees", top_k=5, account_ids=[account_id])
-
-# Execute a discovered tool directly
-tools[0](limit=10)
-```
-
-## Semantic Search
-
-Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `workday_create_employee`.
-
-```python
-import os
-from stackone_ai import StackOneToolSet
-
-# Search must be enabled on the constructor — pass `search={}` for defaults,
-# or set a backend / top_k explicitly.
-toolset = StackOneToolSet(search={"method": "auto"})
-
-# Search by intent — returns Tools collection ready for any framework
-account_id = os.getenv("STACKONE_ACCOUNT_ID")
-tools = toolset.search_tools("manage employee records", account_ids=[account_id], top_k=5)
-openai_tools = tools.to_openai()
-
-# Lightweight: inspect results without fetching full tool definitions
-results = toolset.search_action_names("time off requests", top_k=5)
-```
-
-### Search Modes
-
-Control which search backend `search_tools()` uses via the `search` parameter:
-
-```python
-# "auto" (default) — tries semantic search first, falls back to local
-tools = toolset.search_tools("manage employees", search="auto")
-
-# "semantic" — semantic API only, raises if unavailable
-tools = toolset.search_tools("manage employees", search="semantic")
-
-# "local" — local BM25+TF-IDF only, no semantic API call
-tools = toolset.search_tools("manage employees", search="local")
-```
-
-Results are automatically scoped to connectors in your linked accounts. See [Search Tools Example](examples/search_tools.py) for `SearchTool` (`get_search_tool`) integration, OpenAI, and LangChain patterns.
-
 ## Examples
 
 For more examples, check out the [examples/](examples/) directory:
@@ -450,7 +316,8 @@ For more examples, check out the [examples/](examples/) directory:
 - [OpenAI Integration](examples/openai_integration.py) — OpenAI function calling
 - [LangChain Integration](examples/langchain_integration.py) — LangChain tools
 - [CrewAI Integration](examples/crewai_integration.py) — CrewAI agent
-- [Search Tools](examples/search_tools.py) — Tool discovery (semantic, local, auto search)
+- [LangGraph Integration](examples/langgraph_integration.py) — LangGraph agent
+- [Pydantic AI Integration](examples/pydantic_ai_integration.py) — Pydantic AI agent
 - [Auth Management](examples/auth_management.py) — API key and account ID patterns
 
 ### Running Examples
@@ -464,7 +331,7 @@ cp .env.example .env
 uv sync --all-extras
 
 # 3. Run any example
-uv run examples/search_tools.py
+uv run examples/openai_integration.py
 ```
 
 ## Development
@@ -491,15 +358,14 @@ Linting, type checking and tests run in CI on every push; there are no git hooks
 
 ### Integration Tests
 
-Tests that exercise the MCP mock server need the vendored submodule and its Node
-dependencies ([pnpm](https://pnpm.io/) provides `tsx`, which runs the server):
+Tests that exercise the MCP mock server need its Node dependencies
+([pnpm](https://pnpm.io/) provides `tsx`, which runs the server):
 
 ```bash
-git submodule update --init --recursive
 pnpm install
 ```
 
-Without these, those tests are skipped.
+Without these, those tests fail rather than skip.
 
 ## License
 

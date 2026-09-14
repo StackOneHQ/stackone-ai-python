@@ -9,19 +9,22 @@ StackOne AI SDK is a Python library providing a unified interface for accessing 
 tools through AI-friendly APIs, with support for OpenAI, LangChain, CrewAI and the
 Model Context Protocol (MCP).
 
-Requires Python >= 3.10.
+Requires Python >= 3.11.
 
 ## Code Architecture
 
-1. **StackOneToolSet** (`stackone_ai/toolset.py`): main entry point
-   - Authentication (API key + optional account ID)
-   - Tool loading with glob pattern filtering
-   - Format converters for OpenAI/LangChain
+The package is three modules. The guiding property is that **the toolset is the
+served catalog** — the schema listed to a model is the schema the MCP server sent,
+and the request sent to `/actions/rpc` matches it. Nothing invented, nothing lost.
 
-2. **Models** (`stackone_ai/models.py`): data structures
-   - `StackOneTool`: base class with execution logic
-   - `Tools`: container for managing multiple tools
-   - Format converters for different AI frameworks
+1. **`types.py`** — `ToolParameters`, `ExecuteConfig`, `ParameterLocation`, the error
+   hierarchy, shared aliases and `DEFAULT_BASE_URL`.
+2. **`tools.py`** — `StackOneTool` (execution + framework converters), `Tools`
+   (container), `StackOneRpcTool` (the RPC envelope), and the MCP listing client.
+3. **`toolset.py`** — `StackOneToolSet`: fetches the catalog and exposes it.
+
+Tools come from the MCP endpoint (`/mcp?param-style=flat_prefixed`) and execute
+against `/actions/rpc`. There is no OpenAPI parsing and no client-side search.
 
 ## Commands
 
@@ -31,9 +34,9 @@ make lint          # ruff lint + format check
 make format        # Auto-fix lint issues and format
 make ty            # Type checking
 make test          # Run all tests
-make test-tools    # Tool-specific tests
+make test-tools    # Run the tests/ directory
 make test-examples # Example tests
-make run-example FILE=search_tools.py
+make run-example FILE=openai_integration.py
 make build         # Build package
 make publish       # Publish to PyPI
 ```
@@ -53,8 +56,7 @@ them locally before pushing.
 ## Type Annotations
 
 - Full type annotations required for all public APIs
-- Use Python 3.10+ typing features
-- Strict `ty` configuration is enforced
+- Use Python 3.11+ typing features
 - Use generics for better IDE support
 
 ## Imports
@@ -63,8 +65,8 @@ Always use absolute imports starting with the full package name. Never use relat
 imports (`.` or `..`).
 
 ```python
-from stackone_ai.tools import ToolDefinition   # good
-from .tools import ToolDefinition              # bad
+from stackone_ai.tools import StackOneTool     # good
+from .tools import StackOneTool                # bad
 ```
 
 Order: standard library, then third-party, then local.
@@ -83,25 +85,25 @@ Never use `uv pip install`, and never use editable installs (`-e`).
 
 ## Testing
 
-- Snapshot testing for tool parsing (`tests/snapshots/`)
 - Async tests use `pytest-asyncio`
 - Examples are tested as part of CI and must work with the latest package version
 
-Integration tests exercise an MCP mock server that runs under `tsx`. They need the
-vendored submodule and its Node dependencies, and are skipped without them:
+Integration tests exercise an MCP mock server (`tests/mocks/`) that runs under `tsx`:
 
 ```bash
-git submodule update --init --recursive
 pnpm install
 ```
 
-The mock's dependencies are pinned to the exact versions the vendored submodule
-resolves. Do not loosen them to caret ranges: a newer MCP SDK rejects the raw
-`inputSchema` objects the vendor mock passes.
+These tests **fail** rather than skip if Node dependencies are missing — a silent
+skip previously let them vanish while CI stayed green.
+
+The mock's dependencies are pinned exactly (`@modelcontextprotocol/sdk`, `zod`,
+`hono`, `@hono/mcp`). Do not loosen them to caret ranges: a newer MCP SDK rejects
+the raw `inputSchema` objects the mock passes.
 
 ## Examples
 
-Live in `examples/`, organised into `basic_usage/` and `integrations/`.
+Live in `examples/` (flat — no subdirectories).
 
 - Every public function/class needs at least one example
 - Examples are runnable scripts with type hints, following the main code style
@@ -149,7 +151,7 @@ publishes to PyPI (requires the `PYPI_API_TOKEN` secret).
 
 ```python
 # Tool filtering via glob patterns
-tools = StackOneToolSet(include_tools=["bamboohr_*", "!bamboohr_create_*"])
+tools = toolset.fetch_tools(actions=["bamboohr_*"], providers=["bamboohr"])
 
 # Authentication
 toolset = StackOneToolSet(
@@ -160,18 +162,16 @@ toolset = StackOneToolSet(
 
 ## Important Considerations
 
-- **Error handling**: custom exceptions (`StackOneError`, `StackOneAPIError`)
-- **File uploads**: binary parameters auto-detected from OpenAPI specs
-- **Context window**: tool loading warns when loading all tools
-
-### Adding a New SaaS Integration
-
-1. Add the OpenAPI spec to `stackone_ai/oas/`
-2. The parser converts it to tool definitions automatically
-3. Test with `make test-tools`
+- **Error handling**: custom exceptions (`StackOneError`, `StackOneAPIError`) in `types.py`
+- **File downloads**: non-JSON responses return raw bytes plus metadata, not decoded text
 
 ### Modifying Tool Behaviour
 
-- Core execution logic: `StackOneTool.execute()`
-- HTTP configuration: `ExecuteConfig`
-- Response handling: `_process_response()`
+- Core execution logic: `StackOneTool.execute()` in `tools.py`
+- RPC envelope split: `StackOneRpcTool._split_envelope_params`
+- HTTP configuration: `ExecuteConfig` in `types.py`
+
+Schemas must reach the model intact. `to_openai_function` passes the served schema
+through verbatim, stripping only the SDK's internal `nullable` marker (which becomes
+the JSON Schema `required` list). Do not reintroduce an allowlist — the conformance
+suite's `--strict-schema` gate checks exactly this.
