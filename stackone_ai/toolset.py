@@ -12,7 +12,7 @@ import threading
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeVar
+from typing import Any, ClassVar, Literal, TypedDict, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
 
@@ -32,9 +32,6 @@ from stackone_ai.semantic_search import (
     SemanticSearchResult,
 )
 from stackone_ai.utils.normalize import _normalize_action_name
-
-if TYPE_CHECKING:
-    from pydantic_ai.tools import Tool as PydanticAITool
 
 logger = logging.getLogger("stackone.tools")
 
@@ -502,19 +499,27 @@ class _StackOneRpcTool(StackOneTool):
             buckets["body"][key] = value
         return buckets
 
+    # Headers a tool call must never set. Tool arguments are model-controlled, so a
+    # prompt-injected call could otherwise override the caller's credential or the
+    # account the toolset is scoped to. Compared case-insensitively because HTTP
+    # header names are case-insensitive.
+    _RESERVED_HEADERS: ClassVar[frozenset[str]] = frozenset({"authorization", "x-account-id"})
+
     def _build_action_headers(self, additional_headers: dict[str, Any] | None) -> dict[str, str]:
         headers: dict[str, str] = {}
-        account_id = self.get_account_id()
-        if account_id:
-            headers["x-account-id"] = account_id
 
         if additional_headers:
             for key, value in additional_headers.items():
                 if value is None:
                     continue
+                if str(key).lower() in self._RESERVED_HEADERS:
+                    continue
                 headers[str(key)] = str(value)
 
-        headers.pop("Authorization", None)
+        account_id = self.get_account_id()
+        if account_id:
+            headers["x-account-id"] = account_id
+
         return headers
 
 
@@ -782,7 +787,7 @@ class StackOneToolSet:
         *,
         mode: Literal["search_and_execute"] | None = None,
         account_ids: list[str] | None = None,
-    ) -> list[PydanticAITool]:
+    ) -> list[Any]:
         """Get tools as Pydantic AI ``Tool`` instances.
 
         Args:

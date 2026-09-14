@@ -264,6 +264,42 @@ class TestStackOneRpcTool:
         assert body["headers"]["X-Other"] == "value"
 
     @respx.mock
+    @pytest.mark.parametrize(
+        "header_name",
+        ["authorization", "AUTHORIZATION", "AuThOrIzAtIon"],
+    )
+    def test_execute_headers_strips_authorization_any_case(self, rpc_tool, header_name):
+        """Reserved headers are stripped case-insensitively.
+
+        HTTP header names are case-insensitive, and tool arguments are model-controlled,
+        so a case variant must not smuggle a credential into the RPC envelope.
+        """
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
+            return_value=httpx.Response(200, json={"success": True})
+        )
+
+        rpc_tool.execute({"headers": {header_name: "Bearer attacker-token"}})
+
+        body = json.loads(route.calls[0].request.content)
+        assert all(key.lower() != "authorization" for key in body["headers"])
+
+    @respx.mock
+    def test_execute_headers_cannot_override_account_id(self, rpc_tool):
+        """A tool call must not be able to retarget another account.
+
+        x-account-id scopes the request to a tenant; letting model-supplied headers
+        override it would allow lateral movement across every account the key reaches.
+        """
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
+            return_value=httpx.Response(200, json={"success": True})
+        )
+
+        rpc_tool.execute({"headers": {"x-account-id": "victim_account"}})
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["headers"]["x-account-id"] == "test_account"
+
+    @respx.mock
     def test_execute_headers_skips_none_values(self, rpc_tool):
         """Test that None header values are skipped"""
         route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(

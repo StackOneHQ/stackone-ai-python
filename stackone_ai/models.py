@@ -5,17 +5,13 @@ import json
 import logging
 import re
 from collections.abc import Sequence
-from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias, cast
+from typing import Annotated, Any, ClassVar, TypeAlias, cast
 from urllib.parse import quote, unquote
 
 import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr
-
-if TYPE_CHECKING:
-    from pydantic_ai.tools import Tool as PydanticAITool
 
 # Type aliases for common types
 JsonDict: TypeAlias = dict[str, Any]
@@ -261,14 +257,6 @@ class StackOneTool(BaseModel):
             StackOneAPIError: If the API request fails
             ValueError: If the arguments are invalid
         """
-        datetime.now(timezone.utc)
-        feedback_options: JsonDict = {}
-        result_payload: JsonDict | None = None
-        response_status: int | None = None
-        error_message: str | None = None
-        status = "success"
-        url_used = self._execute_config.url
-
         try:
             if isinstance(arguments, str):
                 parsed_arguments = json.loads(arguments)
@@ -276,12 +264,9 @@ class StackOneTool(BaseModel):
                 parsed_arguments = arguments or {}
 
             if not isinstance(parsed_arguments, dict):
-                status = "error"
-                error_message = "Tool arguments must be a JSON object"
-                raise ValueError(error_message)
+                raise ValueError("Tool arguments must be a JSON object")
 
             kwargs = parsed_arguments
-            dict(kwargs)
 
             headers = self._prepare_headers()
             url_used, body_params, query_params = self._prepare_request_params(kwargs)
@@ -303,14 +288,12 @@ class StackOneTool(BaseModel):
                 request_kwargs["params"] = query_params
 
             response = httpx.request(**request_kwargs, timeout=self._execute_config.timeout)
-            response_status = response.status_code
             response.raise_for_status()
 
             content_type = response.headers.get("content-type", "")
             if _is_json_content_type(content_type):
                 result = response.json()
-                result_payload = cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
-                return result_payload
+                return cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
 
             # Non-JSON bodies are file downloads (e.g. documents_download_file), which the
             # API serves as raw binary with the file's own MIME type and a Content-Disposition
@@ -325,11 +308,8 @@ class StackOneTool(BaseModel):
             }
 
         except json.JSONDecodeError as exc:
-            status = "error"
-            error_message = f"Invalid JSON in arguments: {exc}"
-            raise ValueError(error_message) from exc
+            raise ValueError(f"Invalid JSON in arguments: {exc}") from exc
         except httpx.HTTPStatusError as exc:
-            status = "error"
             response_body = None
             if exc.response.text:
                 try:
@@ -342,29 +322,7 @@ class StackOneTool(BaseModel):
                 response_body,
             ) from exc
         except httpx.RequestError as exc:
-            status = "error"
             raise StackOneError(f"Request failed: {exc}") from exc
-        finally:
-            datetime.now(timezone.utc)
-            metadata: JsonDict = {
-                "http_method": self._execute_config.method,
-                "url": url_used,
-                "status_code": response_status,
-                "status": status,
-            }
-
-            feedback_metadata = feedback_options.get("feedback_metadata")
-            if isinstance(feedback_metadata, dict):
-                metadata["feedback_metadata"] = feedback_metadata
-
-            if feedback_options:
-                metadata["feedback_options"] = {
-                    key: value
-                    for key, value in feedback_options.items()
-                    if key in {"feedback_session_id", "feedback_user_id"} and value is not None
-                }
-
-            # Implicit feedback removed - just API calls
 
     def call(self, *args: Any, options: JsonDict | None = None, **kwargs: Any) -> JsonDict:
         """Call the tool with the given arguments
@@ -533,8 +491,12 @@ class StackOneTool(BaseModel):
 
         return StackOneLangChainTool()
 
-    def to_pydantic_ai_tool(self) -> PydanticAITool:
+    def to_pydantic_ai_tool(self) -> Any:
         """Convert this tool to a Pydantic AI ``Tool``.
+
+        Returns ``pydantic_ai.tools.Tool``, typed as ``Any`` because
+        ``pydantic-ai`` is an optional dependency and must not be imported
+        at module level.
 
         Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
 
@@ -674,7 +636,7 @@ class Tools:
         """
         return [tool.to_langchain() for tool in self.tools]
 
-    def to_pydantic_ai(self) -> list[PydanticAITool]:
+    def to_pydantic_ai(self) -> list[Any]:
         """Convert all tools to Pydantic AI ``Tool`` instances.
 
         Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
