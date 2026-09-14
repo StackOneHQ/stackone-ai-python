@@ -171,7 +171,10 @@ class TestStackOneToolSetInit:
 
     def test_init_with_api_key(self):
         """Test initialization with explicit API key."""
-        toolset = StackOneToolSet(api_key="test_key")
+        # STACKONE_BASE_URL is cleared: the base_url assertion below is about the
+        # default, and a developer with that var exported would otherwise fail it.
+        with patch.dict(os.environ, {}, clear=True):
+            toolset = StackOneToolSet(api_key="test_key")
         assert toolset.api_key == "test_key"
         assert toolset.account_id is None
         assert toolset.base_url == DEFAULT_BASE_URL
@@ -199,6 +202,24 @@ class TestStackOneToolSetInit:
         """Test initialization with custom base URL."""
         toolset = StackOneToolSet(api_key="test_key", base_url="https://custom.api.com")
         assert toolset.base_url == "https://custom.api.com"
+
+    def test_base_url_from_env(self):
+        """STACKONE_BASE_URL is honoured when no base_url argument is given."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://staging.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == "https://staging.api.com"
+
+    def test_explicit_base_url_beats_env(self):
+        """An explicit argument wins over the environment."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://staging.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key", base_url="https://explicit.api.com")
+            assert toolset.base_url == "https://explicit.api.com"
+
+    def test_base_url_falls_back_to_default(self):
+        """With neither argument nor env var, the production default applies."""
+        with patch.dict(os.environ, {}, clear=True):
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == DEFAULT_BASE_URL
 
 
 class TestStackOneToolSetNormalizeSchemaProperties:
