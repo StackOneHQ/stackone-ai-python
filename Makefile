@@ -1,14 +1,18 @@
-# Install dependencies and pre-commit hooks
-install *extras:
-	uv sync {{ extras }}
+.PHONY: install lint format test coverage test-tools test-examples run-example ty gitleaks build publish
 
-# Run linting and format check (ruff, typos, nixfmt, oxfmt)
+# Install dependencies (EXTRAS="--all-extras" to include optional groups)
+install:
+	uv sync $(EXTRAS)
+
+# Run linting and format check (ruff)
 lint:
-	nix fmt -- --fail-on-change
+	uv run ruff check .
+	uv run ruff format --check .
 
 # Format and auto-fix linting issues
 format:
-	nix fmt
+	uv run ruff check --fix .
+	uv run ruff format .
 
 # Run all tests
 test:
@@ -26,15 +30,15 @@ test-tools:
 test-examples:
 	uv run pytest examples
 
-# Run a specific example
-run-example file:
-	uv run examples/{{file}}
+# Run a specific example (FILE=openai_integration.py)
+run-example:
+	uv run examples/$(FILE)
 
 # Run type checking
 ty:
 	uv run ty check stackone_ai
 
-# Run gitleaks secret detection
+# Run gitleaks secret detection (requires gitleaks on PATH)
 gitleaks:
 	gitleaks detect --source . --config .gitleaks.toml
 
