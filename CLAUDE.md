@@ -2,17 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Rules and Skills Structure
+## Rules Structure
 
 - **Rules** (`.claude/rules/`): Automatically loaded based on file paths. Source of truth for project conventions.
-- **Skills** (`.agents/skills/`, `.claude/skills/`): Managed by Nix via [agent-skills-nix](https://github.com/Kyure-A/agent-skills-nix). Skills are sourced from [StackOneHQ/skills](https://github.com/StackOneHQ/skills) and installed automatically when entering `nix develop`.
 - **Cursor rules** (`.cursor/rules/`): Symlinks to `.claude/rules/` for consistency.
-
-## Available Skills
-
-| Skill              | Usage                       | Description                                        |
-| ------------------ | --------------------------- | -------------------------------------------------- |
-| **release-please** | `/release-please <version>` | Trigger a release-please PR for a specific version |
+- **AGENTS.md**: Symlink to this file, so other coding agents read the same instructions.
 
 ## Available Rules
 
@@ -21,17 +15,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **git-workflow**             | All files           | Commit conventions, branch strategy, PR guidelines |
 | **development-workflow**     | All files           | Code style, file naming, project conventions       |
 | **release-please-standards** | All files           | Release versioning with release-please             |
-| **nix-workflow**             | All files           | Nix development environment and CI configuration   |
 | **no-relative-imports**      | `**/*.py`           | Enforce absolute imports in Python files           |
 | **package-installation**     | `**/pyproject.toml` | UV package management standards                    |
 | **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
 | **examples-standards**       | `examples/**/*`     | Example requirements and organization              |
-
-## Available Skills
-
-| Skill             | Description                                  |
-| ----------------- | -------------------------------------------- |
-| **just-commands** | Available just commands (dynamically loaded) |
 
 ## Project Overview
 
