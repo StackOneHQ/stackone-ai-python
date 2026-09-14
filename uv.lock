@@ -4177,6 +4177,7 @@ pydantic-ai = [
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
+    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -4205,6 +4206,7 @@ provides-extras = ["mcp", "pydantic-ai", "examples"]
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6.141.1" },
+    { name = "mcp", specifier = ">=1.3.0,<2.0.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.25.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
