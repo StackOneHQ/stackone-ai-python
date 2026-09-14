@@ -1,4 +1,4 @@
-#!/usr/bin/env -S bun run
+#!/usr/bin/env -S pnpm exec tsx
 /**
  * Standalone HTTP server for MCP mock testing.
  * Imports createMcpApp from stackone-ai-node vendor submodule.
@@ -6,8 +6,9 @@
  * Usage:
  *   ./tests/mocks/serve.ts [port]
  *   # or
- *   bun run tests/mocks/serve.ts [port]
+ *   pnpm mock-server [port]
  */
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import {
@@ -18,7 +19,7 @@ import {
   mixedProviderTools,
 } from "../../vendor/stackone-ai-node/mocks/mcp-server";
 
-const port = parseInt(process.env.PORT || Bun.argv[2] || "8787", 10);
+const port = parseInt(process.env.PORT || process.argv[2] || "8787", 10);
 
 // Create the MCP app with all test tool configurations
 const mcpApp = createMcpApp({
@@ -122,10 +123,7 @@ app.post("/actions/rpc", async (c) => {
 
 console.log(`MCP Mock Server starting on port ${port}...`);
 
-export default {
-  port,
-  fetch: app.fetch,
-};
+serve({ fetch: app.fetch, port });
 
 console.log(`MCP Mock Server running at http://localhost:${port}`);
 console.log("Endpoints:");

@@ -43,10 +43,10 @@ def mcp_mock_server() -> Generator[str, None, None]:
     """
     Start the Node MCP mock server for integration tests.
 
-    This fixture starts the Hono-based MCP mock server using bun,
+    This fixture starts the Hono-based MCP mock server using tsx,
     importing from the stackone-ai-node submodule.
 
-    Requires: bun to be installed (via Nix flake).
+    Requires: pnpm install (provides tsx and the Hono dependencies).
 
     Usage:
         def test_mcp_integration(mcp_mock_server):
