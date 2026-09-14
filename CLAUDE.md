@@ -99,21 +99,6 @@ The mock's dependencies are pinned to the exact versions the vendored submodule
 resolves. Do not loosen them to caret ranges: a newer MCP SDK rejects the raw
 `inputSchema` objects the vendor mock passes.
 
-## Scripts
-
-Utility scripts live in `scripts/` (not `examples/`). Use a UV script dependency
-header, type hints, a `if __name__ == "__main__":` guard, and async/await for I/O:
-
-```python
-# /// script
-# requires-python = ">=3.8"
-# dependencies = ["httpx"]
-# ///
-```
-
-Run with `uv run scripts/your_script.py`. Handle external calls with try/except,
-print meaningful errors, and exit with appropriate status codes.
-
 ## Examples
 
 Live in `examples/`, organised into `basic_usage/` and `integrations/`.
