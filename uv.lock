@@ -4159,6 +4159,16 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+dev = [
+    { name = "hypothesis" },
+    { name = "langchain-core" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "respx" },
+    { name = "ruff" },
+    { name = "ty" },
+]
 examples = [
     { name = "crewai" },
     { name = "langchain-openai" },
@@ -4174,23 +4184,12 @@ pydantic-ai = [
     { name = "pydantic-ai-slim" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "hypothesis" },
-    { name = "langchain-core" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "respx" },
-    { name = "ruff" },
-    { name = "stackone-ai" },
-    { name = "ty" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "crewai", marker = "extra == 'examples'", specifier = ">=0.102.0" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.141.1" },
+    { name = "langchain-core", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.1.0" },
     { name = "langchain-openai", marker = "extra == 'examples'", specifier = ">=1.1.14" },
     { name = "langgraph", marker = "extra == 'examples'", specifier = ">=1.1.6" },
@@ -4199,22 +4198,15 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-ai", marker = "extra == 'examples'", specifier = ">=1.83.0,<2.0.0" },
     { name = "pydantic-ai-slim", marker = "extra == 'pydantic-ai'", specifier = ">=1.83.0,<2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.4" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.3" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.0.1" },
+    { name = "respx", marker = "extra == 'dev'", specifier = ">=0.22.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.6" },
+    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.3" },
 ]
-provides-extras = ["langchain", "pydantic-ai", "examples"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "hypothesis", specifier = ">=6.141.1" },
-    { name = "langchain-core", specifier = ">=0.1.0" },
-    { name = "pytest", specifier = ">=8.3.4" },
-    { name = "pytest-asyncio", specifier = ">=0.25.3" },
-    { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "respx", specifier = ">=0.22.0" },
-    { name = "ruff", specifier = ">=0.9.6" },
-    { name = "stackone-ai" },
-    { name = "ty", specifier = ">=0.0.3" },
-]
+provides-extras = ["langchain", "pydantic-ai", "examples", "dev"]
 
 [[package]]
 name = "starlette"
