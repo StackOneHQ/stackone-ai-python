@@ -1,4 +1,4 @@
-.PHONY: help install extras format test coverage test-examples build validate
+.PHONY: help install format test coverage test-examples build validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -12,8 +12,8 @@ help:
 		$(MAKEFILE_LIST)
 	@echo
 	@echo "Notes:"
-	@echo "  install        core only — uv sync REMOVES anything outside that set"
-	@echo "  extras         what you want for development: make install extras"
+	@echo "  install        core only; uv sync REMOVES anything outside that set."
+	@echo "                 Use 'make install extras=1' for a dev environment."
 	@echo "  format         the one command to run before committing"
 	@echo "  build          local artifact check only; publishing happens in the"
 	@echo "                 release workflow after a merge to main, never by hand"
@@ -23,13 +23,9 @@ help:
 	@echo "these targets, so it can never mutate the tree to make itself pass."
 	@echo "Secret scanning (gitleaks) runs in CI only."
 
-## Install core dependencies only
+## Install dependencies (extras=1 adds adapters, examples and dev tooling)
 install:
-	uv sync
-
-## Install everything: adapters, examples and dev tooling
-extras:
-	uv sync --all-extras
+	uv sync $(if $(extras),--all-extras,)
 
 ## Fix lint, format, and type check
 format:

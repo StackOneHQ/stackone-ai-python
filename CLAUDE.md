@@ -30,8 +30,8 @@ against `/actions/rpc`. There is no OpenAPI parsing and no client-side search.
 
 ```bash
 make               # List all targets (help is the default goal)
-make install       # Core dependencies only
-make install extras # Everything: adapters, examples, dev tooling
+make install            # Core dependencies only
+make install extras=1   # Adds adapters, examples and dev tooling
 make format        # Fix lint, format, and type check — run this before committing
 make test          # Run all tests
 make test-examples # Example tests (import-only)
