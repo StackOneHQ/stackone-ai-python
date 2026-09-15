@@ -20,6 +20,20 @@ ADK="${ADK:-$SDK/../stackone-adk-plugin}"
 failed=0
 declare -a PASSED=() FAILED=() SKIPPED=()
 
+# Only the live example run needs credentials; conformance and the smoke suites
+# drive a mock API on localhost with a dummy key. Load .env so the live run is
+# skipped because there are no credentials, not because they were on disk and
+# nobody read them.
+if [ -f "$SDK/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$SDK/.env"
+    set +a
+    echo "credentials: loaded $SDK/.env"
+else
+    echo "credentials: no .env found at $SDK/.env — the live example run will be skipped"
+fi
+
 section() { printf '\n\033[1m################ %s ################\033[0m\n' "$1"; }
 pass()    { PASSED+=("$1");  printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
 fail()    { FAILED+=("$1");  failed=1; printf '  \033[31mFAIL\033[0m  %s\n' "$1"; }
