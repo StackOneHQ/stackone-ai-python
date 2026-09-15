@@ -144,6 +144,9 @@ trigger a release.
 Merging the release PR updates `CHANGELOG.md`, creates the GitHub release, and
 publishes to PyPI (requires the `PYPI_API_TOKEN` secret).
 
+Publishing only ever happens there. There is no `make publish`: releases go out
+via release-please after a merge to main, never from a developer machine.
+
 ## Key Patterns
 
 ```python

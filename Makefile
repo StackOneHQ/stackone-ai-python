@@ -1,4 +1,4 @@
-.PHONY: help install format test coverage test-examples gitleaks build publish validate
+.PHONY: help install format test coverage test-examples gitleaks build validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -16,7 +16,8 @@ help:
 	@echo
 	@echo "Notes:"
 	@echo "  format         the one command to run before committing"
-	@echo "  publish        pushes to PyPI for real — CI runs this on release"
+	@echo "  build          local artifact check only; publishing happens in the"
+	@echo "                 release workflow after a merge to main, never by hand"
 	@echo "  gitleaks       needs the gitleaks binary on PATH (brew install gitleaks)"
 	@echo "  test-examples  only imports each example; the __main__ guard means no body runs"
 	@echo
@@ -56,7 +57,3 @@ validate:
 ## Build package
 build:
 	uv build
-
-## Publish package to PyPI
-publish:
-	uv publish
