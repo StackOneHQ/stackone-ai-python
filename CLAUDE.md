@@ -29,12 +29,14 @@ against `/actions/rpc`. There is no OpenAPI parsing and no client-side search.
 ## Commands
 
 ```bash
+make               # List all targets (help is the default goal)
 make install       # Install dependencies (EXTRAS="--all-extras" for optional groups)
 make lint          # ruff lint + format check
 make format        # Auto-fix lint issues and format
 make ty            # Type checking
 make test          # Run all tests
 make test-tools    # Run the tests/ directory
+make validate      # Validate against conformance, ADK and Pydantic AI consumers
 make test-examples # Example tests
 make run-example FILE=openai_integration.py
 make build         # Build package
