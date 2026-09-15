@@ -119,7 +119,7 @@ def fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[McpToolDefin
         from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ToolsetConfigError(
-            "MCP dependencies are required for fetch_tools. Install with 'pip install \"stackone-ai[mcp]\"'."
+            "MCP dependencies are required for fetch_tools. Install with 'uv add \"stackone-ai[mcp]\"'."
         ) from exc
 
     async def _list() -> list[McpToolDefinition]:

@@ -4,8 +4,8 @@
 uv run examples/pydantic_ai_integration.py
 ```
 
-Install with `pip install 'stackone-ai[pydantic-ai]'` (or
-`pip install 'stackone-ai[examples]'` to run this file).
+Install with `uv add 'stackone-ai[pydantic-ai]'` (or
+`uv add 'stackone-ai[examples]'` to run this file).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ except ModuleNotFoundError:
 try:
     from pydantic_ai import Agent
 except ImportError:
-    print("Install pydantic-ai to run this example: pip install 'stackone-ai[pydantic-ai]'")
+    print("Install pydantic-ai to run this example: uv add 'stackone-ai[pydantic-ai]'")
     raise SystemExit(1) from None
 
 from stackone_ai import StackOneToolSet

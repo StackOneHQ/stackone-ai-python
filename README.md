@@ -32,7 +32,7 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 ## Installation
 
 ```bash
-pip install 'stackone-ai[mcp]'
+uv add 'stackone-ai[mcp]'
 
 # Or with uv
 uv add 'stackone-ai[mcp]'
@@ -42,7 +42,7 @@ uv add 'stackone-ai[mcp]'
 
 ```bash
 # Install with CrewAI examples
-pip install 'stackone-ai[mcp,examples]'
+uv add 'stackone-ai[mcp,examples]'
 # or
 uv add 'stackone-ai[mcp,examples]'
 ```
@@ -185,7 +185,7 @@ StackOne tools convert to Pydantic AI `Tool` instances via `.to_pydantic_ai()`, 
 Prerequisites:
 
 ```bash
-pip install 'stackone-ai[pydantic-ai]'
+uv add 'stackone-ai[pydantic-ai]'
 ```
 
 ```python
@@ -224,7 +224,7 @@ StackOne tools convert to LangChain tools, which LangGraph consumes via its preb
 Prerequisites:
 
 ```bash
-pip install langgraph langchain-openai
+uv add langgraph langchain-openai
 ```
 
 ```python

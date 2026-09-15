@@ -70,15 +70,24 @@ spec.loader.exec_module(mod)
     fi
 
     if [ -n "${STACKONE_API_KEY:-}" ] && [ -n "${STACKONE_ACCOUNT_ID:-}" ]; then
-        local ran=1
+        local ran=1 out
         for f in "$SDK"/examples/*.py; do
             [ "$(basename "$f")" = "test_examples.py" ] && continue
-            if ! (cd "$SDK" && uv run --quiet python "$f" >/dev/null 2>&1); then
+            if ! out="$(cd "$SDK" && uv run --quiet python "$f" 2>&1)"; then
                 fail "example live run: $(basename "$f")"
+                ran=0
+                continue
+            fi
+            # Exit 0 is not proof of work. An example whose action filters match
+            # nothing in the linked account loads zero tools, calls the model
+            # anyway, and exits cleanly — a pass that exercised nothing.
+            if grep -qE '(Loaded|Fetched|Found) 0 ' <<<"$out"; then
+                fail "example loaded 0 tools: $(basename "$f")"
+                grep -E '(Loaded|Fetched|Found) 0 ' <<<"$out" | head -1 | sed 's/^/        /'
                 ran=0
             fi
         done
-        [ "$ran" = 1 ] && pass "all examples run against the live API"
+        [ "$ran" = 1 ] && pass "all examples run against the live API and load tools"
     else
         skip "examples live run" "STACKONE_API_KEY / STACKONE_ACCOUNT_ID not set"
     fi
