@@ -41,7 +41,7 @@ test:
 test-examples:
 	uv run pytest examples
 
-## Validate against conformance, ADK and Pydantic AI consumers
+## Validate against the conformance mock (no live API, no credentials)
 validate:
 	./scripts/validate.sh
 

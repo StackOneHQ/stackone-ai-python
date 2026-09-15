@@ -7,6 +7,10 @@
 # Sibling repo locations can be overridden:
 #   CONFORMANCE=/path/to/sdk-conformance ADK=/path/to/stackone-adk-plugin ./scripts/validate.sh
 #
+# Everything here runs against the sdk-conformance mock API on 127.0.0.1 with a
+# dummy key. Nothing touches the live StackOne API, so results are deterministic
+# and no credentials are needed.
+#
 # A section that cannot run reports SKIP and says why. Skips are never counted as
 # passes: the exit code is 0 only if every section that ran passed, and the summary
 # always prints what was skipped.
@@ -20,19 +24,6 @@ ADK="${ADK:-$SDK/../stackone-adk-plugin}"
 failed=0
 declare -a PASSED=() FAILED=() SKIPPED=()
 
-# Only the live example run needs credentials; conformance and the smoke suites
-# drive a mock API on localhost with a dummy key. Load .env so the live run is
-# skipped because there are no credentials, not because they were on disk and
-# nobody read them.
-if [ -f "$SDK/.env" ]; then
-    set -a
-    # shellcheck disable=SC1091
-    . "$SDK/.env"
-    set +a
-    echo "credentials: loaded $SDK/.env"
-else
-    echo "credentials: no .env found at $SDK/.env — the live example run will be skipped"
-fi
 
 section() { printf '\n\033[1m################ %s ################\033[0m\n' "$1"; }
 pass()    { PASSED+=("$1");  printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
@@ -40,10 +31,9 @@ fail()    { FAILED+=("$1");  failed=1; printf '  \033[31mFAIL\033[0m  %s\n' "$1"
 skip()    { SKIPPED+=("$1 — $2"); printf '  \033[33mSKIP\033[0m  %s — %s\n' "$1" "$2"; }
 
 # --- examples -----------------------------------------------------------------
-# Examples guard their body behind `if __name__ == "__main__":`, so importing one
-# runs only its module-level code. Importing therefore proves the imports resolve;
-# it does NOT prove the body works. Type checking covers the body without needing
-# credentials, and the live run is attempted only when credentials are present.
+# Static checks only. Examples guard their body behind `if __name__ == "__main__":`,
+# so importing one runs its module-level code and proves the imports resolve; type
+# checking covers the body. Neither needs credentials, and neither calls StackOne.
 validate_examples() {
     section "examples"
 
@@ -83,28 +73,6 @@ spec.loader.exec_module(mod)
         pass "no example references a missing stackone_ai symbol"
     fi
 
-    if [ -n "${STACKONE_API_KEY:-}" ] && [ -n "${STACKONE_ACCOUNT_ID:-}" ]; then
-        local ran=1 out
-        for f in "$SDK"/examples/*.py; do
-            [ "$(basename "$f")" = "test_examples.py" ] && continue
-            if ! out="$(cd "$SDK" && uv run --quiet python "$f" 2>&1)"; then
-                fail "example live run: $(basename "$f")"
-                ran=0
-                continue
-            fi
-            # Exit 0 is not proof of work. An example whose action filters match
-            # nothing in the linked account loads zero tools, calls the model
-            # anyway, and exits cleanly — a pass that exercised nothing.
-            if grep -qE '(Loaded|Fetched|Found) 0 ' <<<"$out"; then
-                fail "example loaded 0 tools: $(basename "$f")"
-                grep -E '(Loaded|Fetched|Found) 0 ' <<<"$out" | head -1 | sed 's/^/        /'
-                ran=0
-            fi
-        done
-        [ "$ran" = 1 ] && pass "all examples run against the live API and load tools"
-    else
-        skip "examples live run" "STACKONE_API_KEY / STACKONE_ACCOUNT_ID not set"
-    fi
 }
 
 # --- conformance --------------------------------------------------------------
