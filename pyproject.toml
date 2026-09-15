@@ -88,13 +88,7 @@ branch = true
 omit = ["stackone_ai/__init__.py", "**/py.typed"]
 
 [tool.coverage.report]
-exclude_lines = [
-  "pragma: no cover",
-  "def __repr__",
-  "raise NotImplementedError",
-  "if TYPE_CHECKING:",
-  "if typing.TYPE_CHECKING:",
-]
+exclude_lines = ["pragma: no cover"]
 
 [tool.coverage.json]
 output = "coverage/coverage.json"

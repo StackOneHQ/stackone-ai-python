@@ -1,4 +1,4 @@
-.PHONY: help install format test coverage test-examples build validate
+.PHONY: help install format test test-examples build validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -36,10 +36,6 @@ format:
 ## Run all tests
 test:
 	uv run pytest
-
-## Run tests with coverage
-coverage:
-	uv run pytest --cov --cov-report=term --cov-report=json --cov-report=html
 
 ## Run example tests (import-only; see note above)
 test-examples:
