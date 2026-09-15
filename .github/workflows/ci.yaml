@@ -23,8 +23,8 @@ jobs:
           fetch-depth: 0
 
       # The gitleaks GitHub Action requires a paid licence for organisation-owned
-      # repositories. The CLI is free, so install it directly and use the same
-      # target developers run locally.
+      # repositories. The CLI is free, so install and run it directly. Secret
+      # scanning is a CI gate only — there is no make target for it.
       - name: Install gitleaks
         run: |
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \

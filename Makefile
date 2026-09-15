@@ -1,4 +1,4 @@
-.PHONY: help install format test coverage test-examples gitleaks build validate
+.PHONY: help install format test coverage test-examples build validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -18,11 +18,11 @@ help:
 	@echo "  format         the one command to run before committing"
 	@echo "  build          local artifact check only; publishing happens in the"
 	@echo "                 release workflow after a merge to main, never by hand"
-	@echo "  gitleaks       needs the gitleaks binary on PATH (brew install gitleaks)"
 	@echo "  test-examples  only imports each example; the __main__ guard means no body runs"
 	@echo
 	@echo "CI runs the underlying ruff/ty/pytest commands directly rather than"
 	@echo "these targets, so it can never mutate the tree to make itself pass."
+	@echo "Secret scanning (gitleaks) runs in CI only."
 
 ## Install dependencies (EXTRAS="--all-extras" to include optional groups)
 install:
@@ -45,10 +45,6 @@ coverage:
 ## Run example tests (import-only; see note above)
 test-examples:
 	uv run pytest examples
-
-## Run gitleaks secret detection (requires gitleaks on PATH)
-gitleaks:
-	gitleaks detect --source . --config .gitleaks.toml
 
 ## Validate against conformance, ADK and Pydantic AI consumers
 validate:
