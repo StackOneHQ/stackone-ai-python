@@ -58,5 +58,5 @@ jobs:
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          make build
-          make publish
+          uv build
+          uv publish

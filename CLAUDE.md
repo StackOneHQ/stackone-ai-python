@@ -31,16 +31,11 @@ against `/actions/rpc`. There is no OpenAPI parsing and no client-side search.
 ```bash
 make               # List all targets (help is the default goal)
 make install       # Install dependencies (EXTRAS="--all-extras" for optional groups)
-make lint          # ruff lint + format check
-make format        # Auto-fix lint issues and format
-make ty            # Type checking
+make format        # Fix lint, format, and type check — run this before committing
 make test          # Run all tests
-make test-tools    # Run the tests/ directory
+make test-examples # Example tests (import-only)
 make validate      # Validate against conformance, ADK and Pydantic AI consumers
-make test-examples # Example tests
-make run-example FILE=openai_integration.py
 make build         # Build package
-make publish       # Publish to PyPI
 ```
 
 There are no git hooks. Lint, type checking and tests run in CI on every push; run
@@ -118,7 +113,7 @@ Live in `examples/` (flat — no subdirectories).
 **Never push directly to main without permission.** Branch with
 `git switch -c feature-name`, then open a PR.
 
-Flow: branch → change → `make lint` → `make test` → `make format` → commit → PR.
+Flow: branch → change → `make format` → `make test` → commit → PR.
 
 ### Commit Messages
 

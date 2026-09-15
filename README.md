@@ -348,9 +348,8 @@ make install EXTRAS="--all-extras"
 ### Common Commands
 
 ```bash
-make lint     # ruff lint + format check
-make format   # auto-fix and format
-make ty       # type checking
+make          # list all targets
+make format   # fix lint, format, and type check
 make test     # run all tests
 ```
 

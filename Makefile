@@ -1,4 +1,4 @@
-.PHONY: help install lint format test coverage test-tools test-examples run-example ty gitleaks build publish validate
+.PHONY: help install format test coverage test-examples gitleaks build publish validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -13,26 +13,25 @@ help:
 	@echo
 	@echo "Variables:"
 	@echo "  EXTRAS         extra args for 'make install' (e.g. EXTRAS=\"--all-extras\")"
-	@echo "  FILE           example filename for 'make run-example'"
 	@echo
 	@echo "Notes:"
+	@echo "  format         the one command to run before committing"
 	@echo "  publish        pushes to PyPI for real — CI runs this on release"
 	@echo "  gitleaks       needs the gitleaks binary on PATH (brew install gitleaks)"
 	@echo "  test-examples  only imports each example; the __main__ guard means no body runs"
+	@echo
+	@echo "CI runs the underlying ruff/ty/pytest commands directly rather than"
+	@echo "these targets, so it can never mutate the tree to make itself pass."
 
 ## Install dependencies (EXTRAS="--all-extras" to include optional groups)
 install:
 	uv sync $(EXTRAS)
 
-## Run linting and format check (ruff)
-lint:
-	uv run ruff check .
-	uv run ruff format --check .
-
-## Format and auto-fix linting issues
+## Fix lint, format, and type check
 format:
 	uv run ruff check --fix .
 	uv run ruff format .
+	uv run ty check stackone_ai
 
 ## Run all tests
 test:
@@ -42,21 +41,9 @@ test:
 coverage:
 	uv run pytest --cov --cov-report=term --cov-report=json --cov-report=html
 
-## Run the tests/ directory
-test-tools:
-	uv run pytest tests
-
 ## Run example tests (import-only; see note above)
 test-examples:
 	uv run pytest examples
-
-## Run a specific example (FILE=openai_integration.py)
-run-example:
-	uv run examples/$(FILE)
-
-## Run type checking
-ty:
-	uv run ty check stackone_ai
 
 ## Run gitleaks secret detection (requires gitleaks on PATH)
 gitleaks:
