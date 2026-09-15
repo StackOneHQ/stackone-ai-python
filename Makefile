@@ -1,4 +1,4 @@
-.PHONY: help install format test coverage test-examples build validate
+.PHONY: help install extras format test coverage test-examples build validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -7,15 +7,13 @@
 help:
 	@echo "Usage: make <target>"
 	@echo
-	@grep -E '^##|^[a-z-]+:' $(MAKEFILE_LIST) \
-		| sed -e 's/^## //' -e 's/:.*//' \
-		| awk 'NR%2{desc=$$0; next} {printf "  \033[36m%-15s\033[0m %s\n", $$0, desc}'
-	@echo
-	@echo "Variables:"
-	@echo "  EXTRAS         args for 'make install' (default --all-extras;"
-	@echo "                 EXTRAS=\"\" installs the minimal set and REMOVES extras)"
+	@awk '/^## /{desc=substr($$0,4); next} \
+		/^[a-z][a-z-]*:/{split($$0,t,":"); printf "  \033[36m%-15s\033[0m %s\n", t[1], desc}' \
+		$(MAKEFILE_LIST)
 	@echo
 	@echo "Notes:"
+	@echo "  install        core only — uv sync REMOVES anything outside that set"
+	@echo "  extras         what you want for development: make install extras"
 	@echo "  format         the one command to run before committing"
 	@echo "  build          local artifact check only; publishing happens in the"
 	@echo "                 release workflow after a merge to main, never by hand"
@@ -25,15 +23,13 @@ help:
 	@echo "these targets, so it can never mutate the tree to make itself pass."
 	@echo "Secret scanning (gitleaks) runs in CI only."
 
-# `uv sync` makes the environment match the requested set exactly, so a bare
-# sync uninstalls every optional dependency. Default to the full set: the
-# examples and the mcp-backed tests need it. Override with EXTRAS="" for a
-# minimal environment.
-EXTRAS ?= --all-extras
-
-## Install dependencies (EXTRAS="" for the minimal set)
+## Install core dependencies only
 install:
-	uv sync $(EXTRAS)
+	uv sync
+
+## Install everything: adapters, examples and dev tooling
+extras:
+	uv sync --all-extras
 
 ## Fix lint, format, and type check
 format:

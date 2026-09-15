@@ -329,8 +329,8 @@ For more examples, check out the [examples/](examples/) directory:
 cp .env.example .env
 # Edit .env with your API keys
 
-# 2. Install dependencies
-make install
+# 2. Install dependencies (examples need the extras)
+make install extras
 
 # 3. Run any example
 uv run examples/openai_integration.py
@@ -343,8 +343,11 @@ uv run examples/openai_integration.py
 Development uses [uv](https://docs.astral.sh/uv/) for Python and `make` as the task runner.
 
 ```bash
-# Install Python dependencies
+# Core only
 make install
+
+# Everything: adapters, examples and dev tooling
+make install extras
 ```
 
 ### Common Commands
