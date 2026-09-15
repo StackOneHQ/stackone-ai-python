@@ -32,19 +32,21 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 ## Installation
 
 ```bash
-uv add 'stackone-ai[mcp]'
-
-# Or with uv
-uv add 'stackone-ai[mcp]'
+uv add stackone-ai
 ```
+
+That is everything needed to fetch and execute tools — `fetch_tools()` talks MCP,
+so the MCP client is a core dependency, and `to_openai()` needs nothing extra.
 
 ### Optional Features
 
+Framework adapters are extras, imported lazily so a plain install never pulls in
+a framework you do not use:
+
 ```bash
-# Install with CrewAI examples
-uv add 'stackone-ai[mcp,examples]'
-# or
-uv add 'stackone-ai[mcp,examples]'
+uv add 'stackone-ai[langchain]'      # tools.to_langchain()
+uv add 'stackone-ai[pydantic-ai]'    # tools.to_pydantic_ai()
+uv add 'stackone-ai[examples]'       # everything the examples/ directory needs
 ```
 
 ## Quick Start

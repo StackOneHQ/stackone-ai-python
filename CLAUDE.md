@@ -80,6 +80,13 @@ uv run pytest           # run from root
 
 Never use `uv pip install`, and never use editable installs (`-e`).
 
+Dependency tiers: **core** is what the SDK needs to function at all — currently
+`pydantic`, `httpx` and `mcp`, since `fetch_tools()` is the only route to a tool
+and it talks MCP. **Extras** are per-framework adapters (`langchain`,
+`pydantic-ai`), each imported lazily inside the method that needs it so a bare
+install never drags in a framework you do not use. A new adapter goes in an
+extra with a lazy import, never in core.
+
 ## Testing
 
 - Async tests use `pytest-asyncio`

@@ -20,7 +20,6 @@ from importlib import metadata
 from typing import Any, ClassVar, TypeVar, cast
 
 import httpx
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
 from stackone_ai.types import (
@@ -389,8 +388,22 @@ class StackOneTool(BaseModel):
             },
         }
 
-    def to_langchain(self) -> BaseTool:
-        """Convert this tool to LangChain format"""
+    def to_langchain(self) -> Any:
+        """Convert this tool to LangChain format.
+
+        Returns a ``langchain_core.tools.BaseTool``, typed as ``Any`` because
+        ``langchain-core`` is an optional dependency and must not be imported at
+        module level.
+
+        Requires ``stackone-ai[langchain]``.
+        """
+        try:
+            from langchain_core.tools import BaseTool
+        except ImportError as e:
+            raise ImportError(
+                "Install `langchain-core` (or `stackone-ai[langchain]`) to use the LangChain integration."
+            ) from e
+
         schema_props: dict[str, Any] = {}
         annotations: dict[str, Any] = {}
 
@@ -638,8 +651,11 @@ class Tools:
         """Convert all tools to OpenAI function format"""
         return [tool.to_openai_function() for tool in self.tools]
 
-    def to_langchain(self) -> Sequence[BaseTool]:
-        """Convert all tools to LangChain format"""
+    def to_langchain(self) -> Sequence[Any]:
+        """Convert all tools to LangChain format.
+
+        Requires ``stackone-ai[langchain]``.
+        """
         return [tool.to_langchain() for tool in self.tools]
 
     def to_pydantic_ai(self) -> list[Any]:
