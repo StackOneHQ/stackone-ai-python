@@ -328,7 +328,7 @@ cp .env.example .env
 # Edit .env with your API keys
 
 # 2. Install dependencies
-uv sync --all-extras
+make install
 
 # 3. Run any example
 uv run examples/openai_integration.py
@@ -342,7 +342,7 @@ Development uses [uv](https://docs.astral.sh/uv/) for Python and `make` as the t
 
 ```bash
 # Install Python dependencies
-make install EXTRAS="--all-extras"
+make install
 ```
 
 ### Common Commands

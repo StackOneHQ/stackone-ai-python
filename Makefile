@@ -12,7 +12,8 @@ help:
 		| awk 'NR%2{desc=$$0; next} {printf "  \033[36m%-15s\033[0m %s\n", $$0, desc}'
 	@echo
 	@echo "Variables:"
-	@echo "  EXTRAS         extra args for 'make install' (e.g. EXTRAS=\"--all-extras\")"
+	@echo "  EXTRAS         args for 'make install' (default --all-extras;"
+	@echo "                 EXTRAS=\"\" installs the minimal set and REMOVES extras)"
 	@echo
 	@echo "Notes:"
 	@echo "  format         the one command to run before committing"
@@ -24,7 +25,13 @@ help:
 	@echo "these targets, so it can never mutate the tree to make itself pass."
 	@echo "Secret scanning (gitleaks) runs in CI only."
 
-## Install dependencies (EXTRAS="--all-extras" to include optional groups)
+# `uv sync` makes the environment match the requested set exactly, so a bare
+# sync uninstalls every optional dependency. Default to the full set: the
+# examples and the mcp-backed tests need it. Override with EXTRAS="" for a
+# minimal environment.
+EXTRAS ?= --all-extras
+
+## Install dependencies (EXTRAS="" for the minimal set)
 install:
 	uv sync $(EXTRAS)
 
