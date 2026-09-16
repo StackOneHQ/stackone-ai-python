@@ -8,6 +8,7 @@ import { StreamableHTTPTransport } from '@hono/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Hono } from 'hono';
 import { basicAuth } from 'hono/basic-auth';
+import { z } from 'zod';
 
 export interface McpToolDefinition {
 	name: string;
@@ -71,11 +72,61 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 				400,
 			);
 		}
-		const tools = accountTools[accountId] ?? accountTools.default ?? [];
+		let tools = accountTools[accountId] ?? accountTools.default ?? [];
+
+		// The real endpoint swaps the per-action catalog for two meta tools per
+		// connector under this mode. Without it the SDK's search/execute path has
+		// nothing to talk to and goes untested.
 
 		// Create a new MCP server instance per request
 		const mcp = new McpServer({ name: 'test-mcp-server', version: '1.0.0' });
+		const searchExecute = c.req.query('tool-mode') === 'search_execute';
 		const transport = new StreamableHTTPTransport();
+
+		if (searchExecute) {
+			mcp.registerTool(
+				`mock_${accountId}_search_actions`,
+				{
+					description: 'Search for available actions in natural language.',
+					inputSchema: { query: z.string(), top_k: z.number().optional() },
+				},
+				async () => ({
+					content: [
+						{
+							type: 'text' as const,
+							text: JSON.stringify({
+								actions: [{ action_id: 'mock_list_items', description: 'List items' }],
+							}),
+						},
+					],
+				}),
+			);
+			mcp.registerTool(
+				`mock_${accountId}_execute_action`,
+				{
+					description: 'Execute an action by its action_id.',
+					inputSchema: { action_id: z.string(), page_size: z.number().optional() },
+				},
+				async ({ action_id }: { action_id: string }) => {
+					// An unknown action must come back as isError — a normal response with
+					// the flag set — the way the real endpoint reports it.
+					const known = action_id === 'mock_list_items';
+					return {
+						isError: !known,
+						content: [
+							{
+								type: 'text' as const,
+								text: JSON.stringify(
+									known ? { data: { nodes: [] } } : { error: `Unknown action ${action_id}` },
+								),
+							},
+						],
+					};
+				},
+			);
+			await mcp.connect(transport);
+			return transport.handleRequest(c);
+		}
 
 		for (const tool of tools) {
 			mcp.registerTool(
@@ -86,11 +137,10 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP SDK type mismatch
 					inputSchema: tool.inputSchema as any,
 				},
-				async ({ params }: { params: { arguments?: Record<string, unknown> } }) => ({
-					content: [],
-					structuredContent: params.arguments ?? {},
-					_meta: undefined,
-				}),
+				async ({ params }: { params: { arguments?: Record<string, unknown> } }) => {
+					const args = params.arguments ?? {};
+					return { content: [], structuredContent: args, _meta: undefined };
+				},
 			);
 		}
 

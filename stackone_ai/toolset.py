@@ -199,21 +199,69 @@ class StackOneToolSet:
         except Exception as exc:  # pragma: no cover - unexpected runtime errors
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
 
-    def execute(self, tool_name: str, arguments: JsonDict | None = None) -> JsonDict:
-        """Execute a tool by name.
+    def _meta_tools(self, suffix: str, account_ids: list[str] | None = None) -> list[StackOneTool]:
+        """The server's per-connector meta tools, regardless of this toolset's mode."""
+        previous = self._tool_mode
+        self._tool_mode = "search_execute"
+        try:
+            tools = self.fetch_tools(account_ids=account_ids)
+        finally:
+            self._tool_mode = previous
+        return [tool for tool in tools if tool.name.endswith(suffix)]
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 10,
+        account_ids: list[str] | None = None,
+    ) -> list[JsonDict]:
+        """Find actions matching a natural-language query.
+
+        Searches every linked connector and merges the results, so the catalog
+        never has to be loaded into a model's context.
 
         Args:
-            tool_name: Name of the tool to execute
-            arguments: Arguments to pass to the tool
+            query: What you want to do, e.g. "list recent comments".
+            top_k: Maximum results per connector.
+            account_ids: Restrict to these accounts. Defaults to all active ones.
+
+        Returns:
+            Action dicts carrying at least ``action_id`` and ``description``.
+        """
+        results: list[JsonDict] = []
+        for tool in self._meta_tools("_search_actions", account_ids):
+            found = tool.execute({"query": query, "top_k": top_k})
+            results.extend(found.get("actions", []))
+        return results
+
+    def execute(
+        self,
+        action_id: str,
+        arguments: JsonDict | None = None,
+        *,
+        account_ids: list[str] | None = None,
+    ) -> JsonDict:
+        """Execute an action by id, as returned by :meth:`search`.
+
+        A tool name from ``fetch_tools()`` also works — the catalog is checked
+        first, and anything else is run through the connector's execute tool.
 
         Raises:
-            ToolsetLoadError: If the tool is not found in the catalog
+            ToolsetLoadError: If no tool or connector matches.
         """
-        tools = self.fetch_tools()
-        tool = tools.get_tool(tool_name)
-        if tool is None:
-            raise ToolsetLoadError(f'Tool "{tool_name}" not found')
-        return tool.execute(arguments or {})
+        catalog_tool = self.fetch_tools().get_tool(action_id)
+        if catalog_tool is not None:
+            return catalog_tool.execute(arguments or {})
+
+        connector = action_id.split("_")[0].lower()
+        for tool in self._meta_tools("_execute_action", account_ids):
+            if tool.name.split("_")[0].lower() == connector:
+                return tool.execute({"action_id": action_id, **(arguments or {})})
+
+        raise ToolsetLoadError(
+            f'No tool or connector found for "{action_id}". Use search() to discover valid action ids.'
+        )
 
     def openai(self, *, account_ids: list[str] | None = None) -> list[JsonDict]:
         """Get tools in OpenAI function calling format."""
@@ -239,19 +287,12 @@ class StackOneToolSet:
         """Whether a tool name matches any of the given glob patterns."""
         return any(fnmatch.fnmatch(tool_name, pattern) for pattern in actions)
 
-    def _discover_account_ids(self) -> list[str]:
-        """List the linked accounts this API key can use.
+    def fetch_accounts(self) -> list[JsonDict]:
+        """List the accounts linked to this API key.
 
-        The MCP endpoint requires an ``x-account-id`` on every request, so an API
-        key on its own is not enough to list tools. Rather than make every caller
-        supply one, ask the API which accounts the key has.
-
-        Raises:
-            ToolsetConfigError: If the key has no accounts, or none are usable.
+        Each entry carries at least ``id``, ``provider`` and ``status``. Only
+        accounts with ``status == "active"`` can serve tools.
         """
-        if self._discovered_account_ids is not None:
-            return self._discovered_account_ids
-
         url = f"{self.base_url.rstrip('/')}/accounts"
         response = httpx.get(
             url,
@@ -272,6 +313,22 @@ class StackOneToolSet:
             )
         body = response.json()
         accounts = body.get("data", body) if isinstance(body, dict) else body
+        return list(accounts)
+
+    def _discover_account_ids(self) -> list[str]:
+        """List the linked accounts this API key can use.
+
+        The MCP endpoint requires an ``x-account-id`` on every request, so an API
+        key on its own is not enough to list tools. Rather than make every caller
+        supply one, ask the API which accounts the key has.
+
+        Raises:
+            ToolsetConfigError: If the key has no accounts, or none are usable.
+        """
+        if self._discovered_account_ids is not None:
+            return self._discovered_account_ids
+
+        accounts = self.fetch_accounts()
 
         active = [a["id"] for a in accounts if a.get("status") == "active" and a.get("id")]
         if not active:

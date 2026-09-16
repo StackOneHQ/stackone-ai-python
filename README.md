@@ -51,45 +51,69 @@ uv add 'stackone-ai[examples]'       # everything the examples/ directory needs
 
 ## Quick Start
 
+Set `STACKONE_API_KEY` and go. The SDK finds your linked accounts itself — you
+only pass an account id when you want to narrow things down.
+
 ```python
-import os
 from stackone_ai import StackOneToolSet
 
-# Initialize — set STACKONE_API_KEY in environment
 toolset = StackOneToolSet()
 
-# search all tools available via from your api key
-search_result = toolset.search("list issues")
-
-# execute an action
-execute_result = toolset.execute("list_issues")
-
-
-
-# get all account ids
-account_ids = toolset.fetch_accounts()
-tools = toolset.fetch_tools(
-    actions=["*"], account_ids=[account_id]
-)
-
-search_result = toolset.search("list issues")
-
-
-
-
-
-
-# Fetch tools — pass account ID from STACKONE_ACCOUNT_ID env var
-account_id = os.getenv("STACKONE_ACCOUNT_ID")
-tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
-
-# Use a specific tool with the call method
-employee_tool = tools.get_tool("workday_get_worker")
-# Call with keyword arguments
-employee = employee_tool.call(id="employee-id")
-# Or with traditional execute method
-employee = employee_tool.execute({"id": "employee-id"})
+# Find an action, then run it. No account id needed.
+actions = toolset.search("list recent comments")
+result = toolset.execute(actions[0]["action_id"], {"query": {"pageSize": 5}})
 ```
+
+`search()` asks every linked connector and returns ranked actions, so the catalog
+never has to fit in a model's context. This is the recommended way to use the SDK.
+
+### 1. Search and execute
+
+```python
+toolset = StackOneToolSet()
+
+actions = toolset.search("list recent comments", top_k=5)
+for action in actions:
+    print(action["action_id"], "—", action["description"][:60])
+
+result = toolset.execute(actions[0]["action_id"], {"query": {"pageSize": 5}})
+```
+
+### 2. List accounts, then filter tools by account
+
+```python
+toolset = StackOneToolSet()
+
+accounts = toolset.fetch_accounts()
+for account in accounts:
+    print(account["id"], account["provider"], account["status"])
+
+# Only `active` accounts can serve tools.
+active = [a["id"] for a in accounts if a["status"] == "active"]
+
+tools = toolset.fetch_tools(account_ids=active, actions=["linear_list_*"])
+print(f"{len(tools)} tools")
+```
+
+### 3. Execute a tool with arguments
+
+```python
+tools = toolset.fetch_tools(actions=["linear_list_*"])
+tool = tools.get_tool("linear_list_comments")
+
+# Which arguments are required?
+required = [name for name, spec in tool.parameters.properties.items()
+            if not spec.get("nullable", True)]
+
+result = tool.execute({"query_pageSize": 5})
+
+# Equivalently, straight off the toolset:
+result = toolset.execute("linear_list_comments", {"query_pageSize": 5})
+```
+
+Arguments are named by where they go in the request — `query_`, `path_`, `body_`
+and `headers_` prefixes come from the schema the server served, so a tool's own
+`parameters.properties` is always the source of truth for what it accepts.
 
 ## Tool Filtering
 

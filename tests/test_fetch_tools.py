@@ -771,3 +771,30 @@ class TestMcpCallFailuresSurface:
             content = [_Part()]
 
         assert parse_tool_result(_Result(), "t")["actions"][0]["action_id"] == "linear_list_comments"
+
+
+class TestSearchAndExecuteApi:
+    """The recommended surface: search() then execute(), no account id needed."""
+
+    def test_search_returns_actions(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        actions = toolset.search("list items")
+        assert [a["action_id"] for a in actions] == ["mock_list_items"]
+
+    def test_execute_runs_a_searched_action(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        action_id = toolset.search("list items")[0]["action_id"]
+        assert toolset.execute(action_id) == {"data": {"nodes": []}}
+
+    def test_unknown_action_raises_rather_than_returning_an_error_body(self, mcp_mock_server: str):
+        from stackone_ai.types import StackOneAPIError
+
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with pytest.raises(StackOneAPIError, match="Unknown action"):
+            toolset.execute("mock_not_a_real_action")
+
+    def test_fetch_accounts_lists_linked_accounts(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        accounts = toolset.fetch_accounts()
+        assert {a["id"] for a in accounts} == {"default", "dead"}
+        assert [a["id"] for a in accounts if a["status"] == "active"] == ["default"]
