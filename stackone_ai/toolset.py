@@ -26,6 +26,7 @@ from stackone_ai.types import (
     ExecuteToolsConfig,
     JsonDict,
     StackOneAPIError,
+    StackOneError,
     ToolMode,
     ToolParameters,
     ToolsetConfigError,
@@ -230,9 +231,21 @@ class StackOneToolSet:
             Action dicts carrying at least ``action_id`` and ``description``.
         """
         results: list[JsonDict] = []
-        for tool in self._meta_tools("_search_actions", account_ids):
-            found = tool.execute({"query": query, "top_k": top_k})
+        failures: list[str] = []
+        tools = self._meta_tools("_search_actions", account_ids)
+        for tool in tools:
+            try:
+                found = tool.execute({"query": query, "top_k": top_k})
+            except StackOneError as exc:
+                # One connector erroring must not hide every other connector's
+                # results — the same rule fetch_tools() applies to listing.
+                failures.append(f"{tool.name}: {exc}")
+                continue
             results.extend(found.get("actions", []))
+        if failures and not results:
+            raise ToolsetLoadError("No connector returned results. " + " | ".join(failures))
+        for failure in failures:
+            logger.warning("Skipping connector that failed to search — %s", failure)
         return results
 
     def execute(
@@ -244,23 +257,23 @@ class StackOneToolSet:
     ) -> JsonDict:
         """Execute an action by id, as returned by :meth:`search`.
 
-        A tool name from ``fetch_tools()`` also works — the catalog is checked
-        first, and anything else is run through the connector's execute tool.
+        Always runs through the connector's ``_execute_action`` meta tool, so
+        ``arguments`` is the nested envelope every action's ``example_request``
+        shows — ``{"query": {...}, "path": {...}, "body": {...}}``. The flat,
+        prefixed form belongs to ``fetch_tools()`` tools, whose own served schema
+        names the keys; routing by whether an id happened to be in the catalog
+        would make the argument shape depend on something the caller cannot see.
 
         Raises:
-            ToolsetLoadError: If no tool or connector matches.
+            ToolsetLoadError: If no connector matches.
         """
-        catalog_tool = self.fetch_tools().get_tool(action_id)
-        if catalog_tool is not None:
-            return catalog_tool.execute(arguments or {})
-
         connector = action_id.split("_")[0].lower()
         for tool in self._meta_tools("_execute_action", account_ids):
             if tool.name.split("_")[0].lower() == connector:
                 return tool.execute({"action_id": action_id, **(arguments or {})})
 
         raise ToolsetLoadError(
-            f'No tool or connector found for "{action_id}". Use search() to discover valid action ids.'
+            f'No connector found for "{action_id}". Use search() to discover valid action ids.'
         )
 
     def openai(self, *, account_ids: list[str] | None = None) -> list[JsonDict]:

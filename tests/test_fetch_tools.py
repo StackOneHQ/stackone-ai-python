@@ -784,7 +784,20 @@ class TestSearchAndExecuteApi:
     def test_execute_runs_a_searched_action(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         action_id = toolset.search("list items")[0]["action_id"]
-        assert toolset.execute(action_id) == {"data": {"nodes": []}}
+        assert toolset.execute(action_id)["data"] == {"nodes": []}
+
+    def test_execute_passes_the_nested_envelope_through(self, mcp_mock_server: str):
+        """execute() takes the envelope an action's example_request shows, verbatim.
+
+        Not the flat `query_pageSize` form: that belongs to fetch_tools() tools, whose
+        own served schema names the keys. One id must not mean two argument shapes.
+        """
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        action = toolset.search("list items")[0]
+        assert action["example_request"] == {"query": {"page_size": 25}}
+
+        result = toolset.execute(action["action_id"], action["example_request"])
+        assert result["echoed_query"] == {"page_size": 25}
 
     def test_unknown_action_raises_rather_than_returning_an_error_body(self, mcp_mock_server: str):
         from stackone_ai.types import StackOneAPIError

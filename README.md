@@ -59,9 +59,14 @@ from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 
-# Find an action, then run it. No account id needed.
+# 1. Ask for what you want to do. No account id needed.
 actions = toolset.search("list recent comments")
-result = toolset.execute(actions[0]["action_id"], {"query": {"pageSize": 5}})
+# [{"action_id": "linear_list_comments",
+#   "description": "List comments",
+#   "example_request": {"query": {"page_size": 25}}}, ...]
+
+# 2. Run one by its action_id, using the shape `example_request` showed you.
+result = toolset.execute("linear_list_comments", {"query": {"page_size": 25}})
 ```
 
 `search()` asks every linked connector and returns ranked actions, so the catalog
@@ -72,12 +77,17 @@ never has to fit in a model's context. This is the recommended way to use the SD
 ```python
 toolset = StackOneToolSet()
 
-actions = toolset.search("list recent comments", top_k=5)
-for action in actions:
-    print(action["action_id"], "—", action["description"][:60])
+for action in toolset.search("list recent comments", top_k=5):
+    print(action["action_id"], "—", action["description"])
+# linear_list_comments — List comments
+# slack_list_conversations — List conversations
+# ...
 
-result = toolset.execute(actions[0]["action_id"], {"query": {"pageSize": 5}})
+result = toolset.execute("linear_list_comments", {"query": {"page_size": 25}})
 ```
+
+Each result carries an `example_request` showing the `path`/`query`/`body` shape
+that action expects — copy its keys rather than guessing them.
 
 ### 2. List accounts, then filter tools by account
 
@@ -87,6 +97,7 @@ toolset = StackOneToolSet()
 accounts = toolset.fetch_accounts()
 for account in accounts:
     print(account["id"], account["provider"], account["status"])
+# Uzhey33P2eYpbdZvWL4cg linear active
 
 # Only `active` accounts can serve tools.
 active = [a["id"] for a in accounts if a["status"] == "active"]
@@ -105,15 +116,19 @@ tool = tools.get_tool("linear_list_comments")
 required = [name for name, spec in tool.parameters.properties.items()
             if not spec.get("nullable", True)]
 
-result = tool.execute({"query_pageSize": 5})
-
-# Equivalently, straight off the toolset:
-result = toolset.execute("linear_list_comments", {"query_pageSize": 5})
+result = tool.execute({"query_pageSize": 25})
 ```
 
-Arguments are named by where they go in the request — `query_`, `path_`, `body_`
-and `headers_` prefixes come from the schema the server served, so a tool's own
-`parameters.properties` is always the source of truth for what it accepts.
+The two surfaces name arguments differently, because each mirrors the schema the
+server served for it:
+
+- `tools.get_tool(...).execute(...)` takes **flat, prefixed** keys —
+  `query_pageSize`, `path_id`, `body_name`, `headers_x_foo`.
+- `toolset.execute(...)` takes the **nested envelope** — `{"query": {...},
+  "path": {...}, "body": {...}}`, matching each action's `example_request`.
+
+Either way a tool's own `parameters.properties` is the source of truth for what
+it accepts; nothing is invented by the SDK.
 
 ## Tool Filtering
 

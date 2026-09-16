@@ -95,7 +95,13 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 						{
 							type: 'text' as const,
 							text: JSON.stringify({
-								actions: [{ action_id: 'mock_list_items', description: 'List items' }],
+								actions: [
+									{
+										action_id: 'mock_list_items',
+										description: 'List items',
+										example_request: { query: { page_size: 25 } },
+									},
+								],
 							}),
 						},
 					],
@@ -105,9 +111,15 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 				`mock_${accountId}_execute_action`,
 				{
 					description: 'Execute an action by its action_id.',
-					inputSchema: { action_id: z.string(), page_size: z.number().optional() },
+					inputSchema: {
+						action_id: z.string(),
+						path: z.record(z.string(), z.unknown()).optional(),
+						query: z.record(z.string(), z.unknown()).optional(),
+						body: z.record(z.string(), z.unknown()).optional(),
+						headers: z.record(z.string(), z.string()).optional(),
+					},
 				},
-				async ({ action_id }: { action_id: string }) => {
+				async ({ action_id, query }: { action_id: string; query?: Record<string, unknown> }) => {
 					// An unknown action must come back as isError — a normal response with
 					// the flag set — the way the real endpoint reports it.
 					const known = action_id === 'mock_list_items';
@@ -117,7 +129,9 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 							{
 								type: 'text' as const,
 								text: JSON.stringify(
-									known ? { data: { nodes: [] } } : { error: `Unknown action ${action_id}` },
+									known
+										? { data: { nodes: [] }, echoed_query: query ?? null }
+										: { error: `Unknown action ${action_id}` },
 								),
 							},
 						],
