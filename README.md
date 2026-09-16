@@ -11,19 +11,13 @@ StackOne AI provides a unified interface for accessing various SaaS tools throug
 
 ## Features
 
-- Unified interface for multiple SaaS tools
-- AI-friendly tool descriptions and parameters
-- **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
-- **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
-- **Advanced Tool Filtering**:
-  - Glob pattern filtering with patterns like `"salesforce_*"` and exclusions `"!*_delete_*"`
-  - Provider and action filtering
-  - Multi-account support
-- Integration with popular AI frameworks:
-  - OpenAI Functions
-  - LangChain Tools
-  - CrewAI Tools
-  - Pydantic AI Toolset
+- **Search and execute**: find an action in natural language and run it, so a
+  catalog of hundreds of tools never has to fit in a model's context
+- **Account discovery**: an API key is enough — linked accounts are found for you
+- **MCP-backed**: tools are fetched at runtime, and the schema a model is shown is
+  the schema the server served
+- **Filtering** by account, provider and glob action pattern
+- Integrations: OpenAI functions, LangChain, CrewAI (via LangChain), Pydantic AI
 
 ## Requirements
 
@@ -37,7 +31,8 @@ uv add stackone-ai
 
 That is everything needed to fetch and execute tools — `fetch_tools()` talks MCP,
 so the MCP client is a core dependency, and `to_openai()` needs nothing extra.
-
+Framework adapters are extras, imported lazily: `uv add 'stackone-ai[langchain]'`
+(which also covers CrewAI) or `uv add 'stackone-ai[pydantic-ai]'`.
 
 ## Quick Start
 
@@ -61,139 +56,6 @@ result = toolset.execute("linear_list_comments", {"query": {"page_size": 25}})
 
 `search()` asks every linked connector and returns ranked actions, so the catalog
 never has to fit in a model's context. This is the recommended way to use the SDK.
-
-
-
-
-
-### Optional Features
-
-Framework adapters are extras, imported lazily so a plain install never pulls in
-a framework you do not use:
-
-```bash
-uv add 'stackone-ai[langchain]'      # tools.to_langchain()
-uv add 'stackone-ai[pydantic-ai]'    # tools.to_pydantic_ai()
-uv add 'stackone-ai[examples]'       # everything the examples/ directory needs
-```
-
-
-
-
-
-
-### 2. List accounts, then filter tools by account
-
-```python
-toolset = StackOneToolSet()
-
-accounts = toolset.fetch_accounts()
-for account in accounts:
-    print(account["id"], account["provider"]])
-# Uzhey33P2eYpbdZvWL4cg linear
-
-
-tools = toolset.fetch_tools(account_ids=accounts, actions=["linear_list_*"])
-print(f"{len(tools)} tools")
-```
-
-### 3. Execute a tool with arguments
-
-```python
-tools = toolset.fetch_tools(actions=["linear_list_*"])
-tool = tools.get_tool("linear_list_comments")
-
-# Which arguments are required?
-required = [name for name, spec in tool.parameters.properties.items()
-            if not spec.get("nullable", True)]
-
-result = tool.execute({"query_pageSize": 25})
-```
-
-The two surfaces name arguments differently, because each mirrors the schema the
-server served for it:
-
-- `tools.get_tool(...).execute(...)` takes **flat, prefixed** keys —
-  `query_pageSize`, `path_id`, `body_name`, `headers_x_foo`.
-- `toolset.execute(...)` takes the **nested envelope** — `{"query": {...},
-  "path": {...}, "body": {...}}`, matching each action's `example_request`.
-
-Either way a tool's own `parameters.properties` is the source of truth for what
-it accepts; nothing is invented by the SDK.
-
-## Tool Filtering
-
-StackOne AI SDK provides powerful filtering capabilities to help you select the exact tools you need.
-
-### Filtering with `fetch_tools()`
-
-The `fetch_tools()` method provides filtering by providers, actions, and account IDs:
-
-```python
-from stackone_ai import StackOneToolSet
-
-toolset = StackOneToolSet()
-
-# Filter by account IDs
-tools = toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
-
-# Filter by providers (case-insensitive)
-tools = toolset.fetch_tools(providers=["hibob", "workday"])
-
-# Filter by action patterns with glob support
-tools = toolset.fetch_tools(actions=["*_list_employees"])
-
-# Combine multiple filters
-tools = toolset.fetch_tools(
-    account_ids=["acc-123"],
-    providers=["hibob"],
-    actions=["*_list_*"]
-)
-
-# Use set_accounts() for chaining
-toolset.set_accounts(["acc-123", "acc-456"])
-tools = toolset.fetch_tools(providers=["hibob"])
-```
-
-**Filtering Options:**
-
-- **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
-- **`providers`**: Filter by provider names (e.g., `["hibob", "workday"]`). Case-insensitive matching.
-- **`actions`**: Filter by action patterns with glob support:
-  - Exact match: `["workday_list_workers"]`
-  - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
-  - Provider prefix: `["workday_*"]` matches all Workday tools
-
-## File Downloads
-
-Actions that return a file — e.g. `googledrive_unified_download_file`, `documents_download_file`, any `*_unified_download_file` — resolve to **raw bytes plus metadata**, not parsed JSON. The SDK decides this from the response `Content-Type`: a JSON content type is parsed as before; anything else is treated as a file download. This applies to both `tool.execute()` and `tool.call()`.
-
-```python
-tools = toolset.fetch_tools(actions=["googledrive_*"], account_ids=[account_id])
-download = tools.get_tool("googledrive_unified_download_file")
-
-# `path_id`, not `id` — tools are listed flat-prefixed, and an unprefixed key
-# falls through to the body, where the action never looks for it.
-result = download.execute({"path_id": "file-id"})
-
-# `result` is a dict describing the file — write the bytes straight to disk:
-with open(result["file_name"] or "download.bin", "wb") as f:
-    f.write(result["content"])
-```
-
-The returned dict:
-
-| Key            | Type          | Description                                                                                  |
-| -------------- | ------------- | -------------------------------------------------------------------------------------------- |
-| `content`      | `bytes`       | Raw file bytes. **Not JSON-serializable** — see the caveat below.                            |
-| `content_type` | `str`         | The file's MIME type (e.g. `application/pdf`), or `application/octet-stream` if unspecified. |
-| `status_code`  | `int`         | HTTP status of the download response.                                                        |
-| `headers`      | `dict`        | Response headers.                                                                            |
-| `file_name`    | `str \| None` | Filename from the `Content-Disposition` header (handles RFC 5987 `filename*`), else `None`.  |
-
-> **Caveat:** `content` holds raw bytes, which are not JSON-serializable. If you forward tool results to an LLM — or anywhere that re-serializes them to JSON — handle or strip the `content` key (for example, base64-encode it on the LLM-facing path).
-
-JSON responses are unchanged: any action returning `application/json` (or a `…+json` type) is parsed and returned as a dict exactly as before.
 
 ## Integration Examples
 
@@ -364,6 +226,17 @@ result = crew.kickoff()
 
 </details>
 
+## Advanced Filtering
+
+`fetch_tools()` takes three filters, which combine:
+
+- **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
+- **`providers`**: Filter by provider names (e.g., `["hibob", "workday"]`). Case-insensitive matching.
+- **`actions`**: Filter by action patterns with glob support:
+  - Exact match: `["workday_list_workers"]`
+  - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
+  - Provider prefix: `["workday_*"]` matches all Workday tools
+
 ## Examples
 
 For more examples, check out the [examples/](examples/) directory:
@@ -374,20 +247,6 @@ For more examples, check out the [examples/](examples/) directory:
 - [LangGraph Integration](examples/langgraph_integration.py) — LangGraph agent
 - [Pydantic AI Integration](examples/pydantic_ai_integration.py) — Pydantic AI agent
 - [Auth Management](examples/auth_management.py) — API key and account ID patterns
-
-### Running Examples
-
-```bash
-# 1. Set up credentials
-cp .env.example .env
-# Edit .env with your API keys
-
-# 2. Install dependencies (examples need the extras)
-make install extras=1
-
-# 3. Run any example
-uv run examples/openai_integration.py
-```
 
 ## Development
 
