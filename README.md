@@ -38,16 +38,6 @@ uv add stackone-ai
 That is everything needed to fetch and execute tools — `fetch_tools()` talks MCP,
 so the MCP client is a core dependency, and `to_openai()` needs nothing extra.
 
-### Optional Features
-
-Framework adapters are extras, imported lazily so a plain install never pulls in
-a framework you do not use:
-
-```bash
-uv add 'stackone-ai[langchain]'      # tools.to_langchain()
-uv add 'stackone-ai[pydantic-ai]'    # tools.to_pydantic_ai()
-uv add 'stackone-ai[examples]'       # everything the examples/ directory needs
-```
 
 ## Quick Start
 
@@ -72,22 +62,25 @@ result = toolset.execute("linear_list_comments", {"query": {"page_size": 25}})
 `search()` asks every linked connector and returns ranked actions, so the catalog
 never has to fit in a model's context. This is the recommended way to use the SDK.
 
-### 1. Search and execute
 
-```python
-toolset = StackOneToolSet()
 
-for action in toolset.search("list recent comments", top_k=5):
-    print(action["action_id"], "—", action["description"])
-# linear_list_comments — List comments
-# slack_list_conversations — List conversations
-# ...
 
-result = toolset.execute("linear_list_comments", {"query": {"page_size": 25}})
+
+### Optional Features
+
+Framework adapters are extras, imported lazily so a plain install never pulls in
+a framework you do not use:
+
+```bash
+uv add 'stackone-ai[langchain]'      # tools.to_langchain()
+uv add 'stackone-ai[pydantic-ai]'    # tools.to_pydantic_ai()
+uv add 'stackone-ai[examples]'       # everything the examples/ directory needs
 ```
 
-Each result carries an `example_request` showing the `path`/`query`/`body` shape
-that action expects — copy its keys rather than guessing them.
+
+
+
+
 
 ### 2. List accounts, then filter tools by account
 
@@ -96,13 +89,11 @@ toolset = StackOneToolSet()
 
 accounts = toolset.fetch_accounts()
 for account in accounts:
-    print(account["id"], account["provider"], account["status"])
-# Uzhey33P2eYpbdZvWL4cg linear active
+    print(account["id"], account["provider"]])
+# Uzhey33P2eYpbdZvWL4cg linear
 
-# Only `active` accounts can serve tools.
-active = [a["id"] for a in accounts if a["status"] == "active"]
 
-tools = toolset.fetch_tools(account_ids=active, actions=["linear_list_*"])
+tools = toolset.fetch_tools(account_ids=accounts, actions=["linear_list_*"])
 print(f"{len(tools)} tools")
 ```
 
@@ -181,7 +172,9 @@ Actions that return a file — e.g. `googledrive_unified_download_file`, `docume
 tools = toolset.fetch_tools(actions=["googledrive_*"], account_ids=[account_id])
 download = tools.get_tool("googledrive_unified_download_file")
 
-result = download.execute({"id": "file-id"})
+# `path_id`, not `id` — tools are listed flat-prefixed, and an unprefixed key
+# falls through to the body, where the action never looks for it.
+result = download.execute({"path_id": "file-id"})
 
 # `result` is a dict describing the file — write the bytes straight to disk:
 with open(result["file_name"] or "download.bin", "wb") as f:
