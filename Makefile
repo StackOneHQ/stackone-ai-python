@@ -1,4 +1,4 @@
-.PHONY: help install format test test-examples build validate
+.PHONY: help install format test build validate
 
 # `make` on its own lists the targets rather than running the first one.
 .DEFAULT_GOAL := help
@@ -17,7 +17,6 @@ help:
 	@echo "  format         the one command to run before committing"
 	@echo "  build          local artifact check only; publishing happens in the"
 	@echo "                 release workflow after a merge to main, never by hand"
-	@echo "  test-examples  only imports each example; the __main__ guard means no body runs"
 	@echo
 	@echo "CI runs the underlying ruff/ty/pytest commands directly rather than"
 	@echo "these targets, so it can never mutate the tree to make itself pass."
@@ -36,10 +35,6 @@ format:
 ## Run all tests
 test:
 	uv run pytest
-
-## Run example tests (import-only; see note above)
-test-examples:
-	uv run pytest examples
 
 ## Validate against the conformance mock (no live API, no credentials)
 validate:

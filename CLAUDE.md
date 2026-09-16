@@ -34,7 +34,6 @@ make install            # Core dependencies only
 make install extras=1   # Adds adapters, examples and dev tooling
 make format        # Fix lint, format, and type check — run this before committing
 make test          # Run all tests
-make test-examples # Example tests (import-only)
 make validate      # Validate against conformance, ADK and Pydantic AI consumers
 make build         # Build package
 ```

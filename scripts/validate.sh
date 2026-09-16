@@ -39,7 +39,6 @@ validate_examples() {
 
     local ok=1
     for f in "$SDK"/examples/*.py; do
-        [ "$(basename "$f")" = "test_examples.py" ] && continue
         if (cd "$SDK" && uv run --quiet python -c "
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location('_probe', '$f')
@@ -110,11 +109,23 @@ smoke() {
         return
     fi
 
-    if (cd "$CONFORMANCE" && SDK_PY="$SDK" ADK="$ADK" ./scripts/run_smoke.sh "$target"); then
+    local out
+    out="$(cd "$CONFORMANCE" && SDK_PY="$SDK" ADK="$ADK" ./scripts/run_smoke.sh "$target" 2>&1)"
+    if [ $? -eq 0 ]; then
+        printf '%s\n' "$out"
         pass "$label"
-    else
-        fail "$label"
+        return
     fi
+    printf '%s\n' "$out"
+
+    # A consumer pinned to an unpublished major cannot be installed, which says
+    # nothing about this SDK. Report it as not-run rather than as a failure here;
+    # it resolves itself once that version is on PyPI.
+    if grep -q 'only the following versions of stackone-ai are available' <<<"$out"; then
+        skip "$label" "consumer pins a stackone-ai version that is not on PyPI yet"
+        return
+    fi
+    fail "$label"
 }
 
 want="${1:-all}"
