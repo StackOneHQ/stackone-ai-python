@@ -61,8 +61,16 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 	);
 
 	app.all('/mcp', async (c) => {
-		// Get account ID from header
-		const accountId = c.req.header('x-account-id') ?? 'default';
+		// The real endpoint rejects a request with no account. Defaulting here made the
+		// mock more permissive than production and hid a fatal SDK bug: `?? 'default'`
+		// meant an SDK that never sent the header still got a full catalog.
+		const accountId = c.req.header('x-account-id') ?? c.req.query('x-account-id');
+		if (!accountId) {
+			return c.json(
+				{ statusCode: 400, message: 'Missing x-account-id header or query parameter in request' },
+				400,
+			);
+		}
 		const tools = accountTools[accountId] ?? accountTools.default ?? [];
 
 		// Create a new MCP server instance per request

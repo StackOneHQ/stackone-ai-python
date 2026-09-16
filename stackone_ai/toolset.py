@@ -8,10 +8,13 @@ import logging
 import os
 from typing import Any
 
+import httpx
+
 from stackone_ai.tools import (
     MCP_PARAM_STYLE,
     USER_AGENT,
     McpToolDefinition,
+    StackOneMcpTool,
     StackOneRpcTool,
     StackOneTool,
     Tools,
@@ -22,6 +25,8 @@ from stackone_ai.types import (
     DEFAULT_BASE_URL,
     ExecuteToolsConfig,
     JsonDict,
+    StackOneAPIError,
+    ToolMode,
     ToolParameters,
     ToolsetConfigError,
     ToolsetError,
@@ -46,6 +51,7 @@ class StackOneToolSet:
         base_url: str | None = None,
         execute: ExecuteToolsConfig | None = None,
         timeout: float | None = None,
+        tool_mode: ToolMode | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -59,6 +65,9 @@ class StackOneToolSet:
             timeout: Request timeout in seconds for tool execution HTTP calls.
                 Default: 60. Takes precedence over ``execute.timeout`` if set.
                 Increase for slow providers (e.g. Workday).
+            tool_mode: How the endpoint lists tools. ``"search_execute"`` returns
+                two meta tools per connector instead of one tool per action,
+                keeping the catalog small enough for a model's context.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment
@@ -77,6 +86,8 @@ class StackOneToolSet:
         execute_timeout = execute.get("timeout") if execute else None
         self._timeout: float = timeout if timeout is not None else (execute_timeout or 60.0)
         self._catalog_cache: dict[tuple[Any, ...], Tools] = {}
+        self._discovered_account_ids: list[str] | None = None
+        self._tool_mode: ToolMode | None = tool_mode
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
         """Set account IDs for filtering tools
@@ -95,6 +106,7 @@ class StackOneToolSet:
         you need to force a fresh fetch from the StackOne MCP endpoint.
         """
         self._catalog_cache.clear()
+        self._discovered_account_ids = None
 
     def fetch_tools(
         self,
@@ -128,37 +140,49 @@ class StackOneToolSet:
             effective_account_ids = account_ids or self._account_ids
             if not effective_account_ids and self.account_id:
                 effective_account_ids = [self.account_id]
+            if not effective_account_ids:
+                effective_account_ids = self._discover_account_ids()
 
-            if effective_account_ids:
-                account_scope: list[str | None] = list(dict.fromkeys(effective_account_ids))
-            else:
-                account_scope = [None]
+            account_scope: list[str | None] = list(dict.fromkeys(effective_account_ids))
 
             cache_key = (
                 tuple(sorted(account_scope, key=lambda a: (a is None, a))),
                 tuple(sorted(p.lower() for p in providers)) if providers else None,
                 tuple(sorted(actions)) if actions else None,
+                self._tool_mode,
             )
             cached = self._catalog_cache.get(cache_key)
             if cached is not None:
                 return cached
 
             endpoint = f"{self.base_url.rstrip('/')}/mcp?param-style={MCP_PARAM_STYLE}"
+            if self._tool_mode:
+                endpoint = f"{endpoint}&tool-mode={self._tool_mode}"
 
             def _fetch_for_account(account: str | None) -> list[StackOneTool]:
                 headers = self._build_mcp_headers(account)
                 catalog = fetch_mcp_tools(endpoint, headers)
-                return [self._create_rpc_tool(tool_def, account) for tool_def in catalog]
+                return [self._create_tool(tool_def, account, endpoint, headers) for tool_def in catalog]
 
             all_tools: list[StackOneTool] = []
             if len(account_scope) == 1:
                 all_tools.extend(_fetch_for_account(account_scope[0]))
             else:
                 max_workers = min(len(account_scope), 10)
+                failures: list[str] = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-                    futures = [pool.submit(_fetch_for_account, acc) for acc in account_scope]
-                    for future in futures:
-                        all_tools.extend(future.result())
+                    futures = {pool.submit(_fetch_for_account, acc): acc for acc in account_scope}
+                    for future, account in futures.items():
+                        try:
+                            all_tools.extend(future.result())
+                        except Exception as exc:
+                            # One unusable account must not cost the caller every other
+                            # account's tools; report which one, keep the rest.
+                            failures.append(f"{account}: {exc}")
+                if failures and not all_tools:
+                    raise ToolsetLoadError("No account returned tools. " + " | ".join(failures))
+                for failure in failures:
+                    logger.warning("Skipping account that failed to list tools — %s", failure)
 
             if providers:
                 all_tools = [tool for tool in all_tools if self._filter_by_provider(tool.name, providers)]
@@ -215,6 +239,56 @@ class StackOneToolSet:
         """Whether a tool name matches any of the given glob patterns."""
         return any(fnmatch.fnmatch(tool_name, pattern) for pattern in actions)
 
+    def _discover_account_ids(self) -> list[str]:
+        """List the linked accounts this API key can use.
+
+        The MCP endpoint requires an ``x-account-id`` on every request, so an API
+        key on its own is not enough to list tools. Rather than make every caller
+        supply one, ask the API which accounts the key has.
+
+        Raises:
+            ToolsetConfigError: If the key has no accounts, or none are usable.
+        """
+        if self._discovered_account_ids is not None:
+            return self._discovered_account_ids
+
+        url = f"{self.base_url.rstrip('/')}/accounts"
+        response = httpx.get(
+            url,
+            headers={
+                "Authorization": build_auth_header(self.api_key),
+                "User-Agent": USER_AGENT,
+            },
+            timeout=self._timeout,
+        )
+        if response.is_error:
+            # Without this the catch-all in fetch_tools flattens it to a message and
+            # the status is lost, so a caller cannot tell 401 from 429.
+            raise StackOneAPIError(
+                f"Listing accounts at {url} failed with "
+                f"{response.status_code} {response.reason_phrase}: {response.text.strip()}",
+                response.status_code,
+                response.text,
+            )
+        body = response.json()
+        accounts = body.get("data", body) if isinstance(body, dict) else body
+
+        active = [a["id"] for a in accounts if a.get("status") == "active" and a.get("id")]
+        if not active:
+            if not accounts:
+                raise ToolsetConfigError(
+                    "This API key has no linked accounts. Link one in the StackOne "
+                    "dashboard, or pass account_id explicitly."
+                )
+            listed = ", ".join(f"{a.get('provider')} ({a.get('status')})" for a in accounts)
+            raise ToolsetConfigError(
+                f"None of this API key's {len(accounts)} linked accounts are active: {listed}. "
+                "Re-link them in the StackOne dashboard, or pass account_id explicitly."
+            )
+
+        self._discovered_account_ids = active
+        return active
+
     def _build_mcp_headers(self, account_id: str | None) -> dict[str, str]:
         headers = {
             "Authorization": build_auth_header(self.api_key),
@@ -224,12 +298,35 @@ class StackOneToolSet:
             headers["x-account-id"] = account_id
         return headers
 
-    def _create_rpc_tool(self, tool_def: McpToolDefinition, account_id: str | None) -> StackOneTool:
+    def _create_tool(
+        self,
+        tool_def: McpToolDefinition,
+        account_id: str | None,
+        endpoint: str,
+        headers: dict[str, str],
+    ) -> StackOneTool:
+        """Build an executable tool from a served catalog entry.
+
+        In ``search_execute`` mode the served tools are MCP meta tools with no
+        action behind them on ``/actions/rpc``, so they are executed over
+        ``tools/call`` instead.
+        """
         schema = tool_def.input_schema or {}
         parameters = ToolParameters(
             type=str(schema.get("type") or "object"),
             properties=self._normalize_schema_properties(schema),
         )
+        if self._tool_mode == "search_execute":
+            return StackOneMcpTool(
+                name=tool_def.name,
+                description=tool_def.description or "",
+                parameters=parameters,
+                api_key=self.api_key,
+                endpoint=endpoint,
+                headers=headers,
+                account_id=account_id,
+                timeout=self._timeout,
+            )
         return StackOneRpcTool(
             name=tool_def.name,
             description=tool_def.description or "",
@@ -260,7 +357,10 @@ class StackOneToolSet:
             else:
                 prop = {"description": str(details)}
 
-            prop.setdefault("nullable", name not in required_fields)
+            # Assign, never setdefault: a served `nullable` (OpenAPI 3.0 style) means
+            # "accepts null", not "optional". Letting it stand would drop the field
+            # from `required` and the model would omit it.
+            prop["nullable"] = name not in required_fields
             normalized[str(name)] = prop
 
         return normalized

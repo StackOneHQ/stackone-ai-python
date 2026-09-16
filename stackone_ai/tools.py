@@ -31,6 +31,8 @@ from stackone_ai.types import (
     StackOneError,
     ToolParameters,
     ToolsetConfigError,
+    ToolsetError,
+    ToolsetLoadError,
     filename_from_content_disposition,
     is_json_content_type,
 )
@@ -148,7 +150,127 @@ def fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[McpToolDefin
                         break
                 return collected
 
-    return run_async(_list())
+    try:
+        return run_async(_list())
+    except BaseException as exc:
+        raise _describe_mcp_failure(exc, endpoint) from exc
+
+
+def _response_body(response: httpx.Response) -> str:
+    """Best-effort read of an error body.
+
+    The MCP transport streams, so `.text` raises until the stream is read, and by
+    the time the error surfaces the stream may already be closed. The body is the
+    only place the server explains itself, so it is worth trying; an empty string
+    just means the message falls back to the status code.
+    """
+    try:
+        return response.text.strip()
+    except Exception:
+        pass
+    try:
+        response.read()
+        return response.text.strip()
+    except Exception:
+        return ""
+
+
+def _describe_mcp_failure(exc: BaseException, endpoint: str) -> Exception:
+    """Turn the MCP client's nested failure into something a caller can act on.
+
+    The listing runs inside a TaskGroup, so any HTTP error arrives wrapped in an
+    ExceptionGroup whose str() is "unhandled errors in a TaskGroup (1 sub-exception)".
+    Unwrap to the underlying error and carry the status code and response body,
+    which is where the server explains itself — a dead account, for example,
+    answers 412 with "re-link the account to resume".
+    """
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    leaf: BaseException = exc
+    while stack:
+        current = stack.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        # Our own errors are already descriptive. They reach here wrapped in an
+        # ExceptionGroup because they are raised inside the session's TaskGroup.
+        if isinstance(current, StackOneError | ToolsetError):
+            return current
+        if isinstance(current, httpx.HTTPStatusError):
+            body = _response_body(current.response)
+            detail = f": {body}" if body else ""
+            # StackOneAPIError carries the status and body as attributes, so a caller
+            # can branch on 412 rather than pattern-matching the message.
+            return StackOneAPIError(
+                f"MCP request to {endpoint} failed with "
+                f"{current.response.status_code} {current.response.reason_phrase}{detail}",
+                current.response.status_code,
+                body or None,
+            )
+        # Track the innermost non-group exception: an ExceptionGroup's own str() is
+        # the "unhandled errors in a TaskGroup" boilerplate that hides the real cause.
+        if not getattr(current, "exceptions", None):
+            leaf = current
+        stack.extend(getattr(current, "exceptions", None) or [])
+        stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
+    return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
+
+
+def parse_tool_result(result: Any, name: str) -> JsonDict:
+    """Turn an MCP ``CallToolResult`` into a plain dict.
+
+    Raises:
+        StackOneAPIError: If the result carries ``isError``. A failed tool call comes
+            back as an ordinary response with that flag set, so without this check the
+            error body is handed to the caller as though it were a success.
+    """
+    texts = [getattr(part, "text", "") for part in result.content]
+    payload = "".join(t for t in texts if t)
+    # Parts that are not text (images, embedded resources) have no `.text`; keep them
+    # rather than silently returning an empty dict.
+    non_text = [part for part in result.content if not getattr(part, "text", "")]
+
+    parsed: JsonDict = {}
+    if payload:
+        try:
+            loaded = json.loads(payload)
+        except json.JSONDecodeError:
+            loaded = payload
+        parsed = loaded if isinstance(loaded, dict) else {"result": loaded}
+
+    if getattr(result, "isError", False):
+        raise StackOneAPIError(f"Tool {name!r} failed: {payload or parsed}", 0, parsed)
+
+    if non_text:
+        parsed["content_parts"] = non_text
+    return parsed
+
+
+def call_mcp_tool(endpoint: str, headers: dict[str, str], name: str, arguments: JsonDict) -> JsonDict:
+    """Invoke a tool over MCP ``tools/call``.
+
+    The search/execute meta tools exist only on the MCP endpoint — they have no
+    ``/actions/rpc`` action behind them — so they must be called this way.
+    """
+    from mcp import types as mcp_types  # ty: ignore[unresolved-import]
+    from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+    from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
+
+    async def _call() -> JsonDict:
+        async with streamablehttp_client(endpoint, headers=headers) as (read_stream, write_stream, _):
+            session = ClientSession(
+                read_stream,
+                write_stream,
+                client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
+            )
+            async with session:
+                await session.initialize()
+                return parse_tool_result(await session.call_tool(name, arguments), name)
+
+    try:
+        return run_async(_call())
+    except BaseException as exc:
+        raise _describe_mcp_failure(exc, endpoint) from exc
 
 
 def _strip_internal_keys(schema: Any) -> Any:
@@ -574,17 +696,27 @@ class StackOneRpcTool(StackOneTool):
         cached nested schema, and any other key falls through to the body.
         """
         buckets: dict[str, dict[str, Any]] = {"path": {}, "query": {}, "headers": {}, "body": {}}
+        reserved = ("path", "query", "headers", "body")
+
+        # Two passes so precedence is deterministic rather than following the caller's
+        # dict order: an explicit flat_prefixed key always wins over a nested one.
+        nested: list[tuple[str, dict[str, Any]]] = []
         for key, value in params.items():
             match = _FLAT_ENVELOPE_KEY_PATTERN.match(key)
             if match:
-                location, field = match.group(1), match.group(2)
-                buckets[location].setdefault(field, value)
+                buckets[match.group(1)][match.group(2)] = value
                 continue
-            if key in ("path", "query", "headers", "body") and isinstance(value, dict):
-                for field, field_value in value.items():
-                    buckets[key].setdefault(field, field_value)
+            if key in reserved:
+                # Reserved keys are containers. A scalar here is malformed input, not a
+                # body field — putting it in the body would smuggle `path` into the payload.
+                if isinstance(value, dict):
+                    nested.append((key, value))
                 continue
             buckets["body"][key] = value
+
+        for key, value in nested:
+            for field, field_value in value.items():
+                buckets[key].setdefault(field, field_value)
         return buckets
 
     def _build_action_headers(self, additional_headers: dict[str, Any] | None) -> dict[str, str]:
@@ -603,6 +735,46 @@ class StackOneRpcTool(StackOneTool):
             headers["x-account-id"] = account_id
 
         return headers
+
+
+class StackOneMcpTool(StackOneTool):
+    """A tool executed over MCP ``tools/call`` rather than the RPC endpoint."""
+
+    _endpoint: str = PrivateAttr()
+    _mcp_headers: Headers = PrivateAttr()
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        description: str,
+        parameters: ToolParameters,
+        api_key: str,
+        endpoint: str,
+        headers: Headers,
+        account_id: str | None,
+        timeout: float = 60.0,
+    ) -> None:
+        super().__init__(
+            description=description,
+            parameters=parameters,
+            _execute_config=ExecuteConfig(
+                method="POST", url=endpoint, name=name, headers={}, timeout=timeout
+            ),
+            _api_key=api_key,
+            _account_id=account_id,
+        )
+        self._endpoint = endpoint
+        self._mcp_headers = headers
+
+    def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
+        if isinstance(arguments, str):
+            parsed = json.loads(arguments)
+        else:
+            parsed = arguments or {}
+        if not isinstance(parsed, dict):
+            raise ValueError("Tool arguments must be a JSON object")
+        return call_mcp_tool(self._endpoint, self._mcp_headers, self.name, parsed)
 
 
 class Tools:

@@ -55,8 +55,29 @@ uv add 'stackone-ai[examples]'       # everything the examples/ directory needs
 import os
 from stackone_ai import StackOneToolSet
 
-# Initialize — reads STACKONE_API_KEY from environment
+# Initialize — set STACKONE_API_KEY in environment
 toolset = StackOneToolSet()
+
+# search all tools available via from your api key
+search_result = toolset.search("list issues")
+
+# execute an action
+execute_result = toolset.execute("list_issues")
+
+
+
+# get all account ids
+account_ids = toolset.fetch_accounts()
+tools = toolset.fetch_tools(
+    actions=["*"], account_ids=[account_id]
+)
+
+search_result = toolset.search("list issues")
+
+
+
+
+
 
 # Fetch tools — pass account ID from STACKONE_ACCOUNT_ID env var
 account_id = os.getenv("STACKONE_ACCOUNT_ID")

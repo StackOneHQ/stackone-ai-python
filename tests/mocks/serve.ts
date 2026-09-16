@@ -44,6 +44,15 @@ app.use("/*", cors());
 // Health check endpoint
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+// The SDK discovers accounts here when none is supplied. Returned as a bare list
+// with an inactive entry, matching the shape and statuses the real API serves.
+app.get("/accounts", (c) =>
+  c.json([
+    { id: "default", provider: "testprovider", status: "active" },
+    { id: "dead", provider: "brokenprovider", status: "error" },
+  ]),
+);
+
 // Mount the MCP app (handles /mcp endpoint)
 app.route("/", mcpApp);
 

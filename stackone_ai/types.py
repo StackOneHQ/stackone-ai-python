@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Annotated, Any, TypeAlias, TypedDict
+from typing import Annotated, Any, Literal, TypeAlias, TypedDict
 from urllib.parse import unquote
 
 from pydantic import BaseModel, BeforeValidator, Field
@@ -14,6 +14,17 @@ Headers: TypeAlias = dict[str, str]
 
 # StackOne API base URL
 DEFAULT_BASE_URL: str = "https://api.stackone.com"
+
+
+ToolMode = Literal["individual", "search_execute"]
+"""How the MCP endpoint lists tools.
+
+``"individual"`` (the server default) lists one tool per action — hundreds per
+account. ``"search_execute"`` lists two meta tools per connector instead, a
+``*_search_actions`` that ranks actions for a natural-language query and an
+``*_execute_action`` that runs one by id. The catalog stays small regardless of
+how many accounts are linked, which is what keeps it inside a model's context.
+"""
 
 
 class StackOneError(Exception):

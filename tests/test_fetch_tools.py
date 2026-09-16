@@ -207,7 +207,7 @@ class TestSchemaPropertyNormalization:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         tools = toolset.fetch_tools()
         tool = tools.get_tool("test_tool")
         assert tool is not None
@@ -233,7 +233,7 @@ class TestSchemaPropertyNormalization:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         tools = toolset.fetch_tools()
         tool = tools.get_tool("test_tool")
         assert tool is not None
@@ -257,7 +257,7 @@ class TestSchemaPropertyNormalization:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         tools = toolset.fetch_tools()
         tool = tools.get_tool("test_tool")
         assert tool is not None
@@ -345,7 +345,7 @@ class TestToolsetErrorHandling:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test_key")
+        toolset = StackOneToolSet(api_key="test_key", account_id="acc1")
         with pytest.raises(ToolsetConfigError, match="Original config error"):
             toolset.fetch_tools()
 
@@ -455,7 +455,7 @@ class TestCatalogCache:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         toolset.fetch_tools()
         toolset.fetch_tools()
         toolset.fetch_tools()
@@ -472,7 +472,7 @@ class TestCatalogCache:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         toolset.fetch_tools(account_ids=["a"])
         toolset.fetch_tools(account_ids=["a"])
         assert calls["count"] == 1
@@ -495,7 +495,7 @@ class TestCatalogCache:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         toolset.fetch_tools()
         toolset.fetch_tools(providers=["prov"])
         toolset.fetch_tools(providers=["prov"])
@@ -512,7 +512,7 @@ class TestCatalogCache:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         toolset.fetch_tools()
         toolset.clear_catalog_cache()
         toolset.fetch_tools()
@@ -528,7 +528,7 @@ class TestCatalogCache:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         toolset.fetch_tools(account_ids=["a", "b"])
         # Reordered account list should hit the cache — matches Node SDK behavior.
         toolset.fetch_tools(account_ids=["b", "a"])
@@ -545,7 +545,7 @@ class TestCatalogCache:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         toolset.set_accounts(["a"])
         toolset.fetch_tools()
         toolset.fetch_tools()
@@ -570,7 +570,7 @@ class TestParallelFetch:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", slow_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         account_ids = [f"acc-{i}" for i in range(5)]
 
         start = time.perf_counter()
@@ -588,13 +588,13 @@ class TestParallelFetch:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         tools = toolset.fetch_tools(account_ids=["a", "b", "c", "d"])
         names = {t.name for t in tools.to_list()}
         assert names == {"tool_a", "tool_b", "tool_c", "tool_d"}
 
-    def test_single_account_failure_propagates(self, monkeypatch):
-        from stackone_ai.types import ToolsetLoadError
+    def test_healthy_accounts_survive_one_failure(self, monkeypatch, caplog):
+        """One unusable account must not cost the caller every other account's tools."""
 
         def flaky_fetch(_endpoint: str, headers: dict[str, str]) -> list[McpToolDefinition]:
             acc = headers.get("x-account-id", "none")
@@ -604,8 +604,24 @@ class TestParallelFetch:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", flaky_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key")
-        with pytest.raises(ToolsetLoadError):
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with caplog.at_level("WARNING"):
+            tools = toolset.fetch_tools(account_ids=["a", "b"])
+
+        assert [t.name for t in tools] == ["tool_a"]
+        assert "b" in caplog.text and "boom" in caplog.text
+
+    def test_all_accounts_failing_raises(self, monkeypatch):
+        """If nothing succeeded, that is a failure, not an empty catalog."""
+        from stackone_ai.types import ToolsetLoadError
+
+        def always_fails(_endpoint: str, headers: dict[str, str]) -> list[McpToolDefinition]:
+            raise RuntimeError(f"boom for {headers.get('x-account-id')}")
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", always_fails)
+
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetLoadError, match="No account returned tools"):
             toolset.fetch_tools(account_ids=["a", "b"])
 
 
@@ -625,3 +641,133 @@ class TestMcpParamStylePinning:
         toolset.fetch_tools(account_ids=["acc1"])
 
         assert captured["endpoint"] == "https://api.example.com/mcp?param-style=flat_prefixed"
+
+
+class TestAccountDiscovery:
+    """An API key alone must work: /mcp requires an account, so the SDK finds one.
+
+    These cover the defect class the old suite could not see — the mock used to
+    invent an account when the header was absent, so an SDK that never sent one
+    still got a full catalog.
+    """
+
+    def test_api_key_alone_discovers_an_account(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tools = toolset.fetch_tools()
+        assert len(tools) > 0
+
+    def test_inactive_accounts_are_skipped(self, mcp_mock_server: str):
+        """The mock serves one active account and one in error; only the active one is used."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        assert toolset._discover_account_ids() == ["default"]
+
+    def test_missing_account_header_is_rejected_by_the_server(self, mcp_mock_server: str):
+        """Guards the mock itself: if it stops enforcing this, these tests go hollow."""
+        import httpx
+
+        response = httpx.post(
+            f"{mcp_mock_server}/mcp",
+            headers={"Authorization": "Basic dGVzdC1rZXk6"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            timeout=10,
+        )
+        assert response.status_code == 400
+        assert "x-account-id" in response.text
+
+
+class TestListingFailuresAreDiagnosable:
+    """A failure must name the status, not hide it behind TaskGroup boilerplate."""
+
+    def test_http_error_carries_status_and_is_not_taskgroup_noise(self, monkeypatch):
+        import httpx
+
+        from stackone_ai.tools import _describe_mcp_failure
+
+        request = httpx.Request("POST", "https://api.example.com/mcp")
+        response = httpx.Response(412, text='{"message":"re-link the account"}', request=request)
+        inner = httpx.HTTPStatusError("412", request=request, response=response)
+        # Mirrors reality: the MCP client raises inside a TaskGroup, so the real
+        # error arrives wrapped in an ExceptionGroup.
+        grouped = ExceptionGroup("unhandled errors in a TaskGroup", [inner])
+
+        err = _describe_mcp_failure(grouped, "https://api.example.com/mcp")
+
+        assert "412" in str(err)
+        assert "TaskGroup" not in str(err)
+        assert getattr(err, "status_code", None) == 412
+
+    def test_non_http_error_reports_the_leaf_not_the_group(self):
+        from stackone_ai.tools import _describe_mcp_failure
+
+        grouped = ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("no route")])
+
+        err = _describe_mcp_failure(grouped, "https://api.example.com/mcp")
+
+        assert "no route" in str(err)
+        assert "TaskGroup" not in str(err)
+
+
+class TestToolModeRouting:
+    """search_execute tools are MCP-native: they must not be sent to /actions/rpc."""
+
+    def test_default_mode_builds_rpc_tools(self, monkeypatch):
+        from stackone_ai.tools import StackOneRpcTool
+
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h: [McpToolDefinition(name="t", description="", input_schema={})],
+        )
+        toolset = StackOneToolSet(api_key="k", account_id="acc1")
+        assert isinstance(toolset.fetch_tools().get_tool("t"), StackOneRpcTool)
+
+    def test_search_execute_mode_builds_mcp_tools(self, monkeypatch):
+        from stackone_ai.tools import StackOneMcpTool
+
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h: [McpToolDefinition(name="t", description="", input_schema={})],
+        )
+        toolset = StackOneToolSet(api_key="k", account_id="acc1", tool_mode="search_execute")
+        assert isinstance(toolset.fetch_tools().get_tool("t"), StackOneMcpTool)
+
+    def test_search_execute_mode_is_requested_on_the_url(self, monkeypatch):
+        seen: list[str] = []
+
+        def capture(endpoint: str, _headers: dict[str, str]) -> list[McpToolDefinition]:
+            seen.append(endpoint)
+            return []
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", capture)
+        StackOneToolSet(api_key="k", account_id="acc1", tool_mode="search_execute").fetch_tools()
+        assert "tool-mode=search_execute" in seen[0]
+
+
+class TestMcpCallFailuresSurface:
+    """A tools/call failure arrives as a normal response with isError set."""
+
+    def test_is_error_result_raises_rather_than_returning_a_success(self, monkeypatch):
+        from stackone_ai.types import StackOneAPIError
+
+        class _Part:
+            text = '{"error":"Lambda execution failed"}'
+
+        class _Result:
+            isError = True
+            content = [_Part()]
+
+        from stackone_ai.tools import parse_tool_result
+
+        with pytest.raises(StackOneAPIError, match="Lambda execution failed"):
+            parse_tool_result(_Result(), "t")
+
+    def test_successful_result_is_parsed(self):
+        from stackone_ai.tools import parse_tool_result
+
+        class _Part:
+            text = '{"actions":[{"action_id":"linear_list_comments"}]}'
+
+        class _Result:
+            isError = False
+            content = [_Part()]
+
+        assert parse_tool_result(_Result(), "t")["actions"][0]["action_id"] == "linear_list_comments"
