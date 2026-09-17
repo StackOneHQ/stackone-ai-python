@@ -600,6 +600,12 @@ class StackOneTool(BaseModel):
             ) from exc
         except httpx.RequestError as exc:
             raise StackOneError(f"Request failed: {exc}") from exc
+        except (UnicodeEncodeError, TypeError) as exc:
+            # A lone surrogate — what a model emits when a token boundary splits an emoji —
+            # or a value JSON cannot encode (a set, bytes, a datetime) failed deep inside
+            # httpx and escaped as a bare UnicodeEncodeError/TypeError, outside the SDK's
+            # exception contract. It is an argument problem, so report it as one.
+            raise ValueError(f"Arguments for {self.name!r} could not be encoded as JSON: {exc}") from exc
 
     def call(self, *args: Any, **kwargs: Any) -> JsonDict:
         """Call the tool with the given arguments

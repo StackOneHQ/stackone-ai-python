@@ -8,7 +8,7 @@ help:
 	@echo "Usage: make <target>"
 	@echo
 	@awk '/^## /{desc=substr($$0,4); next} \
-		/^[a-z][a-z-]*:/{split($$0,t,":"); printf "  \033[36m%-15s\033[0m %s\n", t[1], desc}' \
+		/^[a-z][a-z-]*:/{split($$0,t,":"); printf "  \033[36m%-15s\033[0m %s\n", t[1], desc; desc=""}' \
 		$(MAKEFILE_LIST)
 	@echo
 	@echo "Notes:"
@@ -24,7 +24,7 @@ help:
 
 ## Install dependencies (extras=1 adds adapters, examples and dev tooling)
 install:
-	uv sync $(if $(extras),--all-extras,)
+	uv sync --locked $(if $(extras),--all-extras,)
 
 ## Fix lint, format, and type check
 format:

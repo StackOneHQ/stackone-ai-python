@@ -790,3 +790,18 @@ class TestDownloadFilenamesAreSafe:
     def test_overlong_names_are_capped_keeping_the_extension(self):
         name = filename_from_content_disposition(f'attachment; filename="{"a" * 400}.pdf"')
         assert name is not None and name.endswith(".pdf") and len(name.encode()) <= 255
+
+
+@pytest.mark.parametrize("value", ["half an emoji \ud83d", {"a", "set"}, b"bytes"])
+def test_unencodable_arguments_raise_value_error(value):
+    """These escaped as a bare UnicodeEncodeError/TypeError from inside httpx."""
+    tool = StackOneRpcTool(
+        name="linear_x",
+        description="",
+        parameters=ToolParameters(type="object", properties={"body_q": {"type": "string"}}),
+        api_key="k",
+        base_url="https://api.example.invalid",
+        account_id="a",
+    )
+    with pytest.raises(ValueError, match="could not be encoded"):
+        tool.execute({"body_q": value})

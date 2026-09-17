@@ -30,8 +30,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["stackone_ai"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"stackone_ai/py.typed" = "stackone_ai/py.typed"
+# The sdist carried the whole dev tree — uv.lock, pnpm-lock.yaml, CLAUDE.md, .github/
+# and the TypeScript mocks. A consumer building from source needs none of it.
+[tool.hatch.build.targets.sdist]
+include = ["stackone_ai", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
 
 # Per-framework adapters. Each is imported lazily inside the method that needs
 # it, so installing the SDK does not drag in a framework you do not use.
@@ -41,7 +43,6 @@ pydantic-ai = ["pydantic-ai-slim>=1.83.0"]
 examples = [
   "langchain>=1.0.0",
   "langchain-openai>=1.1.14",
-  "langgraph>=1.1.6",
   "openai>=2.32.0",
   "pydantic-ai>=1.83.0",
   "python-dotenv>=1.0.1",
@@ -61,9 +62,6 @@ dev = [
 testpaths = ["tests"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-markers = [
-  "integration: mark test as integration test requiring MCP mock server",
-]
 
 [tool.ruff.lint.per-file-ignores]
 "examples/**.py" = ["E501", "F841", "E402"]

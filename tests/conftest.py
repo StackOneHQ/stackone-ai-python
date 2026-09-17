@@ -107,9 +107,3 @@ def mcp_mock_server() -> Generator[str, None, None]:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-
-
-@pytest.fixture
-def mcp_server_url(mcp_mock_server: str) -> str:
-    """Alias for mcp_mock_server for clearer test naming."""
-    return mcp_mock_server
