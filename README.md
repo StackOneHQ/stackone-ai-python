@@ -46,14 +46,13 @@ toolset = StackOneToolSet()
 hits = toolset.search("list recent comments", top_k=3)
 # [{"action_id": "linear_list_comments",
 #   "description": "Returns a page of Linear comments as a connection object ...",
-#   "similarity_score": 0.858,
+#   "similarity_score": 0.86,
 #   "example_request": {"action_id": "linear_list_comments"},
 #   "input_schema": {"type": "object", "properties": {"body": {...}}}}, ...]
 
 # 2. Run it. Build the arguments from input_schema.
 result = toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
-result["isError"]         # False
-result["result"]["data"]  # the provider's payload
+result["data"]  # the provider's payload — a failed call raises instead
 ```
 
 `search()` asks every linked connector and returns actions ranked by
@@ -63,20 +62,23 @@ model's context. This is the recommended way to use the SDK.
 > **Build the call from `input_schema`.** Arguments that do not match it are
 > dropped by the server *without an error* — the call succeeds and your filters
 > are ignored. `example_request` is a template to edit, not a runnable call: for
-> most actions it holds only the `action_id`, and where it carries a path it uses
-> a literal `<id>` placeholder. `top_k` must be between 1 and 50.
+> an action with no path parameter it holds only the `action_id`, and where there
+> is one it uses a literal `<id>` placeholder. Zero-argument actions omit both
+> `input_schema` and `example_request`, so read them with `.get()`.
+>
+> `top_k` must be between 1 and 50, and applies **per connector** — five linked
+> connectors can return up to five times as many hits, ranked together.
 
 ### Two ways to call a tool
 
 The SDK exposes the same actions through two surfaces. They take **different
-argument shapes**, because each mirrors the schema the server served for it, and
-mixing them fails silently.
+argument shapes**, because each mirrors the schema the server served for it. Both
+return the payload itself.
 
 | | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
 |---|---|---|
 | Schema to read | `input_schema` on each hit | `tool.parameters.properties` |
-| Argument shape | nested — `{"body": {"variables": {...}}}` | flat, prefixed — `body_variables`, `path_id`, `query_limit` |
-| Returns | `{"isError": ..., "result": {...}}` | the payload, unwrapped |
+| Argument shape | nested — `{"body": {"variables": {...}}}` | flat, prefixed — `body_variables`, `path_id` |
 | Best for | agents that discover actions at run time | binding a fixed, filtered set of tools to a model |
 
 ```python
@@ -86,6 +88,11 @@ toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
 tool = toolset.fetch_tools(actions=["linear_list_comments"]).get_tool("linear_list_comments")
 tool.execute({"body_variables": {"first": 25}})
 ```
+
+Mixing them fails silently in **one direction**. A `fetch_tools()` tool also
+accepts the nested form. But flat keys like `body_variables` passed to
+`toolset.execute()` are not an error — they are dropped, and you get the server's
+defaults.
 
 ### Accounts
 
@@ -102,26 +109,31 @@ tools = toolset.fetch_tools(account_ids=["acc-123"])
 The constructor takes a single `account_id`; every method takes plural
 `account_ids`. An explicit `account_ids=` argument wins over `set_accounts()`,
 which wins over the constructor, which wins over discovery. An **empty** list
-means "no filter", not "no accounts".
+means "unset" — it falls through to the next of those — not "no accounts".
+
+When you link a new account, call `toolset.clear_catalog_cache()`: listings are
+cached per toolset.
 
 ### Errors
 
 ```python
-from stackone_ai.types import StackOneAPIError, ToolsetConfigError, ToolsetLoadError
+from stackone_ai import StackOneAPIError, ToolsetLoadError
 
 try:
     result = toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
-except ToolsetConfigError:   # no API key, bad top_k, no active accounts
-    raise
-except ToolsetLoadError:     # the catalog could not be listed
-    raise
-except StackOneAPIError as exc:
-    print(exc.status_code, exc.response_body)
+except ToolsetLoadError as exc:   # unknown action id, or no account could list its catalog
+    print(exc)
+except StackOneAPIError as exc:   # StackOne or the provider rejected the call
+    print(exc.status_code, exc)   # the message leads with the server's own explanation
 ```
 
-All four derive from `StackOneError` or `ToolsetError`. `fetch_tools()` tolerates
-a single failing account — it logs a warning and returns the healthy accounts'
-tools, raising only if every account failed.
+`StackOneAPIError` derives from `StackOneError`; `ToolsetConfigError` (no API key,
+bad arguments, no active accounts) and `ToolsetLoadError` derive from
+`ToolsetError`. **The two bases are unrelated**, so catching everything means
+`except (StackOneError, ToolsetError)`.
+
+`fetch_tools()` tolerates a single failing account — it logs a warning and returns
+the healthy accounts' tools, raising only if every account failed.
 
 ## Integration Examples
 
@@ -132,7 +144,7 @@ Each has a matching runnable script in [examples/](examples/).
 <details>
 <summary>OpenAI</summary>
 
-Needs nothing beyond the core install.
+Needs no `stackone-ai` extra — just `uv add openai`.
 
 ```python
 import json
@@ -149,13 +161,16 @@ response = client.chat.completions.create(
     model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
 )
 
-for call in response.choices[0].message.tool_calls or []:
+message = response.choices[0].message
+messages.append(message.model_dump(exclude_none=True))  # the assistant turn must precede its tool results
+for call in message.tool_calls or []:
     tool = tools.get_tool(call.function.name)
     result = tool.execute(call.function.arguments)   # accepts the raw JSON string
     messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
 ```
 
-`to_openai()` emits Chat Completions function tools. See
+`to_openai()` emits Chat Completions function tools. Chat Completions accepts at
+most **128 tools**, so filter before binding. See
 [examples/openai_integration.py](examples/openai_integration.py) for the full
 round trip, including feeding results back for a final answer.
 
@@ -214,7 +229,7 @@ print(agent.run_sync("Use a tool to list a few records, then summarise them.").o
 LangGraph consumes LangChain tools, so it goes through the same adapter.
 
 ```bash
-uv add 'stackone-ai[langchain]' langgraph langchain-openai
+uv add 'stackone-ai[langchain]' langchain langchain-openai
 ```
 
 ```python
@@ -240,12 +255,12 @@ applied locally to one cached listing — changing a filter never refetches.
 ```python
 toolset = StackOneToolSet()
 
-toolset.fetch_tools()                                    # 139 tools, every active account
-toolset.fetch_tools(providers=["linear"])                # 138
-toolset.fetch_tools(actions=["linear_list_*"])           #  22
-toolset.fetch_tools(actions=["linear_get_issue"])        #   1
+toolset.fetch_tools()                                    # every tool, every active account
+toolset.fetch_tools(providers=["linear"])                # one connector
+toolset.fetch_tools(actions=["linear_list_*"])           # one connector's list actions
+toolset.fetch_tools(actions=["linear_get_issue"])        # exactly one tool
 toolset.fetch_tools(providers=["linear"],
-                    actions=["*_get_*"])                 #  23  (AND)
+                    actions=["*_get_*"])                 # both filters, AND-ed
 toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 ```
 
@@ -268,8 +283,8 @@ tools = toolset.fetch_tools(providers=["linear"])
 ```
 
 > **There is no exclusion syntax.** A leading `!` is just a literal character, so
-> `actions=["*", "!*_delete_*"]` returns **every** tool including all 23 delete
-> tools — the opposite of what it looks like. To keep destructive tools away from
+> `actions=["*", "!*_delete_*"]` returns **every** tool, delete
+> tools included — the opposite of what it looks like. To keep destructive tools away from
 > an agent, filter the result yourself:
 >
 > ```python

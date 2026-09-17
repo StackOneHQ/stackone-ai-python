@@ -37,17 +37,20 @@ skip()    { SKIPPED+=("$1 — $2"); printf '  \033[33mSKIP\033[0m  %s — %s\n' 
 validate_examples() {
     section "examples"
 
-    local ok=1
+    local ok=1 probe_out
     for f in "$SDK"/examples/*.py; do
-        if (cd "$SDK" && uv run --quiet python -c "
+        # Capture rather than discard: a failure used to print a bare filename, so the
+        # one thing needed to fix it — the traceback — was thrown away.
+        if probe_out="$(cd "$SDK" && uv run --quiet python -c "
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location('_probe', '$f')
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-" >/dev/null 2>&1); then
+" 2>&1)"; then
             :
         else
             fail "example imports: $(basename "$f")"
+            sed 's/^/        /' <<<"$probe_out" | tail -15
             ok=0
         fi
     done
@@ -152,7 +155,12 @@ if [ "$failed" -ne 0 ]; then
     exit 1
 fi
 if [ "${#SKIPPED[@]}" -gt 0 ]; then
-    echo -e "\033[32mVALIDATE: PASS\033[0m (with ${#SKIPPED[@]} skipped — see above)"
+    # Say how much actually ran. A bare "PASS" on a machine without the sibling repos
+    # checked out meant one section had run and four had not — nothing in CI runs the
+    # consumer smoke tests, so this headline is the only place that shows up.
+    ran=$(( ${#PASSED[@]} + ${#FAILED[@]} ))
+    total=$(( ran + ${#SKIPPED[@]} ))
+    echo -e "\033[33mVALIDATE: PASS — only ${ran} of ${total} checks ran\033[0m (${#SKIPPED[@]} skipped, see above)"
     exit 0
 fi
 echo -e "\033[32mVALIDATE: PASS\033[0m"

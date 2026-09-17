@@ -66,8 +66,7 @@ def langgraph_integration() -> None:
             "messages": [
                 (
                     "user",
-                    "Use one of your tools to list a few records, then summarise them. Call it with no arguments unless the schema marks a field required. "
-                    "Call it with no arguments unless the schema marks a field required.",
+                    "Use one of your tools to list a few records, then summarise them.",
                 )
             ]
         }

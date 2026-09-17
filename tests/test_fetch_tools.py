@@ -937,3 +937,22 @@ class TestCacheIsolation:
 
         second = toolset.fetch_tools().to_list()[0]
         assert "injected" not in second.parameters.properties["body_x"]["properties"]
+
+
+class TestExecuteReturnShape:
+    def test_execute_unwraps_the_meta_tool_envelope(self, monkeypatch):
+        """Both surfaces return the payload itself, not a wrapper whose flag is always False."""
+        from stackone_ai.tools import StackOneMcpTool
+
+        def fake_execute(self, arguments):
+            return {"isError": False, "result": {"data": {"nodes": [1, 2]}}}
+
+        monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h: [
+                McpToolDefinition(name="linear_acc1_execute_action", description="", input_schema={})
+            ],
+        )
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        assert toolset.execute("linear_list_issues") == {"data": {"nodes": [1, 2]}}

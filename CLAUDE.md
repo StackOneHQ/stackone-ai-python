@@ -6,8 +6,8 @@ this file, so Claude Code, Cursor and other agents read the same instructions.
 ## Project Overview
 
 StackOne AI SDK is a Python library providing a unified interface for accessing SaaS
-tools through AI-friendly APIs, with support for OpenAI, LangChain, CrewAI and the
-Model Context Protocol (MCP).
+tools through AI-friendly APIs, with support for OpenAI, LangChain, LangGraph,
+Pydantic AI and the Model Context Protocol (MCP).
 
 Requires Python >= 3.11.
 
@@ -17,14 +17,33 @@ The package is three modules. The guiding property is that **the toolset is the
 served catalog** — the schema listed to a model is the schema the MCP server sent,
 and the request sent to `/actions/rpc` matches it. Nothing invented, nothing lost.
 
-1. **`types.py`** — `ToolParameters`, `ExecuteConfig`, `ParameterLocation`, the error
-   hierarchy, shared aliases and `DEFAULT_BASE_URL`.
-2. **`tools.py`** — `StackOneTool` (execution + framework converters), `Tools`
-   (container), `StackOneRpcTool` (the RPC envelope), and the MCP listing client.
-3. **`toolset.py`** — `StackOneToolSet`: fetches the catalog and exposes it.
+1. **`types.py`** — `ToolParameters`, `ToolMode`, the error hierarchy, filename
+   sanitising, shared aliases and `DEFAULT_BASE_URL`.
+2. **`tools.py`** — `StackOneTool` (execution, header sanitising, framework
+   converters), `Tools` (container), `StackOneRpcTool` (per-action tools over
+   `/actions/rpc`), `StackOneMcpTool` (meta tools over MCP `tools/call`), and the
+   MCP client.
+3. **`toolset.py`** — `StackOneToolSet`: account discovery, the cached catalog,
+   `search()` and `execute()`.
 
-Tools come from the MCP endpoint (`/mcp?param-style=flat_prefixed`) and execute
-against `/actions/rpc`. There is no OpenAPI parsing and no client-side search.
+Tools are listed from `/mcp?param-style=flat_prefixed`. An API key alone is enough:
+with no account given, `GET /accounts` is called and every `active` account is used.
+There is no OpenAPI parsing and no client-side search.
+
+### Two calling surfaces
+
+The same actions are reachable two ways, with **different argument shapes**:
+
+- `toolset.search()` + `toolset.execute(action_id, args)` drives the per-connector
+  `_search_actions` / `_execute_action` meta tools (`?tool-mode=search_execute`).
+  Arguments are the **nested** envelope: `{"body": {"variables": {...}}}`.
+- `toolset.fetch_tools()` + `tool.execute(args)` uses per-action tools over
+  `/actions/rpc`. Arguments are **flat-prefixed**: `body_variables`, `path_id`.
+
+Both return the payload itself. The server **silently drops** arguments that do not
+match the schema — a wrong key returns a normal-looking success with your filter
+ignored. Flat keys passed to `toolset.execute()` fail this way; nested keys passed to
+a `fetch_tools()` tool are accepted.
 
 ## Commands
 
@@ -94,6 +113,18 @@ import, never in core.
 - Examples are type-checked against the current SDK by `make validate` and in CI;
   each must fail loudly rather than succeed with an empty catalog
 
+**Test doubles must model what the server demands, not what the client happens to
+send.** The SDK once shipped unable to list a single tool while every test passed,
+because the mock defaulted a missing `x-account-id` to `'default'` — inventing an
+account the real API would have rejected. The mock now 400s an unscoped `/mcp` or
+`/actions/rpc` request and 404s an unknown account. When adding a mock behaviour,
+make it refuse what the real API refuses. A fake whose signature has no failure mode
+cannot catch a bug.
+
+Verify live behaviour against a real key before claiming it works — a green suite is
+not evidence. Put credentials in the gitignored `.env` and run
+`uv run --env-file .env python ...`.
+
 Integration tests exercise an MCP mock server (`tests/mocks/`) that runs under `tsx`:
 
 ```bash
@@ -159,28 +190,43 @@ via release-please after a merge to main, never from a developer machine.
 ## Key Patterns
 
 ```python
-# Tool filtering via glob patterns
-tools = toolset.fetch_tools(actions=["bamboohr_*"], providers=["bamboohr"])
+toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
 
-# Authentication
-toolset = StackOneToolSet(
-    api_key="your-api-key",   # or STACKONE_API_KEY env var
-    account_id="optional-id",
-)
+hits = toolset.search("list recent comments", top_k=3)
+toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
+
+tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ```
+
+- `providers` matches a full connector prefix, case-insensitively. `actions` is a
+  case-sensitive glob. **A leading `!` is not exclusion syntax** — it is a literal
+  character, so `["*", "!*_delete_*"]` matches every tool.
+- `top_k` is per connector, and must be 1..50.
 
 ## Important Considerations
 
-- **Error handling**: custom exceptions (`StackOneError`, `StackOneAPIError`) in `types.py`
-- **File downloads**: non-JSON responses return raw bytes plus metadata, not decoded text
+- **Error handling**: `StackOneError`/`StackOneAPIError` and `ToolsetError`/
+  `ToolsetConfigError`/`ToolsetLoadError` are two **unrelated** hierarchies in
+  `types.py`. `str(StackOneAPIError)` leads with the server's own message.
+- **File downloads**: non-JSON responses return raw bytes plus metadata. The filename
+  comes from an attacker-controllable header and is reduced to a safe basename.
+- **Headers**: model-supplied headers are an **allowlist** driven by the served
+  schema — only a declared `headers_*` property passes. Match header grammar with
+  `fullmatch`, never `match`: `$` also matches before a trailing newline, so `match`
+  lets `"value\n"` through.
 
 ### Modifying Tool Behaviour
 
 - Core execution logic: `StackOneTool.execute()` in `tools.py`
 - RPC envelope split: `StackOneRpcTool._split_envelope_params`
-- HTTP configuration: `ExecuteConfig` in `types.py`
+- Meta-tool execution: `StackOneMcpTool.execute()` and `StackOneToolSet.execute()`
 
 Schemas must reach the model intact. `to_openai_function` passes the served schema
 through verbatim, stripping only the SDK's internal `nullable` marker (which becomes
-the JSON Schema `required` list). Do not reintroduce an allowlist — the conformance
-suite's `--strict-schema` gate checks exactly this.
+the JSON Schema `required` list). `to_langchain` and `to_pydantic_ai_tool` hand over
+that same schema — never rebuild one from property types, which silently loses every
+nested field, enum and bound. The conformance suite's `--strict-schema` gate checks
+the OpenAI surface.
+
+The ADK plugin reads `ToolParameters.properties` directly and re-derives `required`
+from the `nullable` marker, so renaming that marker breaks it.

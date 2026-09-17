@@ -403,7 +403,15 @@ class StackOneToolSet:
             # action_id LAST. Spreading arguments over it let a model-supplied
             # "action_id" silently replace the action the caller pinned — the exact
             # thing a host app pins it for.
-            return tool.execute({**(arguments or {}), "action_id": action_id})
+            result = tool.execute({**(arguments or {}), "action_id": action_id})
+            # The meta tool wraps its payload as {"isError": ..., "result": ...}, but an
+            # isError response has already raised by this point — so the flag could
+            # only ever be False, and the wrapper just made this surface return a
+            # different shape from tool.execute() for the same action. Unwrap it.
+            if isinstance(result, dict) and set(result) == {"isError", "result"}:
+                inner = result["result"]
+                return inner if isinstance(inner, dict) else {"result": inner}
+            return result
 
         raise ToolsetLoadError(
             f'No connector found for "{action_id}". Use search() to discover valid action ids.'

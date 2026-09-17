@@ -50,10 +50,7 @@ def langchain_integration() -> None:
     model = ChatOpenAI(model="gpt-5.4")  # ty: ignore[unknown-argument]
     model_with_tools = model.bind_tools(langchain_tools)
 
-    result = model_with_tools.invoke(
-        "Use one of your tools to list a few records, then summarise them. Call it with no arguments unless the schema marks a field required. "
-        "Call it with no arguments unless the schema marks a field required."
-    )
+    result = model_with_tools.invoke("Use one of your tools to list a few records, then summarise them.")
     print(f"LLM response: {result.content}")
 
     if result.tool_calls:

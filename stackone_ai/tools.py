@@ -693,6 +693,7 @@ class StackOneTool(BaseModel):
         Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
         """
         try:
+            from pydantic_ai.exceptions import ModelRetry
             from pydantic_ai.tools import Tool
         except ImportError as e:
             raise ImportError(
@@ -705,7 +706,16 @@ class StackOneTool(BaseModel):
         parent_tool = self
 
         def implementation(**kwargs: Any) -> Any:
-            return parent_tool.execute(kwargs)
+            try:
+                return parent_tool.execute(kwargs)
+            except (StackOneError, ValueError) as exc:
+                # Tool.from_schema skips argument validation entirely, so every wrong
+                # guess the model makes reaches the API — and a raised StackOneError
+                # escaped the agent loop and ended the run. ModelRetry hands the
+                # server's explanation back to the model so it can correct itself,
+                # which is what the LangChain adapter already does via ToolException.
+                body = getattr(exc, "response_body", None)
+                raise ModelRetry(f"{exc}: {body}" if body else str(exc)) from exc
 
         return Tool.from_schema(
             function=implementation,

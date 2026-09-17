@@ -55,8 +55,7 @@ def search_and_execute() -> None:
     print(json.dumps(best.get("input_schema", {}), indent=2)[:600])
 
     result = toolset.execute(best["action_id"], {"body": {"variables": {"first": 2}}})
-    print(f"\nisError: {result['isError']}")
-    print(f"result: {json.dumps(result['result'], default=str)[:300]}...")
+    print(f"\nresult: {json.dumps(result, default=str)[:300]}...")
 
 
 if __name__ == "__main__":

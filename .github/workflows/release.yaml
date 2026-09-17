@@ -5,19 +5,38 @@ on:
     branches:
       - main
 
+# Two merges in quick succession would otherwise start two runs that both mutate
+# the release PR and, across a tag boundary, both reach `uv publish`. Queue rather
+# than cancel: cancelling a half-finished publish is worse than waiting.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
     steps:
       - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         id: release
         with:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # State which branch was taken. Every later step keys on these outputs, so if
+      # release-please ever renames them the run would otherwise go green having
+      # silently done nothing.
+      - name: Report release-please outcome
+        run: |
+          echo "release_created=${{ steps.release.outputs.release_created }}"
+          echo "pr_updated=${{ steps.release.outputs.pr != '' }}"
 
       # Update uv.lock when release PR is created/updated
       - name: Checkout repository (for PR update)
@@ -44,17 +63,46 @@ jobs:
             git push
           fi
 
-      # Only release to PyPI when a new release is created
+  # Publishing lives in its own job so it can be gated. It previously ran in the
+  # release-please job with no dependency on CI at all: CI is a separate workflow,
+  # so a red main still merged the release PR and shipped to PyPI. The suite runs
+  # again here against the exact commit being published.
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    # Configure a required reviewer on this environment in the repository settings.
+    environment: pypi
+    permissions:
+      contents: read
+    steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        if: ${{ steps.release.outputs.release_created }}
+        with:
+          persist-credentials: false
 
       - name: Setup uv
-        if: ${{ steps.release.outputs.release_created }}
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --locked
+          pnpm install --frozen-lockfile
+
+      - name: Test the commit being published
+        run: uv run pytest
 
       - name: Build and publish package
-        if: ${{ steps.release.outputs.release_created }}
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
