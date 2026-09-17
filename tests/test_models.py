@@ -911,3 +911,79 @@ class TestOpenAISchemaPassThrough:
         props = tool.to_openai_function()["function"]["parameters"]["properties"]
 
         assert "nullable" not in props["obj"]["properties"]["inner"]
+
+
+class TestExecuteOpenAIToolCalls:
+    """Tools.execute_openai_tool_calls: model tool calls in, `tool` messages out."""
+
+    @staticmethod
+    def _tools(monkeypatch, behaviour):
+        from stackone_ai.tools import StackOneRpcTool
+
+        tool = StackOneRpcTool(
+            name="linear_list_issues",
+            description="",
+            parameters=ToolParameters(type="object", properties={"body_variables": {"type": "object"}}),
+            api_key="k",
+            base_url="https://api.example.com",
+            account_id="acc1",
+        )
+        monkeypatch.setattr(StackOneRpcTool, "execute", lambda _self, arguments=None: behaviour(arguments))
+        return Tools([tool])
+
+    def test_runs_each_call_and_pairs_the_result_with_its_id(self, monkeypatch):
+        seen: list[object] = []
+        tools = self._tools(monkeypatch, lambda args: seen.append(args) or {"data": {"n": 1}})
+
+        messages = tools.execute_openai_tool_calls(
+            [
+                {
+                    "id": "call_1",
+                    "function": {"name": "linear_list_issues", "arguments": '{"body_variables": {}}'},
+                }
+            ]
+        )
+
+        assert messages == [{"role": "tool", "tool_call_id": "call_1", "content": '{"data": {"n": 1}}'}]
+        assert seen == ['{"body_variables": {}}']
+
+    def test_accepts_openai_sdk_objects(self, monkeypatch):
+        from types import SimpleNamespace
+
+        tools = self._tools(monkeypatch, lambda _args: {"ok": True})
+        call = SimpleNamespace(
+            id="call_2", function=SimpleNamespace(name="linear_list_issues", arguments="{}")
+        )
+        assert tools.execute_openai_tool_calls([call])[0]["tool_call_id"] == "call_2"
+
+    def test_a_failed_call_is_reported_to_the_model_not_raised(self, monkeypatch):
+        def reject(_args):
+            raise StackOneAPIError("400 Bad Request", 400, {"message": "path.id is missing"})
+
+        tools = self._tools(monkeypatch, reject)
+        [message] = tools.execute_openai_tool_calls(
+            [{"id": "c", "function": {"name": "linear_list_issues", "arguments": "{}"}}]
+        )
+        assert "path.id is missing" in message["content"]
+
+    def test_an_unknown_tool_is_reported_not_raised(self, monkeypatch):
+        tools = self._tools(monkeypatch, lambda _args: {})
+        [message] = tools.execute_openai_tool_calls(
+            [{"id": "c", "function": {"name": "invented_tool", "arguments": "{}"}}]
+        )
+        assert "Unknown tool" in message["content"]
+
+    def test_binary_results_serialise_instead_of_crashing(self, monkeypatch):
+        """A download returns raw bytes, which json.dumps cannot encode."""
+        import base64
+        import json
+
+        tools = self._tools(monkeypatch, lambda _args: {"content": b"%PDF-1.4"})
+        [message] = tools.execute_openai_tool_calls(
+            [{"id": "c", "function": {"name": "linear_list_issues", "arguments": "{}"}}]
+        )
+        assert json.loads(message["content"])["content"] == base64.b64encode(b"%PDF-1.4").decode()
+
+    def test_no_tool_calls_is_no_messages(self, monkeypatch):
+        tools = self._tools(monkeypatch, lambda _args: {})
+        assert tools.execute_openai_tool_calls(None) == []

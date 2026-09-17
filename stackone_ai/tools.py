@@ -15,7 +15,7 @@ import logging
 import re
 import threading
 from collections import Counter
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Iterable, Sequence
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, TypeVar, cast
@@ -972,6 +972,23 @@ class StackOneMcpTool(StackOneTool):
         )
 
 
+def _read_openai_tool_call(call: Any) -> tuple[str, str, str | JsonDict]:
+    """Pull (id, name, arguments) from an openai ToolCall object or its dict form."""
+    if isinstance(call, dict):
+        function = call.get("function") or {}
+        return str(call.get("id", "")), str(function.get("name", "")), function.get("arguments") or {}
+    function = call.function
+    return str(call.id), str(function.name), function.arguments or {}
+
+
+def _json_default(value: Any) -> Any:
+    """Serialise what json cannot. A file download returns raw bytes, which would
+    otherwise crash json.dumps — base64 keeps the content intact for the model."""
+    if isinstance(value, bytes):
+        return base64.b64encode(value).decode("ascii")
+    return str(value)
+
+
 class Tools:
     """Container for Tool instances with lookup capabilities"""
 
@@ -1032,6 +1049,40 @@ class Tools:
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format"""
         return [tool.to_openai_function() for tool in self.tools]
+
+    def execute_openai_tool_calls(self, tool_calls: Iterable[Any] | None) -> list[JsonDict]:
+        """Run a Chat Completions response's tool calls and return the ``tool`` messages.
+
+        The counterpart to :meth:`to_openai`: that turns these tools into what OpenAI
+        accepts, this turns what OpenAI returns back into messages to send it. Append
+        the assistant message first, then these, in order::
+
+            message = response.choices[0].message
+            messages.append(message.model_dump(exclude_none=True))
+            messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
+
+        A failed call does not raise. Its error becomes the tool message's content, so
+        the model can read why and retry — the same thing the LangChain and Pydantic AI
+        adapters do. A call to a tool that is not in this collection is reported the
+        same way.
+
+        Accepts the ``openai`` package's objects or plain dicts, so it needs no extra.
+        """
+        messages: list[JsonDict] = []
+        for call in tool_calls or []:
+            call_id, name, arguments = _read_openai_tool_call(call)
+            tool = self.get_tool(name)
+            if tool is None:
+                result: Any = {"error": f"Unknown tool {name!r}"}
+            else:
+                try:
+                    result = tool.execute(arguments)
+                except (StackOneError, ValueError) as exc:
+                    body = getattr(exc, "response_body", None)
+                    result = {"error": str(exc), **({"response_body": body} if body else {})}
+            content = json.dumps(result, default=_json_default)
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": content})
+        return messages
 
     def to_langchain(self) -> Sequence[Any]:
         """Convert all tools to LangChain format.

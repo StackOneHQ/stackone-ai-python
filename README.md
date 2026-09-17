@@ -71,7 +71,6 @@ Each has a matching runnable script in [examples/](examples/).
 Needs no `stackone-ai` extra — just `uv add openai`.
 
 ```python
-import json
 from openai import OpenAI
 from stackone_ai import StackOneToolSet
 
@@ -86,14 +85,14 @@ response = client.chat.completions.create(
 )
 
 message = response.choices[0].message
-messages.append(message.model_dump(exclude_none=True))  # the assistant turn must precede its tool results
-for call in message.tool_calls or []:
-    tool = tools.get_tool(call.function.name)
-    result = tool.execute(call.function.arguments)   # accepts the raw JSON string
-    messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
+messages.append(message.model_dump(exclude_none=True))   # the assistant turn comes first
+messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 ```
 
-`to_openai()` emits Chat Completions function tools. Chat Completions accepts at
+`to_openai()` emits Chat Completions function tools, and
+`execute_openai_tool_calls()` runs the calls the model makes and returns the `tool`
+messages to send back. A failed call becomes an error message the model can read and
+retry from, rather than an exception. Chat Completions accepts at
 most **128 tools**, so filter before binding. See
 [examples/openai_integration.py](examples/openai_integration.py) for the full
 round trip, including feeding results back for a final answer.

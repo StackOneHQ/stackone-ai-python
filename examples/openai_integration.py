@@ -20,7 +20,6 @@ You can find out more about the OpenAI Function Calling API format
 
 from __future__ import annotations
 
-import json
 import sys
 
 try:
@@ -32,25 +31,8 @@ except ModuleNotFoundError:
 
 from openai import OpenAI
 
-from stackone_ai import StackOneToolSet, Tools
+from stackone_ai import StackOneToolSet
 from stackone_ai.types import StackOneError, ToolsetError
-
-
-def handle_tool_calls(tools: Tools, tool_calls: list) -> list[dict]:
-    """Run each tool call the model asked for, returning one result per call."""
-    results: list[dict] = []
-    for tool_call in tool_calls:
-        tool = tools.get_tool(tool_call.function.name)
-        if tool is None:
-            results.append({"error": f"model called unknown tool {tool_call.function.name}"})
-            continue
-        try:
-            results.append(tool.execute(tool_call.function.arguments))
-        except StackOneError as exc:
-            # Hand the failure back to the model rather than crashing the loop:
-            # it can retry with different arguments or explain what went wrong.
-            results.append({"error": str(exc)})
-    return results
 
 
 def openai_integration() -> None:
@@ -92,13 +74,12 @@ def openai_integration() -> None:
     for tc in tool_calls:
         print(f"  - {tc.function.name}({tc.function.arguments})")
 
-    results = handle_tool_calls(tools, tool_calls)
-    for i, result in enumerate(results):
-        print(f"  Result {i + 1}: {str(result)[:200]}...")
-
+    # The assistant turn must come before its tool results, or OpenAI returns a 400.
     messages.append(response.choices[0].message.model_dump(exclude_none=True))
-    for tc, result in zip(tool_calls, results, strict=False):
-        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)})
+    tool_messages = tools.execute_openai_tool_calls(tool_calls)
+    for message in tool_messages:
+        print(f"  Result: {message['content'][:200]}...")
+    messages.extend(tool_messages)
 
     final_response = client.chat.completions.create(
         model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
