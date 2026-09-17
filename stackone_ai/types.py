@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from enum import Enum
 from typing import Annotated, Any, Literal, TypeAlias, TypedDict
@@ -105,6 +106,22 @@ def is_json_content_type(content_type: str) -> bool:
     return media_type == "application/json" or media_type.endswith("+json")
 
 
+def _safe_basename(name: str | None) -> str | None:
+    """Reduce a server-supplied filename to a bare, writable basename.
+
+    The value comes from a remote ``Content-Disposition``, which in practice is chosen
+    by whoever uploaded the file to the connected provider — so it is attacker-controlled.
+    Returned unsanitised it is an arbitrary-file-write primitive for any caller that does
+    the obvious thing and passes it to ``open()``: ``../../.ssh/authorized_keys`` and
+    ``/etc/cron.d/x`` both round-trip. The RFC 5987 branch percent-decodes, so a filter
+    applied before this point would be bypassed anyway; sanitise last, here, once.
+    """
+    if name is None:
+        return None
+    base = os.path.basename(name.replace("\\", "/")).replace("\x00", "").strip()
+    return base if base not in ("", ".", "..") else None
+
+
 def filename_from_content_disposition(value: str | None) -> str | None:
     """Extract the filename from a Content-Disposition header value, if present.
 
@@ -120,16 +137,16 @@ def filename_from_content_disposition(value: str | None) -> str | None:
         charset = extended.group(1).strip() or "utf-8"
         encoded = extended.group(2).strip().strip('"')
         try:
-            return unquote(encoded, encoding=charset, errors="replace") or None
+            return _safe_basename(unquote(encoded, encoding=charset, errors="replace"))
         except LookupError:
             # Unrecognised charset label - decode as UTF-8 rather than failing.
-            return unquote(encoded, encoding="utf-8", errors="replace") or None
+            return _safe_basename(unquote(encoded, encoding="utf-8", errors="replace"))
     quoted = re.search(r'filename\s*=\s*"([^"]*)"', value, re.IGNORECASE)
     if quoted:
-        return quoted.group(1).strip() or None
+        return _safe_basename(quoted.group(1))
     bare = re.search(r"filename\s*=\s*([^;]+)", value, re.IGNORECASE)
     if bare:
-        return bare.group(1).strip().strip('"') or None
+        return _safe_basename(bare.group(1).strip('"'))
     return None
 
 

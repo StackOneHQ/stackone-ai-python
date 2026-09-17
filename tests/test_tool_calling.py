@@ -570,3 +570,52 @@ class TestResponseHelpers:
     )
     def test_filename_from_content_disposition(self, header, expected):
         assert filename_from_content_disposition(header) == expected
+
+
+class TestEnvelopeSplitIsSchemaAware:
+    """The prefix pattern alone cannot tell a path param from a body field that
+    happens to start with "path_". The served schema settles it."""
+
+    @pytest.fixture
+    def rpc_tool(self):
+        return StackOneRpcTool(
+            name="test_action",
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="test_api_key",
+            base_url=TEST_BASE_URL,
+            account_id="test-account",
+        )
+
+    def test_undeclared_prefix_lookalike_stays_in_the_body(self, rpc_tool):
+        declared = {"body_path_to_file", "path_id"}
+        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x", "path_id": "1"}, declared)
+        assert actual["body"] == {"path_to_file": "/tmp/x"}
+        assert actual["path"] == {"id": "1"}
+
+    def test_no_schema_trusts_every_match(self, rpc_tool):
+        """Direct callers without a schema keep the old, purely pattern-based behaviour."""
+        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x"})
+        assert actual["path"] == {"to_file": "/tmp/x"}
+
+    def test_scalar_under_a_reserved_key_is_rejected_not_dropped(self, rpc_tool):
+        with pytest.raises(ValueError, match="envelope container"):
+            rpc_tool._split_envelope_params({"query": "not-an-object"})
+
+    def test_precedence_does_not_depend_on_caller_key_order(self, rpc_tool):
+        """flat_prefixed beats nested beats bare, whatever order the dict is built in."""
+        forwards = rpc_tool._split_envelope_params({"body_foo": 1, "foo": 2})
+        backwards = rpc_tool._split_envelope_params({"foo": 2, "body_foo": 1})
+        assert forwards["body"] == backwards["body"] == {"foo": 1}
+
+        nested_first = rpc_tool._split_envelope_params({"body": {"foo": 9}, "foo": 2})
+        bare_first = rpc_tool._split_envelope_params({"foo": 2, "body": {"foo": 9}})
+        assert nested_first["body"] == bare_first["body"] == {"foo": 9}
+
+    def test_empty_schema_falls_back_to_trusting_prefixes(self, rpc_tool):
+        """An empty declared set means "no schema", not "nothing is declared".
+
+        Treating it as an allowlist would route every path_* key into the body and
+        silently drop every path parameter.
+        """
+        assert rpc_tool._split_envelope_params({"path_id": "1"}, set() or None)["path"] == {"id": "1"}

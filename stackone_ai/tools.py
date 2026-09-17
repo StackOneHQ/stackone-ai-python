@@ -62,6 +62,9 @@ _RPC_PARAMETER_LOCATIONS = {
 MCP_PARAM_STYLE = "flat_prefixed"
 
 # Matches a flat_prefixed envelope key: `<location>_<field>` (e.g. `path_id`, `query_limit`).
+_HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]+$")
+_HEADER_VALUE_PATTERN = re.compile(r"^[\x20-\x7e\t]*$")
+
 _FLAT_ENVELOPE_KEY_PATTERN = re.compile(r"^(path|query|body|headers)_(.+)$")
 
 # Added per property by the toolset when normalising a served schema; it records
@@ -374,6 +377,37 @@ class StackOneTool(BaseModel):
 
         return url, body_params, query_params
 
+    # Headers a tool call must never set. Tool arguments are model-controlled, so a
+    # prompt-injected call could otherwise override the caller's credential or the
+    # account the toolset is scoped to. Compared case-insensitively because HTTP
+    # header names are case-insensitive.
+    _RESERVED_HEADERS: ClassVar[frozenset[str]] = frozenset({"authorization", "x-account-id"})
+
+    @classmethod
+    def _sanitise_headers(cls, supplied: dict[str, Any] | None) -> dict[str, str]:
+        """Drop model-supplied headers that must not reach the wire.
+
+        Lives on the base class because both execution paths need it: the guard used to
+        exist only on the RPC tool, while the MCP tool — which is what search_execute
+        mode returns, and therefore what the documented search()/execute() flow uses —
+        forwarded the model's `headers` object verbatim.
+        """
+        clean: dict[str, str] = {}
+        for key, value in (supplied or {}).items():
+            if value is None:
+                continue
+            # Normalise before comparing: " authorization" and "AUTHORIZATION\t" are the
+            # same header to any server, and casefold() closes the non-ASCII folding
+            # holes that lower() leaves open.
+            name = str(key).strip()
+            if not name or name.casefold() in cls._RESERVED_HEADERS:
+                continue
+            if not _HEADER_NAME_PATTERN.match(name) or not _HEADER_VALUE_PATTERN.match(str(value)):
+                # Anything outside the RFC 7230 grammar — CR/LF above all — is injection.
+                continue
+            clean[name] = str(value)
+        return clean
+
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
         """Execute the tool with the given parameters
 
@@ -422,9 +456,25 @@ class StackOneTool(BaseModel):
             response = httpx.request(**request_kwargs, timeout=self._execute_config.timeout)
             response.raise_for_status()
 
+            if response.status_code in (204, 205) or not response.content:
+                # A bodyless success is not a file download. Falling through would return
+                # `content: b""` with a made-up octet-stream type, which then breaks any
+                # caller that re-serialises the result for a model.
+                return {"status_code": response.status_code}
+
             content_type = response.headers.get("content-type", "")
             if is_json_content_type(content_type):
-                result = response.json()
+                try:
+                    result = response.json()
+                except json.JSONDecodeError as exc:
+                    # Not the caller's arguments — the server sent a JSON content type
+                    # with a body that is not JSON. Saying "invalid JSON in arguments"
+                    # here sends people to debug the wrong end of the call.
+                    raise StackOneAPIError(
+                        f"Server sent malformed JSON for {self.name!r}: {exc}",
+                        response.status_code,
+                        response.text[:500],
+                    ) from exc
                 return cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
 
             # Non-JSON bodies are file downloads (e.g. documents_download_file), which the
@@ -624,12 +674,6 @@ class StackOneTool(BaseModel):
 class StackOneRpcTool(StackOneTool):
     """RPC-backed tool wired to the StackOne actions RPC endpoint."""
 
-    # Headers a tool call must never set. Tool arguments are model-controlled, so a
-    # prompt-injected call could otherwise override the caller's credential or the
-    # account the toolset is scoped to. Compared case-insensitively because HTTP
-    # header names are case-insensitive.
-    _RESERVED_HEADERS: ClassVar[frozenset[str]] = frozenset({"authorization", "x-account-id"})
-
     def __init__(
         self,
         *,
@@ -660,7 +704,7 @@ class StackOneRpcTool(StackOneTool):
 
     def execute(self, arguments: str | dict[str, Any] | None = None) -> dict[str, Any]:
         parsed_arguments = self._parse_arguments(arguments)
-        envelope = self._split_envelope_params(parsed_arguments)
+        envelope = self._split_envelope_params(parsed_arguments, set(self.parameters.properties) or None)
 
         payload: dict[str, Any] = {
             "action": self.name,
@@ -686,14 +730,28 @@ class StackOneRpcTool(StackOneTool):
         return dict(parsed)
 
     @staticmethod
-    def _split_envelope_params(params: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    def _split_envelope_params(
+        params: dict[str, Any], declared: set[str] | None = None
+    ) -> dict[str, dict[str, Any]]:
         """Split LLM-supplied tool arguments into the RPC envelope (path/query/headers/body).
 
         Tools are listed with ``?param-style=flat_prefixed``, so keys arrive as
-        ``<location>_<field>`` (for example ``path_id``, ``query_limit``). The prefix carries
-        the parameter location, so the split needs no per-action schema. A bare dict-valued
-        ``path``/``query``/``headers``/``body`` key is still bucketed for clients holding a
-        cached nested schema, and any other key falls through to the body.
+        ``<location>_<field>`` (for example ``path_id``, ``query_limit``) and the prefix
+        carries the parameter location. A bare dict-valued ``path``/``query``/``headers``/
+        ``body`` key is still bucketed for clients holding a cached nested schema, and any
+        other key falls through to the body.
+
+        ``declared`` is the served schema's property names. The prefix is stripped only from
+        a key the server actually declared, because the pattern alone cannot tell
+        ``path_id`` (a path param) from ``path_to_file`` (a body field that merely starts
+        with "path_"). Splitting the latter would drop the argument from the body and send
+        the server a path component it has no use for — silently, with the model none the
+        wiser.
+
+        ``None`` means "no schema to consult" and trusts every match. An EMPTY set must
+        mean the same thing, not "nothing is declared": a served schema with no usable
+        ``properties`` would otherwise route every ``path_*`` key into the body and lose
+        every path parameter — silently, which is worse than the ambiguity this guards.
         """
         buckets: dict[str, dict[str, Any]] = {"path": {}, "query": {}, "headers": {}, "body": {}}
         reserved = ("path", "query", "headers", "body")
@@ -701,34 +759,38 @@ class StackOneRpcTool(StackOneTool):
         # Two passes so precedence is deterministic rather than following the caller's
         # dict order: an explicit flat_prefixed key always wins over a nested one.
         nested: list[tuple[str, dict[str, Any]]] = []
+        bare: list[tuple[str, Any]] = []
         for key, value in params.items():
             match = _FLAT_ENVELOPE_KEY_PATTERN.match(key)
-            if match:
+            if match and (declared is None or key in declared):
                 buckets[match.group(1)][match.group(2)] = value
                 continue
             if key in reserved:
                 # Reserved keys are containers. A scalar here is malformed input, not a
                 # body field — putting it in the body would smuggle `path` into the payload.
-                if isinstance(value, dict):
-                    nested.append((key, value))
+                if not isinstance(value, dict):
+                    raise ValueError(
+                        f"{key!r} is an envelope container and must be an object, "
+                        f"got {type(value).__name__}. Did you mean {key}_<field>?"
+                    )
+                nested.append((key, value))
                 continue
-            buckets["body"][key] = value
+            bare.append((key, value))
 
+        # Deferred so precedence is a property of the KIND of key, not of the caller's
+        # dict order: flat_prefixed beats nested beats bare, always. Assigning bare keys
+        # in the first pass made {"body_foo": 1, "foo": 2} and {"foo": 2, "body_foo": 1}
+        # produce different wire bodies — and the Node SDK a third, breaking the
+        # cross-language byte-equality the conformance suite asserts.
         for key, value in nested:
             for field, field_value in value.items():
                 buckets[key].setdefault(field, field_value)
+        for key, value in bare:
+            buckets["body"].setdefault(key, value)
         return buckets
 
     def _build_action_headers(self, additional_headers: dict[str, Any] | None) -> dict[str, str]:
-        headers: dict[str, str] = {}
-
-        if additional_headers:
-            for key, value in additional_headers.items():
-                if value is None:
-                    continue
-                if str(key).lower() in self._RESERVED_HEADERS:
-                    continue
-                headers[str(key)] = str(value)
+        headers = self._sanitise_headers(additional_headers)
 
         account_id = self.get_account_id()
         if account_id:
@@ -774,6 +836,15 @@ class StackOneMcpTool(StackOneTool):
             parsed = arguments or {}
         if not isinstance(parsed, dict):
             raise ValueError("Tool arguments must be a JSON object")
+
+        # The meta tools take a `headers` object in the envelope, and these arguments
+        # are model-controlled. Without this, a prompt-injected call could put its own
+        # Authorization or x-account-id in the envelope the server unpacks — the guard
+        # the RPC path has had all along, on the path search()/execute() actually use.
+        supplied_headers = parsed.get("headers")
+        if isinstance(supplied_headers, dict):
+            parsed = {**parsed, "headers": self._sanitise_headers(supplied_headers)}
+
         return call_mcp_tool(self._endpoint, self._mcp_headers, self.name, parsed)
 
 

@@ -483,7 +483,12 @@ class TestCatalogCache:
         toolset.fetch_tools(account_ids=["a"])
         assert calls["count"] == 2
 
-    def test_provider_and_action_filters_participate_in_cache_key(self, monkeypatch):
+    def test_filters_are_applied_to_one_cached_listing(self, monkeypatch):
+        """Filtering is local, so changing a filter must not re-fetch the catalog.
+
+        The cache holds what the server listed for an account scope; providers and
+        actions narrow that list in memory.
+        """
         calls = {"count": 0}
 
         def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[McpToolDefinition]:
@@ -496,12 +501,12 @@ class TestCatalogCache:
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
-        toolset.fetch_tools()
-        toolset.fetch_tools(providers=["prov"])
-        toolset.fetch_tools(providers=["prov"])
-        toolset.fetch_tools(actions=["*_list_*"])
+        assert len(toolset.fetch_tools()) == 2
+        assert len(toolset.fetch_tools(providers=["prov"])) == 1
+        assert len(toolset.fetch_tools(providers=["prov"])) == 1
+        assert len(toolset.fetch_tools(actions=["*_list_*"])) == 1
 
-        assert calls["count"] == 3
+        assert calls["count"] == 1
 
     def test_clear_catalog_cache_forces_refetch(self, monkeypatch):
         calls = {"count": 0}

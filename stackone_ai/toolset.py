@@ -24,6 +24,7 @@ from stackone_ai.tools import (
 from stackone_ai.types import (
     DEFAULT_BASE_URL,
     ExecuteToolsConfig,
+    Headers,
     JsonDict,
     StackOneAPIError,
     StackOneError,
@@ -35,6 +36,12 @@ from stackone_ai.types import (
 )
 
 logger = logging.getLogger("stackone.tools")
+
+_UNSET = object()
+"""Sentinel: `mode=None` is a real mode (individual), so it cannot mean "use the default"."""
+
+# The search_actions meta tool's served schema caps top_k at 50.
+_MAX_TOP_K = 50
 
 
 class StackOneToolSet:
@@ -82,11 +89,18 @@ class StackOneToolSet:
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
-        self._account_ids: list[str] = execute.get("account_ids", []) if execute else []
+        self._account_ids: list[str] = list(execute.get("account_ids", [])) if execute else []
         self._execute_config: ExecuteToolsConfig | None = execute
         execute_timeout = execute.get("timeout") if execute else None
-        self._timeout: float = timeout if timeout is not None else (execute_timeout or 60.0)
-        self._catalog_cache: dict[tuple[Any, ...], Tools] = {}
+        self._timeout: float = (
+            timeout if timeout is not None else (execute_timeout if execute_timeout is not None else 60.0)
+        )
+        # Cache the listing, not the Tools wrapper. StackOneTool objects are mutable
+        # (Tools.set_account_id rebinds them), so handing the same instances back on a
+        # cache hit let one caller silently rescope every later caller's tools.
+        self._catalog_cache: dict[
+            tuple[Any, ...], list[tuple[McpToolDefinition, str | None, str, Headers]]
+        ] = {}
         self._discovered_account_ids: list[str] | None = None
         self._tool_mode: ToolMode | None = tool_mode
 
@@ -115,6 +129,7 @@ class StackOneToolSet:
         account_ids: list[str] | None = None,
         providers: list[str] | None = None,
         actions: list[str] | None = None,
+        mode: Any = _UNSET,
     ) -> Tools:
         """Fetch tools with optional filtering by account IDs, providers, and actions
 
@@ -137,7 +152,12 @@ class StackOneToolSet:
             tools = toolset.fetch_tools(providers=['hibob', 'bamboohr'])
             tools = toolset.fetch_tools(actions=['*_list_employees'])
         """
+        if isinstance(account_ids, str):
+            raise ToolsetConfigError(
+                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
+            )
         try:
+            mode = self._tool_mode if mode is _UNSET else mode
             effective_account_ids = account_ids or self._account_ids
             if not effective_account_ids and self.account_id:
                 effective_account_ids = [self.account_id]
@@ -146,44 +166,19 @@ class StackOneToolSet:
 
             account_scope: list[str | None] = list(dict.fromkeys(effective_account_ids))
 
-            cache_key = (
-                tuple(sorted(account_scope, key=lambda a: (a is None, a))),
-                tuple(sorted(p.lower() for p in providers)) if providers else None,
-                tuple(sorted(actions)) if actions else None,
-                self._tool_mode,
-            )
+            # Keyed on what was fetched, not on how it is filtered: providers and
+            # actions narrow the list in memory, so they must not force a refetch.
+            # base_url and api_key belong here — leaving them out meant reassigning
+            # either one kept serving the old catalog, still pointed at the old host.
+            cache_key = self._cache_key(account_scope, mode)
             cached = self._catalog_cache.get(cache_key)
-            if cached is not None:
-                return cached
+            if cached is None:
+                cached = self._list_catalog(account_scope, mode)
 
-            endpoint = f"{self.base_url.rstrip('/')}/mcp?param-style={MCP_PARAM_STYLE}"
-            if self._tool_mode:
-                endpoint = f"{endpoint}&tool-mode={self._tool_mode}"
-
-            def _fetch_for_account(account: str | None) -> list[StackOneTool]:
-                headers = self._build_mcp_headers(account)
-                catalog = fetch_mcp_tools(endpoint, headers)
-                return [self._create_tool(tool_def, account, endpoint, headers) for tool_def in catalog]
-
-            all_tools: list[StackOneTool] = []
-            if len(account_scope) == 1:
-                all_tools.extend(_fetch_for_account(account_scope[0]))
-            else:
-                max_workers = min(len(account_scope), 10)
-                failures: list[str] = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-                    futures = {pool.submit(_fetch_for_account, acc): acc for acc in account_scope}
-                    for future, account in futures.items():
-                        try:
-                            all_tools.extend(future.result())
-                        except Exception as exc:
-                            # One unusable account must not cost the caller every other
-                            # account's tools; report which one, keep the rest.
-                            failures.append(f"{account}: {exc}")
-                if failures and not all_tools:
-                    raise ToolsetLoadError("No account returned tools. " + " | ".join(failures))
-                for failure in failures:
-                    logger.warning("Skipping account that failed to list tools — %s", failure)
+            all_tools = [
+                self._create_tool(tool_def, account, endpoint, headers, mode)
+                for tool_def, account, endpoint, headers in cached
+            ]
 
             if providers:
                 all_tools = [tool for tool in all_tools if self._filter_by_provider(tool.name, providers)]
@@ -191,23 +186,73 @@ class StackOneToolSet:
             if actions:
                 all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
 
-            result = Tools(all_tools)
-            self._catalog_cache[cache_key] = result
-            return result
+            return Tools(all_tools)
 
-        except ToolsetError:
+        except (ToolsetError, StackOneError):
+            # StackOneAPIError carries the HTTP status. Re-wrapping it below would throw
+            # that away, so a caller could not tell a 401 from a 429.
             raise
         except Exception as exc:  # pragma: no cover - unexpected runtime errors
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
 
+    def _list_catalog(
+        self, account_scope: list[str | None], mode: ToolMode | None
+    ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
+        """List every scoped account's catalog, tolerating accounts that fail."""
+        endpoint = f"{self.base_url.rstrip('/')}/mcp?param-style={MCP_PARAM_STYLE}"
+        if mode:
+            endpoint = f"{endpoint}&tool-mode={mode}"
+
+        def _fetch_for_account(
+            account: str | None,
+        ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
+            headers = self._build_mcp_headers(account)
+            return [(tool_def, account, endpoint, headers) for tool_def in fetch_mcp_tools(endpoint, headers)]
+
+        listings: list[tuple[McpToolDefinition, str | None, str, Headers]] = []
+        if len(account_scope) == 1:
+            listings.extend(_fetch_for_account(account_scope[0]))
+            self._catalog_cache[self._cache_key(account_scope, mode)] = listings
+            return listings
+
+        failures: list[str] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(account_scope), 10)) as pool:
+            futures = {pool.submit(_fetch_for_account, acc): acc for acc in account_scope}
+            for future, account in futures.items():
+                try:
+                    listings.extend(future.result())
+                except Exception as exc:
+                    # One unusable account must not cost the caller every other
+                    # account's tools; report which one, keep the rest.
+                    failures.append(f"{account}: {exc}")
+        if failures and not listings:
+            raise ToolsetLoadError("No account returned tools. " + " | ".join(failures))
+        for failure in failures:
+            logger.warning("Skipping account that failed to list tools — %s", failure)
+
+        # A degraded catalog must not be cached: the warning fires once, and every later
+        # call would then serve the short list silently, for the life of the process.
+        if not failures:
+            self._catalog_cache[self._cache_key(account_scope, mode)] = listings
+        return listings
+
+    def _cache_key(self, account_scope: list[str | None], mode: ToolMode | None) -> tuple[Any, ...]:
+        return (
+            tuple(sorted(account_scope, key=lambda a: (a is None, a))),
+            mode,
+            self.base_url,
+            self.api_key,
+        )
+
     def _meta_tools(self, suffix: str, account_ids: list[str] | None = None) -> list[StackOneTool]:
-        """The server's per-connector meta tools, regardless of this toolset's mode."""
-        previous = self._tool_mode
-        self._tool_mode = "search_execute"
-        try:
-            tools = self.fetch_tools(account_ids=account_ids)
-        finally:
-            self._tool_mode = previous
+        """The server's per-connector meta tools, regardless of this toolset's mode.
+
+        The mode is passed down rather than assigned to ``self``. Flipping instance
+        state here raced with any concurrent ``fetch_tools()``: that call could read
+        the flipped mode partway through and cache search_execute meta tools under the
+        individual-mode key, permanently, for every later caller.
+        """
+        tools = self.fetch_tools(account_ids=account_ids, mode="search_execute")
         return [tool for tool in tools if tool.name.endswith(suffix)]
 
     def search(
@@ -230,22 +275,46 @@ class StackOneToolSet:
         Returns:
             Action dicts carrying at least ``action_id`` and ``description``.
         """
+        # The server rejects anything outside 1..50, but only after a round trip per
+        # connector — and reports it as a load failure, which reads like an outage
+        # rather than a typo. Fail here instead, where the caller can see why.
+        if not isinstance(top_k, int) or isinstance(top_k, bool) or not 1 <= top_k <= _MAX_TOP_K:
+            raise ToolsetConfigError(f"top_k must be an integer between 1 and {_MAX_TOP_K}, got {top_k!r}")
+
+        tools = self._meta_tools("_search_actions", account_ids)
+        if not tools:
+            return []
+
+        def _search_one(tool: StackOneTool) -> list[JsonDict]:
+            found = tool.execute({"query": query, "top_k": top_k})
+            return list(found.get("actions", []))
+
         results: list[JsonDict] = []
         failures: list[str] = []
-        tools = self._meta_tools("_search_actions", account_ids)
-        for tool in tools:
-            try:
-                found = tool.execute({"query": query, "top_k": top_k})
-            except StackOneError as exc:
-                # One connector erroring must not hide every other connector's
-                # results — the same rule fetch_tools() applies to listing.
-                failures.append(f"{tool.name}: {exc}")
-                continue
-            results.extend(found.get("actions", []))
+        # Fan out the way fetch_tools() does. Serially, a customer with a dozen
+        # connectors pays the sum of every connector's latency on the headline call.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tools), 10)) as pool:
+            futures = {pool.submit(_search_one, tool): tool for tool in tools}
+            for future, tool in futures.items():
+                try:
+                    results.extend(future.result())
+                except Exception as exc:
+                    # Catch everything, as fetch_tools() does. Catching only StackOneError
+                    # let a transport failure — which _describe_mcp_failure reports as a
+                    # ToolsetLoadError — abort the whole search, which is precisely the
+                    # flakiness this guard exists to absorb.
+                    failures.append(f"{tool.name}: {exc}")
+
         if failures and not results:
             raise ToolsetLoadError("No connector returned results. " + " | ".join(failures))
         for failure in failures:
             logger.warning("Skipping connector that failed to search — %s", failure)
+
+        # Concatenating per-connector results leaves the list grouped by connector, so
+        # results[0] would be the best hit of whichever connector answered first rather
+        # than the best hit overall. Rank globally; the server scores every action on the
+        # same scale. Actions without a score sort last rather than raising.
+        results.sort(key=lambda action: action.get("similarity_score") or 0.0, reverse=True)
         return results
 
     def execute(
@@ -267,10 +336,23 @@ class StackOneToolSet:
         Raises:
             ToolsetLoadError: If no connector matches.
         """
-        connector = action_id.split("_")[0].lower()
-        for tool in self._meta_tools("_execute_action", account_ids):
-            if tool.name.split("_")[0].lower() == connector:
-                return tool.execute({"action_id": action_id, **(arguments or {})})
+        if arguments is not None and not isinstance(arguments, dict):
+            raise ToolsetConfigError(f"arguments must be a JSON object, got {type(arguments).__name__}")
+
+        meta_tools = self._meta_tools("_execute_action", account_ids)
+        matches = [
+            tool
+            for tool in meta_tools
+            if action_id.lower().startswith(self._connector_of(tool, "_execute_action") + "_")
+        ]
+        if matches:
+            # Longest connector wins: with both `browser` and `browser_linkedin` linked,
+            # the first token alone would route every browser_linkedin action to browser.
+            tool = max(matches, key=lambda t: len(self._connector_of(t, "_execute_action")))
+            # action_id LAST. Spreading arguments over it let a model-supplied
+            # "action_id" silently replace the action the caller pinned — the exact
+            # thing a host app pins it for.
+            return tool.execute({**(arguments or {}), "action_id": action_id})
 
         raise ToolsetLoadError(
             f'No connector found for "{action_id}". Use search() to discover valid action ids.'
@@ -291,10 +373,22 @@ class StackOneToolSet:
         """
         return self.fetch_tools(account_ids=account_ids).to_pydantic_ai()
 
+    @staticmethod
+    def _connector_of(tool: StackOneTool, suffix: str) -> str:
+        """The connector a meta tool belongs to: its name minus the account id and suffix."""
+        stem = tool.name[: -len(suffix)] if tool.name.endswith(suffix) else tool.name
+        return stem.rsplit("_", 1)[0].lower() if "_" in stem else stem.lower()
+
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
-        """Whether a tool belongs to one of the given providers (case-insensitive)."""
-        connector = tool_name.split("_")[0].lower()
-        return connector in {provider.lower() for provider in providers}
+        """Whether a tool belongs to one of the given providers (case-insensitive).
+
+        Matched as a full prefix rather than on the first underscore-separated token:
+        splitting on "_" reads `browser_linkedin_search_people` as provider `browser`,
+        so asking for `browser_linkedin` returned nothing at all — silently, since an
+        empty result is indistinguishable from a provider with no tools.
+        """
+        lowered = tool_name.lower()
+        return any(lowered.startswith(provider.lower() + "_") for provider in providers)
 
     def _filter_by_action(self, tool_name: str, actions: list[str]) -> bool:
         """Whether a tool name matches any of the given glob patterns."""
@@ -326,7 +420,13 @@ class StackOneToolSet:
             )
         body = response.json()
         accounts = body.get("data", body) if isinstance(body, dict) else body
-        return list(accounts)
+        if not isinstance(accounts, list):
+            # list(dict) yields the KEYS, so coercing here turned an unexpected wrapper
+            # into a list of strings that blew up much later as an AttributeError.
+            raise ToolsetLoadError(
+                f"Unexpected /accounts response shape: expected a list, got {type(accounts).__name__}"
+            )
+        return accounts
 
     def _discover_account_ids(self) -> list[str]:
         """List the linked accounts this API key can use.
@@ -374,6 +474,7 @@ class StackOneToolSet:
         account_id: str | None,
         endpoint: str,
         headers: dict[str, str],
+        mode: ToolMode | None = None,
     ) -> StackOneTool:
         """Build an executable tool from a served catalog entry.
 
@@ -386,7 +487,7 @@ class StackOneToolSet:
             type=str(schema.get("type") or "object"),
             properties=self._normalize_schema_properties(schema),
         )
-        if self._tool_mode == "search_execute":
+        if mode == "search_execute":
             return StackOneMcpTool(
                 name=tool_def.name,
                 description=tool_def.description or "",
@@ -418,7 +519,10 @@ class StackOneToolSet:
         if not isinstance(properties, dict):
             return {}
 
-        required_fields = {str(name) for name in schema.get("required", [])}
+        raw_required = schema.get("required")
+        # A string `required` would iterate as characters and mark every real property
+        # optional; a null would raise and fail the whole catalog over one bad tool.
+        required_fields = {str(name) for name in raw_required} if isinstance(raw_required, list) else set()
         normalized: dict[str, Any] = {}
 
         for name, details in properties.items():
