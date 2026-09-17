@@ -39,7 +39,7 @@ def langgraph_integration() -> None:
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
-        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        actions=["*_list_*"],
         account_ids=[account_id],
     )
 
@@ -53,7 +53,9 @@ def langgraph_integration() -> None:
     model = ChatOpenAI(model="gpt-5.4")
     agent = create_react_agent(model, langchain_tools)
 
-    result = agent.invoke({"messages": [("user", "List the first 5 employees")]})
+    result = agent.invoke(
+        {"messages": [("user", "Use one of your tools to list a few records, then summarise them.")]}
+    )
     final_message = result["messages"][-1]
     print(f"Agent response:\n{final_message.content}")
 

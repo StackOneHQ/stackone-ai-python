@@ -242,7 +242,15 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
         parsed = loaded if isinstance(loaded, dict) else {"result": loaded}
 
     if getattr(result, "isError", False):
-        raise StackOneAPIError(f"Tool {name!r} failed: {payload or parsed}", 0, parsed)
+        # The transport succeeded, so there is no HTTP status here — but the payload
+        # carries the real one, and a caller cannot branch on 0.
+        inner = parsed.get("result") if isinstance(parsed.get("result"), dict) else parsed
+        status = inner.get("status_code") if isinstance(inner, dict) else None
+        raise StackOneAPIError(
+            f"Tool {name!r} failed: {payload or parsed}",
+            status if isinstance(status, int) else 0,
+            parsed,
+        )
 
     if non_text:
         parsed["content_parts"] = non_text

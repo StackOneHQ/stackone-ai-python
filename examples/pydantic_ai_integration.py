@@ -36,16 +36,16 @@ def pydantic_ai_integration() -> None:
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
-        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        actions=["*_list_*"],
         account_ids=[os.environ["STACKONE_ACCOUNT_ID"]],
     ).to_pydantic_ai()
 
     agent = Agent(
         "openai:gpt-5.4",
-        system_prompt="You are a helpful HR assistant.",
+        system_prompt="You are a helpful assistant that answers by calling tools.",
         tools=tools,
     )
-    result = agent.run_sync("List the first 5 employees")
+    result = agent.run_sync("Use one of your tools to list a few records, then summarise them.")
     print(f"Result:\n{result.output}")
 
 
