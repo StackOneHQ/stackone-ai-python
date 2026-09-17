@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import threading
+from collections import Counter
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
@@ -924,6 +925,21 @@ class Tools:
     def __init__(self, tools: list[StackOneTool]) -> None:
         self.tools = tools
         self._tool_map = {tool.name: tool for tool in tools}
+
+        # Two accounts on one provider serve identically named tools, so this dict
+        # silently kept the last one and get_tool() routed every call to whichever
+        # account happened to list last. OpenAI accepts the duplicate function names
+        # without complaint, so nothing downstream surfaces it either — the only
+        # symptom is an action running against an account the caller never chose.
+        if len(self._tool_map) != len(tools):
+            counts = Counter(tool.name for tool in tools)
+            clashing = sorted(name for name, count in counts.items() if count > 1)
+            logger.warning(
+                "%d tool name(s) are served by more than one account (%s). get_tool() will "
+                "return the last one listed — pass account_ids to choose.",
+                len(clashing),
+                ", ".join(clashing[:5]),
+            )
 
     def __getitem__(self, index: int) -> StackOneTool:
         return self.tools[index]
