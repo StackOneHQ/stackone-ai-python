@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import os
+import ntpath
+import posixpath
 import re
+import unicodedata
 from enum import Enum
 from typing import Annotated, Any, Literal, TypeAlias, TypedDict
 from urllib.parse import unquote
@@ -118,8 +120,19 @@ def _safe_basename(name: str | None) -> str | None:
     """
     if name is None:
         return None
-    base = os.path.basename(name.replace("\\", "/")).replace("\x00", "").strip()
-    return base if base not in ("", ".", "..") else None
+    # ntpath too: posixpath.basename leaves "C:evil.exe" intact, and on Windows that
+    # writes to drive C:'s current directory rather than the process CWD.
+    base = ntpath.basename(posixpath.basename(name.replace("\\", "/")))
+    # Strip control characters (log and header injection) and Unicode format characters
+    # — U+202E renders "\u202egnp.exe" as "…exe.png", the classic extension spoof.
+    base = "".join(ch for ch in base if unicodedata.category(ch) not in ("Cc", "Cf")).strip()
+    if base in ("", ".", ".."):
+        return None
+    if len(base.encode("utf-8", "ignore")) > 255:
+        stem, dot, suffix = base.rpartition(".")
+        keep = 255 - len(dot + suffix)
+        base = (stem.encode("utf-8")[: max(keep, 1)].decode("utf-8", "ignore")) + dot + suffix
+    return base
 
 
 def filename_from_content_disposition(value: str | None) -> str | None:
@@ -132,7 +145,7 @@ def filename_from_content_disposition(value: str | None) -> str | None:
     """
     if not value:
         return None
-    extended = re.search(r"filename\*\s*=\s*([^']*)'[^']*'([^;]+)", value, re.IGNORECASE)
+    extended = re.search(r"(?:^|;)\s*filename\*\s*=\s*([^']*)'[^']*'([^;]+)", value, re.IGNORECASE)
     if extended:
         charset = extended.group(1).strip() or "utf-8"
         encoded = extended.group(2).strip().strip('"')
@@ -141,10 +154,10 @@ def filename_from_content_disposition(value: str | None) -> str | None:
         except LookupError:
             # Unrecognised charset label - decode as UTF-8 rather than failing.
             return _safe_basename(unquote(encoded, encoding="utf-8", errors="replace"))
-    quoted = re.search(r'filename\s*=\s*"([^"]*)"', value, re.IGNORECASE)
+    quoted = re.search(r'(?:^|;)\s*filename\s*=\s*"([^"]*)"', value, re.IGNORECASE)
     if quoted:
         return _safe_basename(quoted.group(1))
-    bare = re.search(r"filename\s*=\s*([^;]+)", value, re.IGNORECASE)
+    bare = re.search(r"(?:^|;)\s*filename\s*=\s*([^;]+)", value, re.IGNORECASE)
     if bare:
         return _safe_basename(bare.group(1).strip('"'))
     return None

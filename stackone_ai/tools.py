@@ -17,7 +17,7 @@ import threading
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, ClassVar, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import httpx
 from pydantic import BaseModel, Field, PrivateAttr
@@ -62,8 +62,8 @@ _RPC_PARAMETER_LOCATIONS = {
 MCP_PARAM_STYLE = "flat_prefixed"
 
 # Matches a flat_prefixed envelope key: `<location>_<field>` (e.g. `path_id`, `query_limit`).
-_HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]+$")
-_HEADER_VALUE_PATTERN = re.compile(r"^[\x20-\x7e\t]*$")
+_HEADER_NAME_PATTERN = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+")
+_HEADER_VALUE_PATTERN = re.compile(r"[\x20-\x7e\t\x80-\xff]*")
 
 _FLAT_ENVELOPE_KEY_PATTERN = re.compile(r"^(path|query|body|headers)_(.+)$")
 
@@ -219,6 +219,49 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str) -> Exception:
     return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
 
 
+def _describe_api_failure(exc: httpx.HTTPStatusError, body: Any) -> str:
+    """Lead with the server's own explanation of what went wrong.
+
+    ``str(httpx.HTTPStatusError)`` is "Client error '400 Bad Request' for url ..." plus a
+    link to MDN's generic status page — it never says which field was wrong, even though
+    the answer is already in hand. This is the error a user hits on every bad tool call,
+    so it is the one worth making actionable.
+    """
+    detail: Any = None
+    if isinstance(body, dict):
+        for key in ("message", "error", "detail"):
+            if isinstance(body.get(key), str):
+                detail = body[key]
+                break
+        else:
+            detail = body
+    elif isinstance(body, str) and body.strip():
+        detail = body.strip()[:500]
+
+    status = f"{exc.response.status_code} {exc.response.reason_phrase}".strip()
+    return f"{status}: {detail}" if detail else f"{status} from {exc.request.url}"
+
+
+def _status_of(parsed: JsonDict) -> int:
+    """Dig the HTTP status out of an MCP error payload.
+
+    The transport succeeded, so there is no status on the response itself — but the
+    payload carries one, and a caller cannot branch on 0. Both spellings and all the
+    wrapper keys the API actually uses are checked: `statusCode` is what this repo's
+    own mock emits, and `error`/`data` are real wrappers, so looking only for
+    `status_code` under `result` reported 0 for the most likely shapes.
+    """
+    for candidate in (parsed, parsed.get("result"), parsed.get("error"), parsed.get("data")):
+        if not isinstance(candidate, dict):
+            continue
+        for key in ("status_code", "statusCode"):
+            status = candidate.get(key)
+            # bool is an int subclass; True is not a status code.
+            if isinstance(status, int) and not isinstance(status, bool):
+                return status
+    return 0
+
+
 def parse_tool_result(result: Any, name: str) -> JsonDict:
     """Turn an MCP ``CallToolResult`` into a plain dict.
 
@@ -244,13 +287,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     if getattr(result, "isError", False):
         # The transport succeeded, so there is no HTTP status here — but the payload
         # carries the real one, and a caller cannot branch on 0.
-        inner = parsed.get("result") if isinstance(parsed.get("result"), dict) else parsed
-        status = inner.get("status_code") if isinstance(inner, dict) else None
-        raise StackOneAPIError(
-            f"Tool {name!r} failed: {payload or parsed}",
-            status if isinstance(status, int) else 0,
-            parsed,
-        )
+        raise StackOneAPIError(f"Tool {name!r} failed: {payload or parsed}", _status_of(parsed), parsed)
 
     if non_text:
         parsed["content_parts"] = non_text
@@ -385,33 +422,47 @@ class StackOneTool(BaseModel):
 
         return url, body_params, query_params
 
-    # Headers a tool call must never set. Tool arguments are model-controlled, so a
-    # prompt-injected call could otherwise override the caller's credential or the
-    # account the toolset is scoped to. Compared case-insensitively because HTTP
-    # header names are case-insensitive.
-    _RESERVED_HEADERS: ClassVar[frozenset[str]] = frozenset({"authorization", "x-account-id"})
+    def _sanitise_headers(self, supplied: dict[str, Any] | None) -> dict[str, str]:
+        """Keep only headers the served schema declared; drop everything else.
 
-    @classmethod
-    def _sanitise_headers(cls, supplied: dict[str, Any] | None) -> dict[str, str]:
-        """Drop model-supplied headers that must not reach the wire.
+        An allowlist, not a denylist. Tool arguments are model-controlled, so a
+        prompt-injected call reaches this dict directly — and a denylist has to
+        enumerate every synonym of "credential" and "tenant selector" in every
+        provider's vocabulary (Proxy-Authorization, x-stackone-account-id, Cookie,
+        X-Api-Key, ...) and is wrong the moment one is missed. The previous two-name
+        list let all of those through.
 
-        Lives on the base class because both execution paths need it: the guard used to
-        exist only on the RPC tool, while the MCP tool — which is what search_execute
-        mode returns, and therefore what the documented search()/execute() flow uses —
-        forwarded the model's `headers` object verbatim.
+        The allowlist is the served schema itself, so this needs no maintenance: today
+        zero of the served actions declare a ``headers_*`` property, and the RPC server
+        ignores the envelope's ``headers`` object outright — but the day an action
+        genuinely needs a header, it works with no SDK release.
+
+        Lives on the base class because both execution paths need it: the RPC tool
+        builds the envelope's headers, and the MCP tool — what search_execute mode
+        returns, and so what the documented search()/execute() flow uses — forwards the
+        model's headers object into tools/call.
         """
+        allowed = {
+            prop[len("headers_") :].casefold()
+            for prop in (self.parameters.properties or {})
+            if prop.startswith("headers_")
+        }
+
         clean: dict[str, str] = {}
         for key, value in (supplied or {}).items():
-            if value is None:
+            if value is None or not isinstance(key, str):
                 continue
-            # Normalise before comparing: " authorization" and "AUTHORIZATION\t" are the
-            # same header to any server, and casefold() closes the non-ASCII folding
-            # holes that lower() leaves open.
-            name = str(key).strip()
-            if not name or name.casefold() in cls._RESERVED_HEADERS:
+            # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to
+            # any server, and casefold() closes the non-ASCII folding holes lower() leaves.
+            name = key.strip()
+            if name.casefold() not in allowed:
+                logger.warning("Dropping header %r from a tool call: no served schema declares it", name)
                 continue
-            if not _HEADER_NAME_PATTERN.match(name) or not _HEADER_VALUE_PATTERN.match(str(value)):
-                # Anything outside the RFC 7230 grammar — CR/LF above all — is injection.
+            # Defence in depth on a declared header's model-supplied value. fullmatch,
+            # not match: `$` also matches just before a trailing newline, so `match` let
+            # "value\n" — the one character class this rejects — straight through.
+            if not _HEADER_NAME_PATTERN.fullmatch(name) or not _HEADER_VALUE_PATTERN.fullmatch(str(value)):
+                logger.warning("Dropping malformed header %r from a tool call", name)
                 continue
             clean[name] = str(value)
         return clean
@@ -464,13 +515,16 @@ class StackOneTool(BaseModel):
             response = httpx.request(**request_kwargs, timeout=self._execute_config.timeout)
             response.raise_for_status()
 
-            if response.status_code in (204, 205) or not response.content:
-                # A bodyless success is not a file download. Falling through would return
-                # `content: b""` with a made-up octet-stream type, which then breaks any
-                # caller that re-serialises the result for a model.
-                return {"status_code": response.status_code}
-
             content_type = response.headers.get("content-type", "")
+            if response.status_code in (204, 205) or (
+                not response.content and is_json_content_type(content_type)
+            ):
+                # A bodyless JSON success is not a file download. Falling through would
+                # return `content: b""` with a made-up octet-stream type, breaking any
+                # caller that re-serialises the result for a model. A zero-byte body with
+                # a download content type IS a download, though — an empty file, with a
+                # filename the caller still needs — so it must not be caught here.
+                return {"status_code": response.status_code}
             if is_json_content_type(content_type):
                 try:
                     result = response.json()
@@ -505,7 +559,9 @@ class StackOneTool(BaseModel):
                     response_body = exc.response.json()
                 except json.JSONDecodeError:
                     response_body = exc.response.text
-            raise StackOneAPIError(str(exc), exc.response.status_code, response_body) from exc
+            raise StackOneAPIError(
+                _describe_api_failure(exc, response_body), exc.response.status_code, response_body
+            ) from exc
         except httpx.RequestError as exc:
             raise StackOneError(f"Request failed: {exc}") from exc
 
@@ -584,66 +640,46 @@ class StackOneTool(BaseModel):
                 "Install `langchain-core` (or `stackone-ai[langchain]`) to use the LangChain integration."
             ) from e
 
-        schema_props: dict[str, Any] = {}
-        annotations: dict[str, Any] = {}
-
-        for name, details in self.parameters.properties.items():
-            python_type: type = str  # Default to str
-            is_nullable = False
-            if isinstance(details, dict):
-                type_str = details.get("type", "string")
-                is_nullable = details.get("nullable", False)
-                if type_str == "number":
-                    python_type = float
-                elif type_str == "integer":
-                    python_type = int
-                elif type_str == "boolean":
-                    python_type = bool
-                elif type_str == "object":
-                    python_type = dict
-                elif type_str == "array":
-                    python_type = list
-
-                if is_nullable:
-                    field = Field(default=None, description=details.get("description", ""))
-                else:
-                    field = Field(description=details.get("description", ""))
-            else:
-                field = Field(description="")
-
-            schema_props[name] = field
-            if is_nullable:
-                annotations[name] = python_type | None
-            else:
-                annotations[name] = python_type
-
-        schema_class = type(
-            f"{self.name.title()}Args",
-            (BaseModel,),
-            {
-                "__annotations__": annotations,
-                "__module__": __name__,
-                **schema_props,
-            },
-        )
+        # Hand the served JSON Schema over as-is. The previous version rebuilt a
+        # pydantic model from the top-level `type` of each property, which threw away
+        # every nested object's fields, every enum, format, bound, item type and union —
+        # roughly half the schema, so the model was told "pass an object" with no field
+        # names. langchain-core accepts a JSON Schema dict directly, which makes this
+        # surface byte-equivalent to to_openai_function() for free.
+        args_json_schema = self.to_openai_function()["function"]["parameters"]
 
         parent_tool = self
 
         class StackOneLangChainTool(BaseTool):
             name: str = parent_tool.name
             description: str = parent_tool.description
-            args_schema: type[BaseModel] = schema_class  # ty: ignore[invalid-assignment]
+            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-assignment]
 
             def _run(self, **kwargs: Any) -> Any:
+                # Drop unsupplied optionals. pydantic materialises every optional field
+                # as None and BaseTool passes them all through, and the API reads an
+                # explicit null as "required field missing" — which 400'd every single
+                # tool call made through this adapter.
+                supplied = {key: value for key, value in kwargs.items() if value is not None}
                 try:
-                    return parent_tool.execute(kwargs)
-                except StackOneError as exc:
+                    return parent_tool.execute(supplied)
+                except (StackOneError, ValueError) as exc:
                     # LangChain's handle_tool_error only catches ToolException, so a
                     # StackOneError would kill the graph rather than reaching the
                     # agent. Models guess arguments wrong and StackOne's 400 names the
                     # offending field — re-raising in LangChain's own vocabulary lets
                     # a caller opt into feeding that back and retrying.
-                    raise ToolException(str(exc)) from exc
+                    # Carry the structured fields across: without them handle_tool_error
+                    # leaves a caller with only str(exc), unable to tell 401 from 429.
+                    # str(exc) on an httpx error is just "Client error '400 Bad Request'
+                    # for url ..." — the field that is actually wrong is in response_body.
+                    # Without it the agent retries blind, which is the whole point of
+                    # handing the error back.
+                    body = getattr(exc, "response_body", None)
+                    failure = ToolException(f"{exc}: {body}" if body else str(exc))
+                    failure.status_code = getattr(exc, "status_code", None)  # type: ignore[attr-defined]
+                    failure.response_body = getattr(exc, "response_body", None)  # type: ignore[attr-defined]
+                    raise failure from exc
 
         return StackOneLangChainTool()
 
@@ -737,7 +773,10 @@ class StackOneRpcTool(StackOneTool):
         if arguments is None:
             return {}
         if isinstance(arguments, str):
-            parsed = json.loads(arguments)
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
         else:
             parsed = arguments
         if not isinstance(parsed, dict):
@@ -763,13 +802,24 @@ class StackOneRpcTool(StackOneTool):
         the server a path component it has no use for — silently, with the model none the
         wiser.
 
-        ``None`` means "no schema to consult" and trusts every match. An EMPTY set must
-        mean the same thing, not "nothing is declared": a served schema with no usable
-        ``properties`` would otherwise route every ``path_*`` key into the body and lose
-        every path parameter — silently, which is worse than the ambiguity this guards.
+        ``None`` or an EMPTY set both mean "no schema to consult" and trust every match:
+        a served schema with no usable ``properties`` must not route every ``path_*``
+        key into the body and lose every path parameter.
         """
         buckets: dict[str, dict[str, Any]] = {"path": {}, "query": {}, "headers": {}, "body": {}}
         reserved = ("path", "query", "headers", "body")
+        named = declared or set()
+
+        # Whether to read a `<location>_<field>` key as located, decided ONCE from the
+        # schema rather than per key. Under flat_prefixed every parameter is prefixed,
+        # so `path_to_file` means path.to_file; under a bare schema it is a body field
+        # that merely starts with "path_". Asking "is THIS key declared?" got that
+        # wrong in both directions: it demoted undeclared `query_offset` to a body
+        # field silently, and it would still have mis-split a declared bare name.
+        # ALL, not any: under flat_prefixed every parameter is prefixed, so one bare
+        # name is proof the schema is not. `any` would be satisfied by the very key
+        # this exists to protect — a declared body field called `path_to_file`.
+        prefixed = not named or all(_FLAT_ENVELOPE_KEY_PATTERN.match(k) for k in named)
 
         # Two passes so precedence is deterministic rather than following the caller's
         # dict order: an explicit flat_prefixed key always wins over a nested one.
@@ -777,10 +827,12 @@ class StackOneRpcTool(StackOneTool):
         bare: list[tuple[str, Any]] = []
         for key, value in params.items():
             match = _FLAT_ENVELOPE_KEY_PATTERN.match(key)
-            if match and (declared is None or key in declared):
+            if match and prefixed:
                 buckets[match.group(1)][match.group(2)] = value
                 continue
-            if key in reserved:
+            # A reserved word the schema declares as a property is a field, not a
+            # container — refusing it would reject a schema-valid call.
+            if key in reserved and key not in named:
                 # Reserved keys are containers. A scalar here is malformed input, not a
                 # body field — putting it in the body would smuggle `path` into the payload.
                 if not isinstance(value, dict):
@@ -846,7 +898,10 @@ class StackOneMcpTool(StackOneTool):
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
         if isinstance(arguments, str):
-            parsed = json.loads(arguments)
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
         else:
             parsed = arguments or {}
         if not isinstance(parsed, dict):

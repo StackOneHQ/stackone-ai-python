@@ -172,9 +172,7 @@ def test_to_langchain_conversion(mock_tool):
     # Check args schema
     assert hasattr(langchain_tool, "args_schema")
     # Just check the field names match
-    assert set(langchain_tool.args_schema.__annotations__.keys()) == set(
-        mock_tool.parameters.properties.keys()
-    )
+    assert set(langchain_tool.args_schema["properties"]) == set(mock_tool.parameters.properties)
 
 
 @pytest.mark.asyncio
@@ -229,12 +227,8 @@ def test_to_langchain_multiple_tools(mock_tool):
     assert langchain_tools[1].name == second_tool.name
 
     # Verify each tool has correct schema
-    assert set(langchain_tools[0].args_schema.__annotations__.keys()) == set(
-        mock_tool.parameters.properties.keys()
-    )
-    assert set(langchain_tools[1].args_schema.__annotations__.keys()) == set(
-        second_tool.parameters.properties.keys()
-    )
+    assert set(langchain_tools[0].args_schema["properties"]) == set(mock_tool.parameters.properties.keys())
+    assert set(langchain_tools[1].args_schema["properties"]) == set(second_tool.parameters.properties.keys())
 
 
 class TestValidateMethod:
@@ -621,87 +615,59 @@ class TestStackOneToolOpenAIConversion:
 
 
 class TestStackOneToolLangChainConversion:
-    """Test LangChain conversion edge cases"""
+    """The LangChain args schema must be the served schema, not a lossy rebuild.
 
-    def test_number_type_conversion(self):
-        """Test number type is converted to float"""
-        tool = StackOneTool(
+    It used to be rebuilt from each property's top-level `type`, which discarded every
+    nested object's fields, every enum, bound, item type and union — so a model was
+    told "pass an object" with no field names. These pin that it is passed through.
+    """
+
+    @staticmethod
+    def _tool(properties: dict) -> StackOneTool:
+        return StackOneTool(
             description="Test",
-            parameters=ToolParameters(
-                type="object",
-                properties={"amount": {"type": "number", "description": "Amount"}},
-            ),
+            parameters=ToolParameters(type="object", properties=properties),
             _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com",
-                name="test",
+                headers={}, method="GET", url="https://api.example.com", name="test"
             ),
             _api_key="test_key",
         )
 
-        lc_tool = tool.to_langchain()
-        assert lc_tool.args_schema.__annotations__["amount"] is float
+    def test_nested_object_fields_survive(self):
+        served = {
+            "body_variables": {
+                "type": "object",
+                "description": "Variables",
+                "properties": {"teamId": {"type": "string"}, "title": {"type": "string"}},
+                "required": ["teamId", "title"],
+                "nullable": False,
+            }
+        }
+        schema = self._tool(served).to_langchain().args_schema
+        nested = schema["properties"]["body_variables"]
+        assert set(nested["properties"]) == {"teamId", "title"}
+        assert nested["required"] == ["teamId", "title"]
 
-    def test_integer_type_conversion(self):
-        """Test integer type is converted to int"""
-        tool = StackOneTool(
-            description="Test",
-            parameters=ToolParameters(
-                type="object",
-                properties={"count": {"type": "integer", "description": "Count"}},
-            ),
-            _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com",
-                name="test",
-            ),
-            _api_key="test_key",
+    def test_constraints_survive(self):
+        served = {
+            "status": {"type": "string", "enum": ["open", "closed"], "nullable": False},
+            "count": {"type": "integer", "minimum": 1, "maximum": 10, "nullable": True},
+            "tags": {"type": "array", "items": {"type": "string"}, "nullable": True},
+        }
+        schema = self._tool(served).to_langchain().args_schema
+        assert schema["properties"]["status"]["enum"] == ["open", "closed"]
+        assert schema["properties"]["count"]["minimum"] == 1
+        assert schema["properties"]["tags"]["items"] == {"type": "string"}
+
+    def test_requiredness_matches_to_openai_function(self):
+        tool = self._tool(
+            {"a": {"type": "string", "nullable": False}, "b": {"type": "string", "nullable": True}}
         )
+        assert tool.to_langchain().args_schema == tool.to_openai_function()["function"]["parameters"]
 
-        lc_tool = tool.to_langchain()
-        assert lc_tool.args_schema.__annotations__["count"] is int
-
-    def test_boolean_type_conversion(self):
-        """Test boolean type is converted to bool"""
-        tool = StackOneTool(
-            description="Test",
-            parameters=ToolParameters(
-                type="object",
-                properties={"active": {"type": "boolean", "description": "Active"}},
-            ),
-            _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com",
-                name="test",
-            ),
-            _api_key="test_key",
-        )
-
-        lc_tool = tool.to_langchain()
-        assert lc_tool.args_schema.__annotations__["active"] is bool
-
-    def test_non_dict_property_conversion(self):
-        """Test non-dict property defaults to str"""
-        tool = StackOneTool(
-            description="Test",
-            parameters=ToolParameters(
-                type="object",
-                properties={"field": "simple_string"},
-            ),
-            _execute_config=ExecuteConfig(
-                headers={},
-                method="GET",
-                url="https://api.example.com",
-                name="test",
-            ),
-            _api_key="test_key",
-        )
-
-        lc_tool = tool.to_langchain()
-        assert lc_tool.args_schema.__annotations__["field"] is str
+    def test_internal_nullable_marker_is_not_exposed(self):
+        tool = self._tool({"a": {"type": "string", "nullable": False}})
+        assert "nullable" not in tool.to_langchain().args_schema["properties"]["a"]
 
     @pytest.mark.asyncio
     async def test_arun_method(self):

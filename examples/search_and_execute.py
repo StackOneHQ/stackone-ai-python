@@ -44,7 +44,7 @@ def search_and_execute() -> None:
 
     print("\nRanked matches:")
     for action in actions:
-        print(f"  {action['similarity_score']:.3f}  {action['action_id']}")
+        print(f"  {action.get('similarity_score', 0.0):.3f}  {action['action_id']}")
 
     best = actions[0]
 

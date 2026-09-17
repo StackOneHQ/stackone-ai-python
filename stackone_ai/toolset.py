@@ -110,7 +110,11 @@ class StackOneToolSet:
         Returns:
             This toolset instance for chaining
         """
-        self._account_ids = account_ids
+        if isinstance(account_ids, str):
+            raise ToolsetConfigError(
+                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
+            )
+        self._account_ids = list(account_ids)
         self.clear_catalog_cache()
         return self
 
@@ -164,7 +168,9 @@ class StackOneToolSet:
             if not effective_account_ids:
                 effective_account_ids = self._discover_account_ids()
 
-            account_scope: list[str | None] = list(dict.fromkeys(effective_account_ids))
+            account_scope: list[str | None] = sorted(
+                dict.fromkeys(effective_account_ids), key=lambda a: (a is None, a)
+            )
 
             # Keyed on what was fetched, not on how it is filtered: providers and
             # actions narrow the list in memory, so they must not force a refetch.
@@ -314,7 +320,13 @@ class StackOneToolSet:
         # results[0] would be the best hit of whichever connector answered first rather
         # than the best hit overall. Rank globally; the server scores every action on the
         # same scale. Actions without a score sort last rather than raising.
-        results.sort(key=lambda action: action.get("similarity_score") or 0.0, reverse=True)
+        def _score(action: JsonDict) -> float:
+            raw = action.get("similarity_score")
+            if isinstance(raw, bool) or not isinstance(raw, int | float):
+                return 0.0
+            return float(raw)
+
+        results.sort(key=_score, reverse=True)
         return results
 
     def execute(
@@ -336,6 +348,8 @@ class StackOneToolSet:
         Raises:
             ToolsetLoadError: If no connector matches.
         """
+        if not isinstance(action_id, str) or not action_id:
+            raise ToolsetConfigError(f"action_id must be a non-empty string, got {action_id!r}")
         if arguments is not None and not isinstance(arguments, dict):
             raise ToolsetConfigError(f"arguments must be a JSON object, got {type(arguments).__name__}")
 
@@ -348,7 +362,19 @@ class StackOneToolSet:
         if matches:
             # Longest connector wins: with both `browser` and `browser_linkedin` linked,
             # the first token alone would route every browser_linkedin action to browser.
-            tool = max(matches, key=lambda t: len(self._connector_of(t, "_execute_action")))
+            best = max(len(self._connector_of(t, "_execute_action")) for t in matches)
+            finalists = [t for t in matches if len(self._connector_of(t, "_execute_action")) == best]
+            if len(finalists) > 1:
+                # Same provider linked twice. Picking one silently would run the action
+                # against an account the caller never chose.
+                logger.warning(
+                    "%r matches %d connectors (%s); using %s. Pass account_ids to choose.",
+                    action_id,
+                    len(finalists),
+                    ", ".join(t.name for t in finalists),
+                    finalists[0].name,
+                )
+            tool = finalists[0]
             # action_id LAST. Spreading arguments over it let a model-supplied
             # "action_id" silently replace the action the caller pinned — the exact
             # thing a host app pins it for.
@@ -375,9 +401,19 @@ class StackOneToolSet:
 
     @staticmethod
     def _connector_of(tool: StackOneTool, suffix: str) -> str:
-        """The connector a meta tool belongs to: its name minus the account id and suffix."""
+        """The connector a meta tool belongs to: its name minus the account id and suffix.
+
+        The account id is stripped by identity, not by splitting on the last underscore.
+        Account ids are nanoid-shaped and nanoid's default alphabet includes ``_``, so
+        splitting turned ``mock_acc_1_execute_action`` into connector ``mock_acc`` and
+        made every action on that account unroutable — with an error blaming the
+        caller's action id.
+        """
         stem = tool.name[: -len(suffix)] if tool.name.endswith(suffix) else tool.name
-        return stem.rsplit("_", 1)[0].lower() if "_" in stem else stem.lower()
+        account = tool.get_account_id()
+        if account and stem.endswith(f"_{account}"):
+            stem = stem[: -(len(account) + 1)]
+        return stem.lower()
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Whether a tool belongs to one of the given providers (case-insensitive).
@@ -401,14 +437,21 @@ class StackOneToolSet:
         accounts with ``status == "active"`` can serve tools.
         """
         url = f"{self.base_url.rstrip('/')}/accounts"
-        response = httpx.get(
-            url,
-            headers={
-                "Authorization": build_auth_header(self.api_key),
-                "User-Agent": USER_AGENT,
-            },
-            timeout=self._timeout,
-        )
+        try:
+            response = httpx.get(
+                url,
+                headers={
+                    "Authorization": build_auth_header(self.api_key),
+                    "User-Agent": USER_AGENT,
+                },
+                timeout=self._timeout,
+            )
+        except httpx.HTTPError as exc:
+            # The only public method with no error handling at all: a dead host, a bad
+            # scheme or a timeout leaked httpx's own exception type straight out of the
+            # SDK, outside the documented hierarchy.
+            raise ToolsetLoadError(f"Could not reach {url}: {exc}") from exc
+
         if response.is_error:
             # Without this the catch-all in fetch_tools flattens it to a message and
             # the status is lost, so a caller cannot tell 401 from 429.

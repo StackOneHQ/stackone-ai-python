@@ -19,7 +19,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SDK="$(dirname "$HERE")"
 CONFORMANCE="${CONFORMANCE:-$SDK/../sdk-conformance}"
-ADK="${ADK:-$SDK/../stackone-adk-plugin}"
+ADK="${ADK:-$SDK/../adk-26-ci}"
 
 failed=0
 declare -a PASSED=() FAILED=() SKIPPED=()

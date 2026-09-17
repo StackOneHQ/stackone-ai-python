@@ -246,7 +246,7 @@ class TestStackOneRpcTool:
 
         assert result == {"success": True}
         body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["X-Custom-Header"] == "custom_value"
+        assert "X-Custom-Header" not in body["headers"]  # undeclared by the served schema
         assert body["headers"]["x-account-id"] == "test_account"
 
     @respx.mock
@@ -261,7 +261,7 @@ class TestStackOneRpcTool:
         assert result == {"success": True}
         body = json.loads(route.calls[0].request.content)
         assert "Authorization" not in body["headers"]
-        assert body["headers"]["X-Other"] == "value"
+        assert "X-Other" not in body["headers"]  # undeclared by the served schema
 
     @respx.mock
     @pytest.mark.parametrize(
@@ -310,7 +310,7 @@ class TestStackOneRpcTool:
 
         assert result == {"success": True}
         body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["X-Present"] == "value"
+        assert "X-Present" not in body["headers"]  # undeclared by the served schema
         assert "X-Absent" not in body["headers"]
 
     @respx.mock
@@ -598,11 +598,30 @@ class TestEnvelopeSplitIsSchemaAware:
             account_id="test-account",
         )
 
-    def test_undeclared_prefix_lookalike_stays_in_the_body(self, rpc_tool):
-        declared = {"body_path_to_file", "path_id"}
-        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x", "path_id": "1"}, declared)
+    def test_a_bare_schema_keeps_prefix_lookalikes_in_the_body(self, rpc_tool):
+        """No declared key is location-prefixed, so `path_to_file` is a real field name.
+
+        Splitting it would send the server a path component it has no use for and drop
+        the argument the model supplied — silently.
+        """
+        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x"}, {"path_to_file", "name"})
         assert actual["body"] == {"path_to_file": "/tmp/x"}
+        assert actual["path"] == {}
+
+    def test_a_prefixed_schema_splits_every_match(self, rpc_tool):
+        """Under flat_prefixed every parameter is prefixed, so a match really is located."""
+        actual = rpc_tool._split_envelope_params(
+            {"path_id": "1", "query_offset": 10}, {"path_id", "query_limit"}
+        )
         assert actual["path"] == {"id": "1"}
+        # Undeclared but prefixed: the model may be working from a newer schema than the
+        # cached listing. Routing it to the body would silently drop the argument.
+        assert actual["query"] == {"offset": 10}
+
+    def test_a_declared_reserved_word_is_a_field_not_a_container(self, rpc_tool):
+        """A served property literally named `query` must not be rejected as malformed."""
+        actual = rpc_tool._split_envelope_params({"query": "sales"}, {"query", "id"})
+        assert actual["body"] == {"query": "sales"}
 
     def test_no_schema_trusts_every_match(self, rpc_tool):
         """Direct callers without a schema keep the old, purely pattern-based behaviour."""
@@ -629,4 +648,93 @@ class TestEnvelopeSplitIsSchemaAware:
         Treating it as an allowlist would route every path_* key into the body and
         silently drop every path parameter.
         """
-        assert rpc_tool._split_envelope_params({"path_id": "1"}, set() or None)["path"] == {"id": "1"}
+        assert rpc_tool._split_envelope_params({"path_id": "1"}, set())["path"] == {"id": "1"}
+
+
+class TestMcpToolHeaderGuard:
+    """The header guard on the MCP path — the one search()/execute() actually use.
+
+    This had no coverage at all: the whole `_sanitise_headers` call could be deleted
+    from StackOneMcpTool.execute and every test still passed. Every existing header
+    test drives the RPC tool only.
+    """
+
+    @pytest.fixture
+    def mcp_tool(self):
+        from stackone_ai.tools import StackOneMcpTool
+
+        return StackOneMcpTool(
+            name="linear_acct_execute_action",
+            description="Execute",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="test_key",
+            endpoint="https://api.example.com/mcp",
+            headers={"Authorization": "Basic real", "x-account-id": "real-account"},
+            account_id="real-account",
+        )
+
+    @staticmethod
+    def _capture(monkeypatch):
+        seen: dict[str, object] = {}
+
+        def fake_call(endpoint, headers, name, arguments):
+            seen["arguments"] = arguments
+            return {"ok": True}
+
+        monkeypatch.setattr("stackone_ai.tools.call_mcp_tool", fake_call)
+        return seen
+
+    def test_undeclared_headers_are_all_dropped(self, mcp_tool, monkeypatch):
+        """An allowlist, not a denylist: a two-name denylist let Proxy-Authorization,
+        x-stackone-account-id, Cookie and X-Api-Key through. No served action declares
+        a headers_* property, so nothing model-supplied belongs here."""
+        seen = self._capture(monkeypatch)
+        mcp_tool.execute(
+            {
+                "action_id": "linear_list_issues",
+                "headers": {
+                    "Authorization": "Bearer stolen",
+                    "Proxy-Authorization": "Basic stolen",
+                    "x-account-id": "victim-account",
+                    "x-stackone-account-id": "victim-account",
+                    "Cookie": "session=x",
+                    "X-Api-Key": "stolen",
+                    "X-Anything": "nope",
+                },
+            }
+        )
+        assert seen["arguments"]["headers"] == {}
+
+    @pytest.mark.parametrize(
+        "name",
+        [" authorization", "AUTHORIZATION\t", "X-Account-Id", " x-account-id "],
+    )
+    def test_whitespace_and_case_variants_do_not_slip_past(self, mcp_tool, monkeypatch, name):
+        seen = self._capture(monkeypatch)
+        mcp_tool.execute({"action_id": "a", "headers": {name: "stolen"}})
+        assert seen["arguments"]["headers"] == {}
+
+    @pytest.mark.parametrize("value", ["a\r\nEvil: 1", "trailing\n", "bad\rvalue"])
+    def test_crlf_injection_is_rejected(self, mcp_tool, monkeypatch, value):
+        """`$` also matches before a trailing newline, so this needs fullmatch."""
+        seen = self._capture(monkeypatch)
+        mcp_tool.execute({"action_id": "a", "headers": {"X-Probe": value}})
+        assert seen["arguments"]["headers"] == {}
+
+    def test_a_header_the_served_schema_declares_survives(self, monkeypatch):
+        """The allowlist is the schema itself, so a future action needing a header
+        works with no SDK release."""
+        from stackone_ai.tools import StackOneMcpTool
+
+        tool = StackOneMcpTool(
+            name="linear_acct_execute_action",
+            description="Execute",
+            parameters=ToolParameters(type="object", properties={"headers_x-trace": {"type": "string"}}),
+            api_key="test_key",
+            endpoint="https://api.example.com/mcp",
+            headers={},
+            account_id="real-account",
+        )
+        seen = self._capture(monkeypatch)
+        tool.execute({"action_id": "a", "headers": {"X-Trace": "abc", "X-Other": "no"}})
+        assert seen["arguments"]["headers"] == {"X-Trace": "abc"}

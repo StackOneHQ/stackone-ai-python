@@ -9,7 +9,12 @@ import pytest
 
 from stackone_ai.tools import McpToolDefinition, fetch_mcp_tools
 from stackone_ai.toolset import StackOneToolSet
-from stackone_ai.types import StackOneAPIError, ToolsetError
+from stackone_ai.types import (
+    StackOneAPIError,
+    ToolsetConfigError,
+    ToolsetError,
+    ToolsetLoadError,
+)
 
 
 class TestAccountFiltering:
@@ -838,3 +843,55 @@ class TestServerRefusals:
         with pytest.raises(StackOneAPIError) as excinfo:
             tool.execute({"foo": "bar"})
         assert excinfo.value.status_code == 400
+
+
+class TestRecentlyFixedBehaviour:
+    """Pins for fixes that could otherwise be reverted with the suite still green."""
+
+    def test_provider_filter_matches_the_full_connector_prefix(self, monkeypatch):
+        """Splitting on the first underscore read browser_linkedin as browser."""
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[McpToolDefinition]:
+            return [
+                McpToolDefinition(name="browser_linkedin_search_people", description="", input_schema={}),
+                McpToolDefinition(name="browser_open_page", description="", input_schema={}),
+            ]
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        assert [t.name for t in toolset.fetch_tools(providers=["browser_linkedin"])] == [
+            "browser_linkedin_search_people"
+        ]
+
+    @pytest.mark.parametrize("top_k", [0, -1, 51, 1000, "ten", None, 1.5, True])
+    def test_search_rejects_out_of_range_top_k_without_a_round_trip(self, monkeypatch, top_k):
+        """The server caps top_k at 50, but only after a request per connector."""
+
+        def explode(*_args, **_kwargs):
+            raise AssertionError("search() must reject top_k before reaching the network")
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", explode)
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetConfigError, match="top_k"):
+            toolset.search("anything", top_k=top_k)
+
+    def test_execute_rejects_non_dict_arguments(self, monkeypatch):
+        def explode(*_args, **_kwargs):
+            raise AssertionError("execute() must reject bad arguments before reaching the network")
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", explode)
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetConfigError, match="JSON object"):
+            toolset.execute("linear_list_issues", [1, 2, 3])
+
+    def test_fetch_accounts_rejects_a_non_list_body(self, monkeypatch):
+        """list(dict) yields the keys, which blew up much later as an AttributeError."""
+        import httpx
+
+        def fake_get(*_args, **_kwargs):
+            return httpx.Response(200, json={"results": [{"id": "a"}]})
+
+        monkeypatch.setattr("stackone_ai.toolset.httpx.get", fake_get)
+        toolset = StackOneToolSet(api_key="test-key")
+        with pytest.raises(ToolsetLoadError, match="Unexpected /accounts response shape"):
+            toolset.fetch_accounts()
