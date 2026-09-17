@@ -314,8 +314,15 @@ class TestStackOneRpcTool:
         assert "X-Absent" not in body["headers"]
 
     @respx.mock
-    def test_execute_without_account_id(self):
-        """Test RPC tool execution without account ID"""
+    def test_execute_without_account_id_sends_no_account_anywhere(self):
+        """A tool built with no account scopes nothing — and the server refuses it.
+
+        This used to assert only that the envelope omitted x-account-id, which is the
+        same shape as the assertion that pinned the bug that shipped: a green test
+        recording what the client happened to send. The point worth pinning is that
+        an unscoped request is not a usable request, so the HTTP header is checked
+        too — that is the one the API actually reads.
+        """
         parameters = ToolParameters(
             type="object",
             properties={},
@@ -336,8 +343,12 @@ class TestStackOneRpcTool:
         result = tool.execute({})
 
         assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
+        request = route.calls[0].request
+        body = json.loads(request.content)
         assert "x-account-id" not in body["headers"]
+        # The header the API reads. The mock server 400s when it is absent, which is
+        # what makes tests/test_fetch_tools.py::TestRpcToolExecution meaningful.
+        assert "x-account-id" not in request.headers
 
     @respx.mock
     def test_execute_with_none_arguments(self, rpc_tool):

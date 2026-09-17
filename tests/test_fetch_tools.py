@@ -9,6 +9,7 @@ import pytest
 
 from stackone_ai.tools import McpToolDefinition, fetch_mcp_tools
 from stackone_ai.toolset import StackOneToolSet
+from stackone_ai.types import StackOneAPIError, ToolsetError
 
 
 class TestAccountFiltering:
@@ -816,3 +817,24 @@ class TestSearchAndExecuteApi:
         accounts = toolset.fetch_accounts()
         assert {a["id"] for a in accounts} == {"default", "dead"}
         assert [a["id"] for a in accounts if a["status"] == "active"] == ["default"]
+
+
+class TestServerRefusals:
+    """The mock refuses what the real API refuses, so a bug here cannot stay green."""
+
+    def test_unknown_account_is_rejected_rather_than_served_a_default_catalog(self, mcp_mock_server: str):
+        """Serving a catalog for an account that does not exist hides every id bug."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with pytest.raises(ToolsetError):
+            toolset.fetch_tools(account_ids=["no-such-account"])
+
+    def test_execution_without_an_account_is_rejected_by_the_server(self, mcp_mock_server: str):
+        """/actions/rpc is account-scoped too — the sibling of the bug that shipped."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["test-account"]).get_tool("dummy_action")
+        assert tool is not None
+        tool.set_account_id(None)
+
+        with pytest.raises(StackOneAPIError) as excinfo:
+            tool.execute({"foo": "bar"})
+        assert excinfo.value.status_code == 400

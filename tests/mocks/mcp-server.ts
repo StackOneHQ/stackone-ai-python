@@ -72,7 +72,14 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 				400,
 			);
 		}
-		let tools = accountTools[accountId] ?? accountTools.default ?? [];
+		// No `?? accountTools.default` fallback. Serving a full catalog for an account
+		// that does not exist is the same permissiveness that hid the missing-header bug
+		// one line further up: any bug that sends a wrong, stale or mangled account id
+		// would be invisible. The real API refuses.
+		if (!(accountId in accountTools)) {
+			return c.json({ statusCode: 404, message: `Unknown account ${accountId}` }, 404);
+		}
+		let tools = accountTools[accountId] ?? [];
 
 		// The real endpoint swaps the per-action catalog for two meta tools per
 		// connector under this mode. Without it the SDK's search/execute path has

@@ -69,6 +69,16 @@ app.post("/actions/rpc", async (c) => {
     );
   }
 
+  // Execution is account-scoped too. This endpoint used to accept anything with a
+  // "Basic " prefix and no account at all, so the sibling of the bug that shipped —
+  // an unscoped execution request — could not be caught by any test.
+  if (!accountIdHeader) {
+    return c.json(
+      { error: "Bad Request", message: "Missing x-account-id header in request" },
+      400,
+    );
+  }
+
   const body = (await c.req.json()) as {
     action?: string;
     body?: Record<string, unknown>;
