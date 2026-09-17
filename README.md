@@ -59,83 +59,6 @@ result["data"]  # the provider's payload — a failed call raises instead
 `similarity_score`, so a catalog of hundreds of tools never has to fit in a
 model's context. This is the recommended way to use the SDK.
 
-> **Build the call from `input_schema`.** Arguments that do not match it are
-> dropped by the server *without an error* — the call succeeds and your filters
-> are ignored. `example_request` is a template to edit, not a runnable call: for
-> an action with no path parameter it holds only the `action_id`, and where there
-> is one it uses a literal `<id>` placeholder. Zero-argument actions omit both
-> `input_schema` and `example_request`, so read them with `.get()`.
->
-> `top_k` must be between 1 and 50, and applies **per connector** — five linked
-> connectors can return up to five times as many hits, ranked together.
-
-### Two ways to call a tool
-
-The SDK exposes the same actions through two surfaces. They take **different
-argument shapes**, because each mirrors the schema the server served for it. Both
-return the payload itself.
-
-| | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
-|---|---|---|
-| Schema to read | `input_schema` on each hit | `tool.parameters.properties` |
-| Argument shape | nested — `{"body": {"variables": {...}}}` | flat, prefixed — `body_variables`, `path_id` |
-| Best for | agents that discover actions at run time | binding a fixed, filtered set of tools to a model |
-
-```python
-# Same action, both surfaces:
-toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
-
-tool = toolset.fetch_tools(actions=["linear_list_comments"]).get_tool("linear_list_comments")
-tool.execute({"body_variables": {"first": 25}})
-```
-
-Mixing them fails silently in **one direction**. A `fetch_tools()` tool also
-accepts the nested form. But flat keys like `body_variables` passed to
-`toolset.execute()` are not an error — they are dropped, and you get the server's
-defaults.
-
-### Accounts
-
-An API key is enough — `fetch_tools()` discovers your linked accounts and skips
-any that are not `active`. Pass account ids only to narrow things down.
-
-```python
-for account in toolset.fetch_accounts():
-    print(account["id"], account["provider"], account["status"])
-
-tools = toolset.fetch_tools(account_ids=["acc-123"])
-```
-
-The constructor takes a single `account_id`; every method takes plural
-`account_ids`. An explicit `account_ids=` argument wins over `set_accounts()`,
-which wins over the constructor, which wins over discovery. An **empty** list
-means "unset" — it falls through to the next of those — not "no accounts".
-
-When you link a new account, call `toolset.clear_catalog_cache()`: listings are
-cached per toolset.
-
-### Errors
-
-```python
-from stackone_ai import StackOneAPIError, ToolsetLoadError
-
-try:
-    result = toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
-except ToolsetLoadError as exc:   # unknown action id, or no account could list its catalog
-    print(exc)
-except StackOneAPIError as exc:   # StackOne or the provider rejected the call
-    print(exc.status_code, exc)   # the message leads with the server's own explanation
-```
-
-Every error derives from `StackOneError`, so `except StackOneError` catches them
-all. Underneath it: `StackOneAPIError` (the API rejected the call — carries
-`status_code` and `response_body`) and `ToolsetError`, with `ToolsetConfigError`
-(no API key, bad arguments, no active accounts) and `ToolsetLoadError` (the catalog
-could not be listed, or no connector matches).
-
-`fetch_tools()` tolerates a single failing account — it logs a warning and returns
-the healthy accounts' tools, raising only if every account failed.
-
 ## Integration Examples
 
 Every block below runs as written against any linked account — the `*_list_*`
@@ -283,15 +206,31 @@ toolset.set_accounts(["acc-123"])
 tools = toolset.fetch_tools(providers=["linear"])
 ```
 
-> **There is no exclusion syntax.** A leading `!` is just a literal character, so
-> `actions=["*", "!*_delete_*"]` returns **every** tool, delete
-> tools included — the opposite of what it looks like. To keep destructive tools away from
-> an agent, filter the result yourself:
->
-> ```python
-> tools = toolset.fetch_tools(actions=["linear_*"])
-> safe = [t for t in tools if "_delete_" not in t.name]
-> ```
+### Two ways to call a tool
+
+The SDK exposes the same actions through two surfaces. They take **different
+argument shapes**, because each mirrors the schema the server served for it. Both
+return the payload itself.
+
+| | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
+|---|---|---|
+| Schema to read | `input_schema` on each hit | `tool.parameters.properties` |
+| Argument shape | nested — `{"body": {"variables": {...}}}` | flat, prefixed — `body_variables`, `path_id` |
+| Best for | agents that discover actions at run time | binding a fixed, filtered set of tools to a model |
+
+```python
+# Same action, both surfaces:
+toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
+
+tool = toolset.fetch_tools(actions=["linear_list_comments"]).get_tool("linear_list_comments")
+tool.execute({"body_variables": {"first": 25}})
+```
+
+Mixing them fails silently in **one direction**. A `fetch_tools()` tool also
+accepts the nested form. But flat keys like `body_variables` passed to
+`toolset.execute()` are not an error — they are dropped, and you get the server's
+defaults.
+
 
 ## Examples
 
