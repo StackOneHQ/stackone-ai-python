@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import fnmatch
 import logging
 import os
+import threading
 from typing import Any
 
 import httpx
@@ -102,6 +104,13 @@ class StackOneToolSet:
             tuple[Any, ...], list[tuple[McpToolDefinition, str | None, str, Headers]]
         ] = {}
         self._discovered_account_ids: list[str] | None = None
+        # Bumped by clear_catalog_cache(). A listing already in flight when the cache is
+        # cleared captured the generation it started under, and refuses to write back if
+        # it has moved — otherwise the stale catalog lands *after* the clear and is
+        # served for the life of the process, which is the one thing the clear exists
+        # to prevent.
+        self._cache_generation = 0
+        self._cache_lock = threading.Lock()
         self._tool_mode: ToolMode | None = tool_mode
 
     def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
@@ -124,8 +133,10 @@ class StackOneToolSet:
         Call when linked accounts change outside of ``set_accounts`` or when
         you need to force a fresh fetch from the StackOne MCP endpoint.
         """
-        self._catalog_cache.clear()
-        self._discovered_account_ids = None
+        with self._cache_lock:
+            self._cache_generation += 1
+            self._catalog_cache.clear()
+            self._discovered_account_ids = None
 
     def fetch_tools(
         self,
@@ -177,7 +188,8 @@ class StackOneToolSet:
             # base_url and api_key belong here — leaving them out meant reassigning
             # either one kept serving the old catalog, still pointed at the old host.
             cache_key = self._cache_key(account_scope, mode)
-            cached = self._catalog_cache.get(cache_key)
+            with self._cache_lock:
+                cached = self._catalog_cache.get(cache_key)
             if cached is None:
                 cached = self._list_catalog(account_scope, mode)
 
@@ -205,6 +217,7 @@ class StackOneToolSet:
         self, account_scope: list[str | None], mode: ToolMode | None
     ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
         """List every scoped account's catalog, tolerating accounts that fail."""
+        generation = self._cache_generation
         endpoint = f"{self.base_url.rstrip('/')}/mcp?param-style={MCP_PARAM_STYLE}"
         if mode:
             endpoint = f"{endpoint}&tool-mode={mode}"
@@ -218,7 +231,7 @@ class StackOneToolSet:
         listings: list[tuple[McpToolDefinition, str | None, str, Headers]] = []
         if len(account_scope) == 1:
             listings.extend(_fetch_for_account(account_scope[0]))
-            self._catalog_cache[self._cache_key(account_scope, mode)] = listings
+            self._store_listing(account_scope, mode, listings, generation)
             return listings
 
         failures: list[str] = []
@@ -239,8 +252,20 @@ class StackOneToolSet:
         # A degraded catalog must not be cached: the warning fires once, and every later
         # call would then serve the short list silently, for the life of the process.
         if not failures:
-            self._catalog_cache[self._cache_key(account_scope, mode)] = listings
+            self._store_listing(account_scope, mode, listings, generation)
         return listings
+
+    def _store_listing(
+        self,
+        account_scope: list[str | None],
+        mode: ToolMode | None,
+        listings: list[tuple[McpToolDefinition, str | None, str, Headers]],
+        generation: int,
+    ) -> None:
+        """Cache a listing, unless the cache was cleared while it was being fetched."""
+        with self._cache_lock:
+            if generation == self._cache_generation:
+                self._catalog_cache[self._cache_key(account_scope, mode)] = listings
 
     def _cache_key(self, account_scope: list[str | None], mode: ToolMode | None) -> tuple[Any, ...]:
         return (
@@ -537,7 +562,10 @@ class StackOneToolSet:
                 parameters=parameters,
                 api_key=self.api_key,
                 endpoint=endpoint,
-                headers=headers,
+                # A copy: one headers dict is shared by every tuple in a cached listing,
+                # so handing it straight to the tool leaked one caller's mutation into
+                # every other caller's tools.
+                headers=dict(headers),
                 account_id=account_id,
                 timeout=self._timeout,
             )
@@ -570,7 +598,7 @@ class StackOneToolSet:
 
         for name, details in properties.items():
             if isinstance(details, dict):
-                prop = dict(details)
+                prop = copy.deepcopy(details)
             else:
                 prop = {"description": str(details)}
 

@@ -895,3 +895,45 @@ class TestRecentlyFixedBehaviour:
         toolset = StackOneToolSet(api_key="test-key")
         with pytest.raises(ToolsetLoadError, match="Unexpected /accounts response shape"):
             toolset.fetch_accounts()
+
+
+class TestCacheIsolation:
+    """The cache must not be defeatable, and must not hand out shared mutable state."""
+
+    def test_clear_during_an_in_flight_fetch_is_not_undone_by_it(self, monkeypatch):
+        """A listing already being fetched must not land after the clear that cancels it.
+
+        Otherwise the stale catalog is written back afterwards and served for the life
+        of the process — exactly what clear_catalog_cache() exists to prevent.
+        """
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[McpToolDefinition]:
+            # Clear midway through the fetch, as a concurrent caller would.
+            toolset.clear_catalog_cache()
+            return [McpToolDefinition(name="stale_tool", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+        toolset.fetch_tools()
+        assert toolset._catalog_cache == {}
+
+    def test_nested_schema_is_not_shared_between_callers(self, monkeypatch):
+        """Rebuilding tools per call copied the tool but not the schema graph under it."""
+
+        def fake_fetch(_endpoint: str, _headers: dict[str, str]) -> list[McpToolDefinition]:
+            return [
+                McpToolDefinition(
+                    name="t",
+                    description="",
+                    input_schema={"properties": {"body_x": {"type": "object", "properties": {}}}},
+                )
+            ]
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+
+        first = toolset.fetch_tools().to_list()[0]
+        first.parameters.properties["body_x"]["properties"]["injected"] = {"type": "string"}
+
+        second = toolset.fetch_tools().to_list()[0]
+        assert "injected" not in second.parameters.properties["body_x"]["properties"]
