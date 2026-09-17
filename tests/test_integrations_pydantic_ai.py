@@ -148,7 +148,7 @@ def test_execute_config_account_ids_scope_the_catalog_fetch(sample_tool: StackOn
 
     seen: list[str | None] = []
 
-    def _capture(endpoint: str, headers: dict[str, str]):
+    def _capture(endpoint: str, headers: dict[str, str], **_kwargs: object):
         seen.append(headers.get("x-account-id"))
         return []
 

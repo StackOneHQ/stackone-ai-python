@@ -127,10 +127,11 @@ except StackOneAPIError as exc:   # StackOne or the provider rejected the call
     print(exc.status_code, exc)   # the message leads with the server's own explanation
 ```
 
-`StackOneAPIError` derives from `StackOneError`; `ToolsetConfigError` (no API key,
-bad arguments, no active accounts) and `ToolsetLoadError` derive from
-`ToolsetError`. **The two bases are unrelated**, so catching everything means
-`except (StackOneError, ToolsetError)`.
+Every error derives from `StackOneError`, so `except StackOneError` catches them
+all. Underneath it: `StackOneAPIError` (the API rejected the call — carries
+`status_code` and `response_body`) and `ToolsetError`, with `ToolsetConfigError`
+(no API key, bad arguments, no active accounts) and `ToolsetLoadError` (the catalog
+could not be listed, or no connector matches).
 
 `fetch_tools()` tolerates a single failing account — it logs a warning and returns
 the healthy accounts' tools, raising only if every account failed.

@@ -45,8 +45,15 @@ class StackOneAPIError(StackOneError):
         self.response_body = response_body
 
 
-class ToolsetError(Exception):
-    """Base exception for toolset errors"""
+class ToolsetError(StackOneError):
+    """Base exception for toolset errors.
+
+    A subclass of StackOneError, so ``except StackOneError`` catches everything this
+    SDK raises. The two used to be unrelated siblings, which meant the obvious
+    catch-all silently missed ToolsetConfigError and ToolsetLoadError — the errors a
+    user is most likely to hit on their very first call. Existing
+    ``except ToolsetError`` clauses are unaffected.
+    """
 
     pass
 

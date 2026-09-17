@@ -677,7 +677,7 @@ class TestMcpToolHeaderGuard:
     def _capture(monkeypatch):
         seen: dict[str, object] = {}
 
-        def fake_call(endpoint, headers, name, arguments):
+        def fake_call(endpoint, headers, name, arguments, **_kwargs):
             seen["arguments"] = arguments
             return {"ok": True}
 
@@ -738,3 +738,55 @@ class TestMcpToolHeaderGuard:
         seen = self._capture(monkeypatch)
         tool.execute({"action_id": "a", "headers": {"X-Trace": "abc", "X-Other": "no"}})
         assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
+
+
+class TestDeclaredHeaderValuesAreStillValidated:
+    """The allowlist runs first, so the value grammar is only reached for a DECLARED
+    header — which is exactly where a model-supplied value needs checking."""
+
+    @pytest.fixture
+    def tool(self):
+        from stackone_ai.tools import StackOneMcpTool
+
+        return StackOneMcpTool(
+            name="linear_acct_execute_action",
+            description="Execute",
+            parameters=ToolParameters(type="object", properties={"headers_x-trace": {"type": "string"}}),
+            api_key="k",
+            endpoint="https://api.example.com/mcp",
+            headers={},
+            account_id="acct",
+        )
+
+    @pytest.mark.parametrize("value", ["trailing\n", "a\r\nInjected: 1", "bad\rvalue"])
+    def test_crlf_in_a_declared_header_is_dropped(self, tool, value):
+        """`$` matches before a trailing newline, so this needs fullmatch, not match."""
+        assert tool._sanitise_headers({"X-Trace": value}) == {}
+
+    def test_a_clean_declared_header_survives(self, tool):
+        assert tool._sanitise_headers({"X-Trace": "abc-123"}) == {"X-Trace": "abc-123"}
+
+
+class TestDownloadFilenamesAreSafe:
+    """The filename comes from a Content-Disposition an attacker can choose."""
+
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [
+            ('attachment; filename="../../.ssh/authorized_keys"', "authorized_keys"),
+            ("attachment; filename*=UTF-8''%2e%2e%2f%2e%2e%2fetc%2fcron.d%2fx", "x"),
+            ('attachment; filename="/etc/passwd"', "passwd"),
+            ('attachment; filename="C:evil.exe"', "evil.exe"),
+            ('attachment; filename="..\\\\..\\\\windows\\\\x.dll"', "x.dll"),
+            ('attachment; filename="‮gnp.exe"', "gnp.exe"),
+            ('attachment; filename=".."', None),
+            ('attachment; notfilename="decoy.txt"', None),
+            ('attachment; filename="report.pdf"', "report.pdf"),
+        ],
+    )
+    def test_traversal_and_spoofing_are_neutralised(self, header, expected):
+        assert filename_from_content_disposition(header) == expected
+
+    def test_overlong_names_are_capped_keeping_the_extension(self):
+        name = filename_from_content_disposition(f'attachment; filename="{"a" * 400}.pdf"')
+        assert name is not None and name.endswith(".pdf") and len(name.encode()) <= 255

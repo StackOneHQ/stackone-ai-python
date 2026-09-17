@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, TypeVar, cast
 
+import anyio
 import httpx
 from pydantic import BaseModel, Field, PrivateAttr
 
@@ -116,8 +117,24 @@ def build_auth_header(api_key: str) -> str:
     return f"Basic {token}"
 
 
-def fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[McpToolDefinition]:
-    """List every tool the MCP endpoint serves, following pagination."""
+def _mcp_transport(client: Any, endpoint: str, headers: dict[str, str], timeout: float) -> Any:
+    """Open the streamable-HTTP transport with the caller's timeout on every leg.
+
+    The client's own defaults are a 30s connect and a 300s SSE read, and neither was
+    overridden — so ``StackOneToolSet(timeout=2)`` against a host that accepts and never
+    answers hung for five minutes. The execution path honoured ``timeout``; the MCP
+    path, which search() and execute() and every listing use, did not.
+    """
+    return client(endpoint, headers=headers, timeout=timeout, sse_read_timeout=timeout)
+
+
+def fetch_mcp_tools(
+    endpoint: str, headers: dict[str, str], *, timeout: float = 60.0
+) -> list[McpToolDefinition]:
+    """List every tool the MCP endpoint serves, following pagination.
+
+    ``timeout`` bounds the whole exchange, handshake included.
+    """
     try:
         from mcp import types as mcp_types  # ty: ignore[unresolved-import]
         from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
@@ -128,7 +145,15 @@ def fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[McpToolDefin
         ) from exc
 
     async def _list() -> list[McpToolDefinition]:
-        async with streamablehttp_client(endpoint, headers=headers) as (read_stream, write_stream, _):
+        with anyio.fail_after(timeout):
+            return await _list_within_deadline()
+
+    async def _list_within_deadline() -> list[McpToolDefinition]:
+        async with _mcp_transport(streamablehttp_client, endpoint, headers, timeout) as (
+            read_stream,
+            write_stream,
+            _,
+        ):
             session = ClientSession(
                 read_stream,
                 write_stream,
@@ -295,7 +320,9 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     return parsed
 
 
-def call_mcp_tool(endpoint: str, headers: dict[str, str], name: str, arguments: JsonDict) -> JsonDict:
+def call_mcp_tool(
+    endpoint: str, headers: dict[str, str], name: str, arguments: JsonDict, *, timeout: float = 60.0
+) -> JsonDict:
     """Invoke a tool over MCP ``tools/call``.
 
     The search/execute meta tools exist only on the MCP endpoint — they have no
@@ -306,7 +333,15 @@ def call_mcp_tool(endpoint: str, headers: dict[str, str], name: str, arguments: 
     from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
 
     async def _call() -> JsonDict:
-        async with streamablehttp_client(endpoint, headers=headers) as (read_stream, write_stream, _):
+        with anyio.fail_after(timeout):
+            return await _call_within_deadline()
+
+    async def _call_within_deadline() -> JsonDict:
+        async with _mcp_transport(streamablehttp_client, endpoint, headers, timeout) as (
+            read_stream,
+            write_stream,
+            _,
+        ):
             session = ClientSession(
                 read_stream,
                 write_stream,
@@ -926,7 +961,9 @@ class StackOneMcpTool(StackOneTool):
         if isinstance(supplied_headers, dict):
             parsed = {**parsed, "headers": self._sanitise_headers(supplied_headers)}
 
-        return call_mcp_tool(self._endpoint, self._mcp_headers, self.name, parsed)
+        return call_mcp_tool(
+            self._endpoint, self._mcp_headers, self.name, parsed, timeout=self._execute_config.timeout
+        )
 
 
 class Tools:

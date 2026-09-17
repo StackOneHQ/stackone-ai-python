@@ -205,9 +205,10 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 
 ## Important Considerations
 
-- **Error handling**: `StackOneError`/`StackOneAPIError` and `ToolsetError`/
-  `ToolsetConfigError`/`ToolsetLoadError` are two **unrelated** hierarchies in
-  `types.py`. `str(StackOneAPIError)` leads with the server's own message.
+- **Error handling**: everything derives from `StackOneError` (`types.py`) — both
+  `StackOneAPIError` and the `ToolsetError` family. Nothing outside that hierarchy
+  should escape a public method. `str(StackOneAPIError)` leads with the server's own
+  message.
 - **File downloads**: non-JSON responses return raw bytes plus metadata. The filename
   comes from an attacker-controllable header and is reduced to a safe basename.
 - **Headers**: model-supplied headers are an **allowlist** driven by the served

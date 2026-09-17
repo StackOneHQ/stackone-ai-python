@@ -226,7 +226,10 @@ class StackOneToolSet:
             account: str | None,
         ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
             headers = self._build_mcp_headers(account)
-            return [(tool_def, account, endpoint, headers) for tool_def in fetch_mcp_tools(endpoint, headers)]
+            return [
+                (tool_def, account, endpoint, headers)
+                for tool_def in fetch_mcp_tools(endpoint, headers, timeout=self._timeout)
+            ]
 
         listings: list[tuple[McpToolDefinition, str | None, str, Headers]] = []
         if len(account_scope) == 1:
