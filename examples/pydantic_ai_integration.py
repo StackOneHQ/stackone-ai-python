@@ -45,7 +45,10 @@ def pydantic_ai_integration() -> None:
         system_prompt="You are a helpful assistant that answers by calling tools.",
         tools=tools,
     )
-    result = agent.run_sync("Use one of your tools to list a few records, then summarise them.")
+    result = agent.run_sync(
+        "Use one of your tools to list a few records, then summarise them. Call it with no arguments unless the schema marks a field required. "
+        "Call it with no arguments unless the schema marks a field required."
+    )
     print(f"Result:\n{result.output}")
 
 

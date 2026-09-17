@@ -123,7 +123,7 @@ def fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[McpToolDefin
         from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ToolsetConfigError(
-            "MCP dependencies are required for fetch_tools. Install with 'uv add \"stackone-ai[mcp]\"'."
+            "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
         ) from exc
 
     async def _list() -> list[McpToolDefinition]:
@@ -578,7 +578,7 @@ class StackOneTool(BaseModel):
         Requires ``stackone-ai[langchain]``.
         """
         try:
-            from langchain_core.tools import BaseTool
+            from langchain_core.tools import BaseTool, ToolException
         except ImportError as e:
             raise ImportError(
                 "Install `langchain-core` (or `stackone-ai[langchain]`) to use the LangChain integration."
@@ -633,10 +633,17 @@ class StackOneTool(BaseModel):
             name: str = parent_tool.name
             description: str = parent_tool.description
             args_schema: type[BaseModel] = schema_class  # ty: ignore[invalid-assignment]
-            func = staticmethod(parent_tool.execute)  # Required by CrewAI
 
             def _run(self, **kwargs: Any) -> Any:
-                return parent_tool.execute(kwargs)
+                try:
+                    return parent_tool.execute(kwargs)
+                except StackOneError as exc:
+                    # LangChain's handle_tool_error only catches ToolException, so a
+                    # StackOneError would kill the graph rather than reaching the
+                    # agent. Models guess arguments wrong and StackOne's 400 names the
+                    # offending field — re-raising in LangChain's own vocabulary lets
+                    # a caller opt into feeding that back and retrying.
+                    raise ToolException(str(exc)) from exc
 
         return StackOneLangChainTool()
 

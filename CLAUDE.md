@@ -45,7 +45,7 @@ them locally before pushing.
 
 - Use [ruff](https://docs.astral.sh/ruff/) for linting and formatting
 - Line length: 110 (set in `pyproject.toml`)
-- Target version: py310
+- Target version: py311
 - Use snake_case for Python files
 - Use the `.yaml` extension, not `.yml`
 - Prefer early returns and guard clauses over nested conditionals
@@ -91,7 +91,8 @@ import, never in core.
 ## Testing
 
 - Async tests use `pytest-asyncio`
-- Examples are tested as part of CI and must work with the latest package version
+- Examples are type-checked against the current SDK by `make validate` and in CI;
+  each must fail loudly rather than succeed with an empty catalog
 
 Integration tests exercise an MCP mock server (`tests/mocks/`) that runs under `tsx`:
 

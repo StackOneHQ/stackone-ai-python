@@ -37,13 +37,13 @@ packages = ["stackone_ai"]
 # it, so installing the SDK does not drag in a framework you do not use.
 [project.optional-dependencies]
 langchain = ["langchain-core>=0.1.0"]
-pydantic-ai = ["pydantic-ai-slim>=1.83.0,<2.0.0"]
+pydantic-ai = ["pydantic-ai-slim>=1.83.0"]
 examples = [
-  "crewai>=0.102.0",
+  "langchain>=1.0.0",
   "langchain-openai>=1.1.14",
   "langgraph>=1.1.6",
   "openai>=2.32.0",
-  "pydantic-ai>=1.83.0,<2.0.0",
+  "pydantic-ai>=1.83.0",
   "python-dotenv>=1.0.1",
 ]
 dev = [

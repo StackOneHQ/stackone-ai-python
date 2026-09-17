@@ -73,7 +73,11 @@ def openai_integration() -> None:
 
     messages: list[dict] = [
         {"role": "system", "content": "You answer questions by calling the tools you are given."},
-        {"role": "user", "content": "Use one of your tools to list a few records, then summarise them."},
+        {
+            "role": "user",
+            "content": "Use one of your tools to list a few records, then summarise them. Call it with no arguments unless the schema marks a field required. "
+            "Call it with no arguments unless the schema marks a field required.",
+        },
     ]
 
     response = client.chat.completions.create(

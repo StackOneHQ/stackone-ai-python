@@ -75,6 +75,9 @@ jobs:
       - name: Run Ty
         run: uv run ty check stackone_ai
 
+      - name: Type check examples against the current SDK
+        run: uv run ty check examples
+
       - name: Run Tests
         run: uv run pytest
 

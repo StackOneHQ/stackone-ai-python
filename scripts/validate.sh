@@ -56,20 +56,16 @@ spec.loader.exec_module(mod)
     # Catches use of a removed or renamed SDK symbol inside a function body,
     # which importing alone cannot see.
     #
-    # Capture first, then grep. Piping ty straight into grep would be scored by
-    # `set -o pipefail`, which returns ty's non-zero exit even when grep matched —
-    # so a successful detection reads as "no match" and the check passes vacuously.
-    # Match the diagnostic line itself, not any line mentioning the package: ty
-    # echoes source context, so a bare `stackone_ai` grep matches every example's
-    # own import and reports a failure on a perfectly clean tree.
-    local ty_out ty_hits
-    ty_out="$(cd "$SDK" && uv run ty check examples/ 2>&1)" || true
-    ty_hits="$(grep -E '^error\[unresolved-(import|attribute)\]:.*stackone_ai' <<<"$ty_out" || true)"
-    if [ -n "$ty_hits" ]; then
-        fail "examples reference a stackone_ai symbol that does not exist"
-        sed 's/^/        /' <<<"$ty_hits"
+    # Score ty's exit code. This used to grep for a diagnostic line mentioning
+    # `stackone_ai`, but ty does not name the package in the message it emits for
+    # the case that matters — `Object of type `Tools` has no attribute `gone``
+    # contains no "stackone_ai" at all — so the check passed vacuously on exactly
+    # the breakage it was written to catch, and the trailing `|| true` discarded
+    # every other type error in examples/ besides.
+    if (cd "$SDK" && uv run ty check examples/); then
+        pass "examples type-check against the current SDK"
     else
-        pass "no example references a missing stackone_ai symbol"
+        fail "examples type-check against the current SDK"
     fi
 
 }
