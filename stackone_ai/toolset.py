@@ -514,6 +514,11 @@ class StackOneToolSet:
         key on its own is not enough to list tools. Rather than make every caller
         supply one, ask the API which accounts the key has.
 
+        Warning: For organizations with many connected accounts, relying on discovery
+        fetches the tool catalog for every account. If you have a large number of
+        accounts, it is highly recommended to supply specific ``account_id`` or
+        ``account_ids`` to avoid excessive API round trips and huge model contexts.
+
         Raises:
             ToolsetConfigError: If the key has no accounts, or none are usable.
         """
@@ -563,6 +568,7 @@ class StackOneToolSet:
         """
         schema = tool_def.input_schema or {}
         parameters = ToolParameters(
+            **schema,
             type=str(schema.get("type") or "object"),
             properties=self._normalize_schema_properties(schema),
         )

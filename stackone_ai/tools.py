@@ -73,9 +73,6 @@ _FLAT_ENVELOPE_KEY_PATTERN = re.compile(r"^(path|query|body|headers)_(.+)$")
 # whether the field was absent from the schema's `required` list. It is an internal
 # marker, not part of the served schema, so it is stripped before a schema is
 # handed to a model.
-_INTERNAL_SCHEMA_KEYS = frozenset({"nullable"})
-
-
 @dataclass
 class McpToolDefinition:
     """A tool exactly as the MCP server listed it."""
@@ -357,24 +354,6 @@ def call_mcp_tool(
         raise _describe_mcp_failure(exc, endpoint) from exc
 
 
-def _strip_internal_keys(schema: Any) -> Any:
-    """Recursively drop the SDK's internal markers from a property schema.
-
-    Everything else is preserved verbatim: ``format``, ``pattern``, ``default``,
-    ``minimum``/``maximum``, ``oneOf``/``anyOf``, nested ``required`` and any
-    keyword the server sends that this SDK has never heard of.
-    """
-    if isinstance(schema, dict):
-        return {
-            key: _strip_internal_keys(value)
-            for key, value in schema.items()
-            if key not in _INTERNAL_SCHEMA_KEYS
-        }
-    if isinstance(schema, list):
-        return [_strip_internal_keys(item) for item in schema]
-    return schema
-
-
 class StackOneTool(BaseModel):
     """A single tool: its served schema plus the request needed to execute it."""
 
@@ -385,14 +364,7 @@ class StackOneTool(BaseModel):
     _api_key: str = PrivateAttr()
     _account_id: str | None = PrivateAttr(default=None)
 
-    @property
-    def connector(self) -> str:
-        """Extract connector from tool name.
 
-        Tool names follow the format: {connector}_{action}_{entity}
-        e.g., 'bamboohr_create_employee' -> 'bamboohr'
-        """
-        return self.name.split("_")[0].lower()
 
     def __init__(
         self,
@@ -470,13 +442,9 @@ class StackOneTool(BaseModel):
 
         The allowlist is the served schema itself, so this needs no maintenance: today
         zero of the served actions declare a ``headers_*`` property, and the RPC server
-        ignores the envelope's ``headers`` object outright — but the day an action
-        genuinely needs a header, it works with no SDK release.
-
-        Lives on the base class because both execution paths need it: the RPC tool
-        builds the envelope's headers, and the MCP tool — what search_execute mode
-        returns, and so what the documented search()/execute() flow uses — forwards the
-        model's headers object into tools/call.
+        ignores the envelope's ``headers`` object outright. (Note: on the MCP path for
+        meta tools, headers are always dropped because the target action's schema is not
+        fetched ahead of execution to build an allowlist.)
         """
         allowed = {
             prop[len("headers_") :].casefold()
@@ -642,20 +610,23 @@ class StackOneTool(BaseModel):
 
         for name, prop in self.parameters.properties.items():
             if isinstance(prop, dict):
-                properties[name] = _strip_internal_keys(prop)
-                if not prop.get("nullable", False):
+                clean_prop = dict(prop)
+                is_nullable = clean_prop.pop("nullable", False)
+                properties[name] = clean_prop
+                if not is_nullable:
                     required.append(name)
             else:
                 properties[name] = {"type": "string"}
                 required.append(name)
 
-        parameters: JsonDict = {
-            "type": "object",
-            "properties": properties,
-        }
+        parameters: JsonDict = self.parameters.model_dump()
+        parameters["properties"] = properties
 
+        # Only set required if there are required properties, else remove it if it existed
         if required:
             parameters["required"] = required
+        else:
+            parameters.pop("required", None)
 
         return {
             "type": "function",
@@ -872,6 +843,11 @@ class StackOneRpcTool(StackOneTool):
         # name is proof the schema is not. `any` would be satisfied by the very key
         # this exists to protect — a declared body field called `path_to_file`.
         prefixed = not named or all(_FLAT_ENVELOPE_KEY_PATTERN.match(k) for k in named)
+        if named and not prefixed:
+            logger.debug(
+                "Schema has at least one bare parameter name so flat-prefix detection "
+                "is disabled. Every parameter will fall into the body unless explicitly nested."
+            )
 
         # Two passes so precedence is deterministic rather than following the caller's
         # dict order: an explicit flat_prefixed key always wins over a nested one.
@@ -1042,9 +1018,7 @@ class Tools:
                 return account_id
         return None
 
-    def get_connectors(self) -> set[str]:
-        """Get unique connector names from all tools (lowercase)"""
-        return {tool.connector for tool in self.tools}
+
 
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format"""

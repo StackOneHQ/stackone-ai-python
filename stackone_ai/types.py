@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Annotated, Any, Literal, TypeAlias, TypedDict
 from urllib.parse import unquote
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 JsonDict: TypeAlias = dict[str, Any]
 Headers: TypeAlias = dict[str, str]
@@ -96,6 +96,8 @@ class ParameterLocation(str, Enum):
 
 def validate_method(v: str) -> str:
     """Validate HTTP method is uppercase and supported"""
+    if not isinstance(v, str):
+        raise ValueError(f"Unsupported HTTP method: {v}")
     method = v.upper()
     if method not in {"GET", "POST", "PUT", "DELETE", "PATCH"}:
         raise ValueError(f"Unsupported HTTP method: {method}")
@@ -192,6 +194,8 @@ class ToolParameters(BaseModel):
     need the raw served schema (for example the ADK plugin) read this directly, so
     nothing here may be invented or dropped.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     type: str = Field(description="JSON Schema type")
     properties: JsonDict = Field(description="JSON Schema properties")
