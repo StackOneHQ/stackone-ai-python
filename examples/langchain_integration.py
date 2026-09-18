@@ -36,7 +36,7 @@ def langchain_integration() -> None:
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
-        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        actions=["*_list_*"],
         account_ids=[account_id],
     )
 
@@ -47,10 +47,10 @@ def langchain_integration() -> None:
         print(f"  - {tool.name}")
 
     # Create model with tools
-    model = ChatOpenAI(model="gpt-5.4")
+    model = ChatOpenAI(model="gpt-5.4")  # ty: ignore[unknown-argument]
     model_with_tools = model.bind_tools(langchain_tools)
 
-    result = model_with_tools.invoke("List the first 5 employees")
+    result = model_with_tools.invoke("Use one of your tools to list a few records, then summarise them.")
     print(f"LLM response: {result.content}")
 
     if result.tool_calls:

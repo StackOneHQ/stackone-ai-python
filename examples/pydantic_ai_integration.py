@@ -4,8 +4,8 @@
 uv run examples/pydantic_ai_integration.py
 ```
 
-Install with `pip install 'stackone-ai[pydantic-ai]'` (or
-`pip install 'stackone-ai[examples]'` to run this file).
+Install with `uv add 'stackone-ai[pydantic-ai]'` (or
+`uv add 'stackone-ai[examples]'` to run this file).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ except ModuleNotFoundError:
 try:
     from pydantic_ai import Agent
 except ImportError:
-    print("Install pydantic-ai to run this example: pip install 'stackone-ai[pydantic-ai]'")
+    print("Install pydantic-ai to run this example: uv add 'stackone-ai[pydantic-ai]'")
     raise SystemExit(1) from None
 
 from stackone_ai import StackOneToolSet
@@ -36,16 +36,16 @@ def pydantic_ai_integration() -> None:
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
-        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        actions=["*_list_*"],
         account_ids=[os.environ["STACKONE_ACCOUNT_ID"]],
     ).to_pydantic_ai()
 
     agent = Agent(
         "openai:gpt-5.4",
-        system_prompt="You are a helpful HR assistant.",
+        system_prompt="You are a helpful assistant that answers by calling tools.",
         tools=tools,
     )
-    result = agent.run_sync("List the first 5 employees")
+    result = agent.run_sync("Use one of your tools to list a few records, then summarise them.")
     print(f"Result:\n{result.output}")
 
 

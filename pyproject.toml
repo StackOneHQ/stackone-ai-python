@@ -3,14 +3,13 @@ name = "stackone-ai"
 version = "2.10.1"
 description = "agents performing actions on your SaaS"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "StackOne", email = "support@stackone.com" }]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -19,10 +18,9 @@ classifiers = [
 dependencies = [
   "pydantic>=2.10.6",
   "httpx>=0.28.0",
-  "langchain-core>=0.1.0",
-  "bm25s>=0.2.2",
-  "numpy>=1.24.0",
-  "typing-extensions>=4.0.0",
+  # fetch_tools() is the only route to a tool and talks MCP, so the client is
+  # not optional: without it the SDK cannot do anything.
+  "mcp>=1.3.0,<2.0.0",
 ]
 
 [build-system]
@@ -32,51 +30,45 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["stackone_ai"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"stackone_ai/py.typed" = "stackone_ai/py.typed"
+# The sdist carried the whole dev tree — uv.lock, pnpm-lock.yaml, CLAUDE.md, .github/
+# and the TypeScript mocks. A consumer building from source needs none of it.
+[tool.hatch.build.targets.sdist]
+include = ["stackone_ai", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
 
+# Per-framework adapters. Each is imported lazily inside the method that needs
+# it, so installing the SDK does not drag in a framework you do not use.
 [project.optional-dependencies]
-mcp = ["mcp>=1.3.0,<2.0.0"]
-pydantic-ai = ["pydantic-ai-slim>=1.83.0,<2.0.0"]
+langchain = ["langchain-core>=0.1.0"]
+pydantic-ai = ["pydantic-ai-slim>=1.83.0"]
 examples = [
-  "crewai>=0.102.0",
+  "langchain>=1.0.0",
   "langchain-openai>=1.1.14",
-  "langgraph>=1.1.6",
   "openai>=2.32.0",
-  "pydantic-ai>=1.83.0,<2.0.0",
+  "pydantic-ai>=1.83.0",
   "python-dotenv>=1.0.1",
 ]
-
-[dependency-groups]
 dev = [
   "hypothesis>=6.141.1",
+  "langchain-core>=0.1.0",
   "pytest>=8.3.4",
   "pytest-asyncio>=0.25.3",
   "pytest-cov>=6.0.0",
-  "pytest-snapshot>=0.9.0",
   "respx>=0.22.0",
   "ruff>=0.9.6",
-  "stackone-ai",
   "ty>=0.0.3",
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-markers = [
-  "asyncio: mark test as async",
-  "integration: mark test as integration test requiring MCP mock server",
-]
 
 [tool.ruff.lint.per-file-ignores]
-"bin/**.py" = ["T201", "T203"]
-"scripts/**.py" = ["T201", "T203"]
-"tests/**.py" = ["T201", "T203"]
-"examples/**.py" = ["T201", "T203", "E501", "F841", "E402"]
+"examples/**.py" = ["E501", "F841", "E402"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -95,13 +87,7 @@ branch = true
 omit = ["stackone_ai/__init__.py", "**/py.typed"]
 
 [tool.coverage.report]
-exclude_lines = [
-  "pragma: no cover",
-  "def __repr__",
-  "raise NotImplementedError",
-  "if TYPE_CHECKING:",
-  "if typing.TYPE_CHECKING:",
-]
+exclude_lines = ["pragma: no cover"]
 
 [tool.coverage.json]
 output = "coverage/coverage.json"

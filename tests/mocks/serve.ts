@@ -1,4 +1,4 @@
-#!/usr/bin/env -S bun run
+#!/usr/bin/env -S pnpm exec tsx
 /**
  * Standalone HTTP server for MCP mock testing.
  * Imports createMcpApp from stackone-ai-node vendor submodule.
@@ -6,8 +6,9 @@
  * Usage:
  *   ./tests/mocks/serve.ts [port]
  *   # or
- *   bun run tests/mocks/serve.ts [port]
+ *   pnpm mock-server [port]
  */
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import {
@@ -16,9 +17,9 @@ import {
   defaultMcpTools,
   exampleBamboohrTools,
   mixedProviderTools,
-} from "../../vendor/stackone-ai-node/mocks/mcp-server";
+} from "./mcp-server";
 
-const port = parseInt(process.env.PORT || Bun.argv[2] || "8787", 10);
+const port = parseInt(process.env.PORT || process.argv[2] || "8787", 10);
 
 // Create the MCP app with all test tool configurations
 const mcpApp = createMcpApp({
@@ -43,6 +44,15 @@ app.use("/*", cors());
 // Health check endpoint
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+// The SDK discovers accounts here when none is supplied. Returned as a bare list
+// with an inactive entry, matching the shape and statuses the real API serves.
+app.get("/accounts", (c) =>
+  c.json([
+    { id: "default", provider: "testprovider", status: "active" },
+    { id: "dead", provider: "brokenprovider", status: "error" },
+  ]),
+);
+
 // Mount the MCP app (handles /mcp endpoint)
 app.route("/", mcpApp);
 
@@ -56,6 +66,16 @@ app.post("/actions/rpc", async (c) => {
     return c.json(
       { error: "Unauthorized", message: "Missing or invalid authorization header" },
       401,
+    );
+  }
+
+  // Execution is account-scoped too. This endpoint used to accept anything with a
+  // "Basic " prefix and no account at all, so the sibling of the bug that shipped —
+  // an unscoped execution request — could not be caught by any test.
+  if (!accountIdHeader) {
+    return c.json(
+      { error: "Bad Request", message: "Missing x-account-id header in request" },
+      400,
     );
   }
 
@@ -122,10 +142,7 @@ app.post("/actions/rpc", async (c) => {
 
 console.log(`MCP Mock Server starting on port ${port}...`);
 
-export default {
-  port,
-  fetch: app.fetch,
-};
+serve({ fetch: app.fetch, port });
 
 console.log(`MCP Mock Server running at http://localhost:${port}`);
 console.log("Endpoints:");

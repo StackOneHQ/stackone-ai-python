@@ -7,13 +7,13 @@ import pytest
 import respx
 
 from stackone_ai import StackOneTool
-from stackone_ai.models import (
+from stackone_ai.tools import StackOneRpcTool
+from stackone_ai.types import (
     ExecuteConfig,
     ToolParameters,
-    _filename_from_content_disposition,
-    _is_json_content_type,
+    filename_from_content_disposition,
+    is_json_content_type,
 )
-from stackone_ai.toolset import _StackOneRpcTool
 from tests.conftest import TEST_BASE_URL
 
 
@@ -144,7 +144,7 @@ class TestToolCalling:
 
 
 class TestStackOneRpcTool:
-    """Test _StackOneRpcTool functionality"""
+    """Test StackOneRpcTool functionality"""
 
     @pytest.fixture
     def rpc_tool(self):
@@ -155,7 +155,7 @@ class TestStackOneRpcTool:
                 "employee_id": {"type": "string", "description": "Employee ID"},
             },
         )
-        return _StackOneRpcTool(
+        return StackOneRpcTool(
             name="hibob_get_employee",
             description="Get employee details",
             parameters=parameters,
@@ -246,7 +246,7 @@ class TestStackOneRpcTool:
 
         assert result == {"success": True}
         body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["X-Custom-Header"] == "custom_value"
+        assert "X-Custom-Header" not in body["headers"]  # undeclared by the served schema
         assert body["headers"]["x-account-id"] == "test_account"
 
     @respx.mock
@@ -261,7 +261,43 @@ class TestStackOneRpcTool:
         assert result == {"success": True}
         body = json.loads(route.calls[0].request.content)
         assert "Authorization" not in body["headers"]
-        assert body["headers"]["X-Other"] == "value"
+        assert "X-Other" not in body["headers"]  # undeclared by the served schema
+
+    @respx.mock
+    @pytest.mark.parametrize(
+        "header_name",
+        ["authorization", "AUTHORIZATION", "AuThOrIzAtIon"],
+    )
+    def test_execute_headers_strips_authorization_any_case(self, rpc_tool, header_name):
+        """Reserved headers are stripped case-insensitively.
+
+        HTTP header names are case-insensitive, and tool arguments are model-controlled,
+        so a case variant must not smuggle a credential into the RPC envelope.
+        """
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
+            return_value=httpx.Response(200, json={"success": True})
+        )
+
+        rpc_tool.execute({"headers": {header_name: "Bearer attacker-token"}})
+
+        body = json.loads(route.calls[0].request.content)
+        assert all(key.lower() != "authorization" for key in body["headers"])
+
+    @respx.mock
+    def test_execute_headers_cannot_override_account_id(self, rpc_tool):
+        """A tool call must not be able to retarget another account.
+
+        x-account-id scopes the request to a tenant; letting model-supplied headers
+        override it would allow lateral movement across every account the key reaches.
+        """
+        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
+            return_value=httpx.Response(200, json={"success": True})
+        )
+
+        rpc_tool.execute({"headers": {"x-account-id": "victim_account"}})
+
+        body = json.loads(route.calls[0].request.content)
+        assert body["headers"]["x-account-id"] == "test_account"
 
     @respx.mock
     def test_execute_headers_skips_none_values(self, rpc_tool):
@@ -274,17 +310,24 @@ class TestStackOneRpcTool:
 
         assert result == {"success": True}
         body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["X-Present"] == "value"
+        assert "X-Present" not in body["headers"]  # undeclared by the served schema
         assert "X-Absent" not in body["headers"]
 
     @respx.mock
-    def test_execute_without_account_id(self):
-        """Test RPC tool execution without account ID"""
+    def test_execute_without_account_id_sends_no_account_anywhere(self):
+        """A tool built with no account scopes nothing — and the server refuses it.
+
+        This used to assert only that the envelope omitted x-account-id, which is the
+        same shape as the assertion that pinned the bug that shipped: a green test
+        recording what the client happened to send. The point worth pinning is that
+        an unscoped request is not a usable request, so the HTTP header is checked
+        too — that is the one the API actually reads.
+        """
         parameters = ToolParameters(
             type="object",
             properties={},
         )
-        tool = _StackOneRpcTool(
+        tool = StackOneRpcTool(
             name="test_tool",
             description="Test",
             parameters=parameters,
@@ -300,8 +343,12 @@ class TestStackOneRpcTool:
         result = tool.execute({})
 
         assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
+        request = route.calls[0].request
+        body = json.loads(request.content)
         assert "x-account-id" not in body["headers"]
+        # The header the API reads. The mock server 400s when it is absent, which is
+        # what makes tests/test_fetch_tools.py::TestRpcToolExecution meaningful.
+        assert "x-account-id" not in request.headers
 
     @respx.mock
     def test_execute_with_none_arguments(self, rpc_tool):
@@ -402,7 +449,7 @@ class TestBinaryDownloadResponse:
             type="object",
             properties={"id": {"type": "string", "description": "File ID"}},
         )
-        tool = _StackOneRpcTool(
+        tool = StackOneRpcTool(
             name="googledrive_unified_download_file",
             description="Download a file",
             parameters=parameters,
@@ -511,7 +558,7 @@ class TestResponseHelpers:
         ],
     )
     def test_is_json_content_type(self, content_type, expected):
-        assert _is_json_content_type(content_type) is expected
+        assert is_json_content_type(content_type) is expected
 
     @pytest.mark.parametrize(
         ("header", "expected"),
@@ -533,4 +580,228 @@ class TestResponseHelpers:
         ],
     )
     def test_filename_from_content_disposition(self, header, expected):
-        assert _filename_from_content_disposition(header) == expected
+        assert filename_from_content_disposition(header) == expected
+
+
+class TestEnvelopeSplitIsSchemaAware:
+    """The prefix pattern alone cannot tell a path param from a body field that
+    happens to start with "path_". The served schema settles it."""
+
+    @pytest.fixture
+    def rpc_tool(self):
+        return StackOneRpcTool(
+            name="test_action",
+            description="Test",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="test_api_key",
+            base_url=TEST_BASE_URL,
+            account_id="test-account",
+        )
+
+    def test_a_bare_schema_keeps_prefix_lookalikes_in_the_body(self, rpc_tool):
+        """No declared key is location-prefixed, so `path_to_file` is a real field name.
+
+        Splitting it would send the server a path component it has no use for and drop
+        the argument the model supplied — silently.
+        """
+        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x"}, {"path_to_file", "name"})
+        assert actual["body"] == {"path_to_file": "/tmp/x"}
+        assert actual["path"] == {}
+
+    def test_a_prefixed_schema_splits_every_match(self, rpc_tool):
+        """Under flat_prefixed every parameter is prefixed, so a match really is located."""
+        actual = rpc_tool._split_envelope_params(
+            {"path_id": "1", "query_offset": 10}, {"path_id", "query_limit"}
+        )
+        assert actual["path"] == {"id": "1"}
+        # Undeclared but prefixed: the model may be working from a newer schema than the
+        # cached listing. Routing it to the body would silently drop the argument.
+        assert actual["query"] == {"offset": 10}
+
+    def test_a_declared_reserved_word_is_a_field_not_a_container(self, rpc_tool):
+        """A served property literally named `query` must not be rejected as malformed."""
+        actual = rpc_tool._split_envelope_params({"query": "sales"}, {"query", "id"})
+        assert actual["body"] == {"query": "sales"}
+
+    def test_no_schema_trusts_every_match(self, rpc_tool):
+        """Direct callers without a schema keep the old, purely pattern-based behaviour."""
+        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x"})
+        assert actual["path"] == {"to_file": "/tmp/x"}
+
+    def test_scalar_under_a_reserved_key_is_rejected_not_dropped(self, rpc_tool):
+        with pytest.raises(ValueError, match="envelope container"):
+            rpc_tool._split_envelope_params({"query": "not-an-object"})
+
+    def test_precedence_does_not_depend_on_caller_key_order(self, rpc_tool):
+        """flat_prefixed beats nested beats bare, whatever order the dict is built in."""
+        forwards = rpc_tool._split_envelope_params({"body_foo": 1, "foo": 2})
+        backwards = rpc_tool._split_envelope_params({"foo": 2, "body_foo": 1})
+        assert forwards["body"] == backwards["body"] == {"foo": 1}
+
+        nested_first = rpc_tool._split_envelope_params({"body": {"foo": 9}, "foo": 2})
+        bare_first = rpc_tool._split_envelope_params({"foo": 2, "body": {"foo": 9}})
+        assert nested_first["body"] == bare_first["body"] == {"foo": 9}
+
+    def test_empty_schema_falls_back_to_trusting_prefixes(self, rpc_tool):
+        """An empty declared set means "no schema", not "nothing is declared".
+
+        Treating it as an allowlist would route every path_* key into the body and
+        silently drop every path parameter.
+        """
+        assert rpc_tool._split_envelope_params({"path_id": "1"}, set())["path"] == {"id": "1"}
+
+
+class TestMcpToolHeaderGuard:
+    """The header guard on the MCP path — the one search()/execute() actually use.
+
+    This had no coverage at all: the whole `_sanitise_headers` call could be deleted
+    from StackOneMcpTool.execute and every test still passed. Every existing header
+    test drives the RPC tool only.
+    """
+
+    @pytest.fixture
+    def mcp_tool(self):
+        from stackone_ai.tools import StackOneMcpTool
+
+        return StackOneMcpTool(
+            name="linear_acct_execute_action",
+            description="Execute",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="test_key",
+            endpoint="https://api.example.com/mcp",
+            headers={"Authorization": "Basic real", "x-account-id": "real-account"},
+            account_id="real-account",
+        )
+
+    @staticmethod
+    def _capture(monkeypatch):
+        seen: dict[str, object] = {}
+
+        def fake_call(endpoint, headers, name, arguments, **_kwargs):
+            seen["arguments"] = arguments
+            return {"ok": True}
+
+        monkeypatch.setattr("stackone_ai.tools.call_mcp_tool", fake_call)
+        return seen
+
+    def test_undeclared_headers_are_all_dropped(self, mcp_tool, monkeypatch):
+        """An allowlist, not a denylist: a two-name denylist let Proxy-Authorization,
+        x-stackone-account-id, Cookie and X-Api-Key through. No served action declares
+        a headers_* property, so nothing model-supplied belongs here."""
+        seen = self._capture(monkeypatch)
+        mcp_tool.execute(
+            {
+                "action_id": "linear_list_issues",
+                "headers": {
+                    "Authorization": "Bearer stolen",
+                    "Proxy-Authorization": "Basic stolen",
+                    "x-account-id": "victim-account",
+                    "x-stackone-account-id": "victim-account",
+                    "Cookie": "session=x",
+                    "X-Api-Key": "stolen",
+                    "X-Anything": "nope",
+                },
+            }
+        )
+        assert seen["arguments"]["headers"] == {}
+
+    @pytest.mark.parametrize(
+        "name",
+        [" authorization", "AUTHORIZATION\t", "X-Account-Id", " x-account-id "],
+    )
+    def test_whitespace_and_case_variants_do_not_slip_past(self, mcp_tool, monkeypatch, name):
+        seen = self._capture(monkeypatch)
+        mcp_tool.execute({"action_id": "a", "headers": {name: "stolen"}})
+        assert seen["arguments"]["headers"] == {}
+
+    @pytest.mark.parametrize("value", ["a\r\nEvil: 1", "trailing\n", "bad\rvalue"])
+    def test_crlf_injection_is_rejected(self, mcp_tool, monkeypatch, value):
+        """`$` also matches before a trailing newline, so this needs fullmatch."""
+        seen = self._capture(monkeypatch)
+        mcp_tool.execute({"action_id": "a", "headers": {"X-Probe": value}})
+        assert seen["arguments"]["headers"] == {}
+
+    def test_a_header_the_served_schema_declares_survives(self, monkeypatch):
+        """The allowlist is the schema itself, so a future action needing a header
+        works with no SDK release."""
+        from stackone_ai.tools import StackOneMcpTool
+
+        tool = StackOneMcpTool(
+            name="linear_acct_execute_action",
+            description="Execute",
+            parameters=ToolParameters(type="object", properties={"headers_x-trace": {"type": "string"}}),
+            api_key="test_key",
+            endpoint="https://api.example.com/mcp",
+            headers={},
+            account_id="real-account",
+        )
+        seen = self._capture(monkeypatch)
+        tool.execute({"action_id": "a", "headers": {"X-Trace": "abc", "X-Other": "no"}})
+        assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
+
+
+class TestDeclaredHeaderValuesAreStillValidated:
+    """The allowlist runs first, so the value grammar is only reached for a DECLARED
+    header — which is exactly where a model-supplied value needs checking."""
+
+    @pytest.fixture
+    def tool(self):
+        from stackone_ai.tools import StackOneMcpTool
+
+        return StackOneMcpTool(
+            name="linear_acct_execute_action",
+            description="Execute",
+            parameters=ToolParameters(type="object", properties={"headers_x-trace": {"type": "string"}}),
+            api_key="k",
+            endpoint="https://api.example.com/mcp",
+            headers={},
+            account_id="acct",
+        )
+
+    @pytest.mark.parametrize("value", ["trailing\n", "a\r\nInjected: 1", "bad\rvalue"])
+    def test_crlf_in_a_declared_header_is_dropped(self, tool, value):
+        """`$` matches before a trailing newline, so this needs fullmatch, not match."""
+        assert tool._sanitise_headers({"X-Trace": value}) == {}
+
+    def test_a_clean_declared_header_survives(self, tool):
+        assert tool._sanitise_headers({"X-Trace": "abc-123"}) == {"X-Trace": "abc-123"}
+
+
+class TestDownloadFilenamesAreSafe:
+    """The filename comes from a Content-Disposition an attacker can choose."""
+
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [
+            ('attachment; filename="../../.ssh/authorized_keys"', "authorized_keys"),
+            ("attachment; filename*=UTF-8''%2e%2e%2f%2e%2e%2fetc%2fcron.d%2fx", "x"),
+            ('attachment; filename="/etc/passwd"', "passwd"),
+            ('attachment; filename="C:evil.exe"', "evil.exe"),
+            ('attachment; filename="..\\\\..\\\\windows\\\\x.dll"', "x.dll"),
+            ('attachment; filename="‮gnp.exe"', "gnp.exe"),
+            ('attachment; filename=".."', None),
+            ('attachment; notfilename="decoy.txt"', None),
+            ('attachment; filename="report.pdf"', "report.pdf"),
+        ],
+    )
+    def test_traversal_and_spoofing_are_neutralised(self, header, expected):
+        assert filename_from_content_disposition(header) == expected
+
+    def test_overlong_names_are_capped_keeping_the_extension(self):
+        name = filename_from_content_disposition(f'attachment; filename="{"a" * 400}.pdf"')
+        assert name is not None and name.endswith(".pdf") and len(name.encode()) <= 255
+
+
+@pytest.mark.parametrize("value", ["half an emoji \ud83d", {"a", "set"}, b"bytes"])
+def test_unencodable_arguments_raise_value_error(value):
+    """These escaped as a bare UnicodeEncodeError/TypeError from inside httpx."""
+    tool = StackOneRpcTool(
+        name="linear_x",
+        description="",
+        parameters=ToolParameters(type="object", properties={"body_q": {"type": "string"}}),
+        api_key="k",
+        base_url="https://api.example.invalid",
+        account_id="a",
+    )
+    with pytest.raises(ValueError, match="could not be encoded"):
+        tool.execute({"body_q": value})
