@@ -567,10 +567,15 @@ class StackOneToolSet:
         ``tools/call`` instead.
         """
         schema = tool_def.input_schema or {}
+        # Pop keys we explicitly override to avoid "multiple values for keyword argument"
+        rest = dict(schema)
+        schema_type = str(rest.pop("type", "object"))
+        schema_properties = self._normalize_schema_properties(schema)
+        
         parameters = ToolParameters(
-            **schema,
-            type=str(schema.get("type") or "object"),
-            properties=self._normalize_schema_properties(schema),
+            **rest,
+            type=schema_type,
+            properties=schema_properties,
         )
         if mode == "search_execute":
             return StackOneMcpTool(
