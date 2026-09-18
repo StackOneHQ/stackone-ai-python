@@ -92,8 +92,24 @@ jobs:
   # check it out. Set the CONFORMANCE_REPO_TOKEN secret to a PAT or App token with
   # read access. Without it this job fails rather than skipping — a skipped
   # contract check reads as green while enforcing nothing.
+  check-secret:
+    runs-on: ubuntu-latest
+    outputs:
+      has-token: ${{ steps.check.outputs.has-token }}
+    steps:
+      - id: check
+        env:
+          TOKEN: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "has-token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-token=false" >> "$GITHUB_OUTPUT"
+          fi
+
   conformance:
-    if: secrets.CONFORMANCE_REPO_TOKEN != ''
+    needs: check-secret
+    if: needs.check-secret.outputs.has-token == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout SDK
