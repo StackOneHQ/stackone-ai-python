@@ -166,6 +166,12 @@ class StackOneToolSet:
             tools = toolset.fetch_tools(account_ids=['123', '456'])
             tools = toolset.fetch_tools(providers=['hibob', 'bamboohr'])
             tools = toolset.fetch_tools(actions=['*_list_employees'])
+
+        Note:
+            For organizations with multiple connected accounts, calling `fetch_tools()`
+            without `account_ids` discovers and fetches the catalog for every active account.
+            If your organization has many accounts, pass explicit `account_ids` to avoid
+            excessive round trips and blowing model context limits.
         """
         if isinstance(account_ids, str):
             raise ToolsetConfigError(
