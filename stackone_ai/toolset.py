@@ -570,8 +570,9 @@ class StackOneToolSet:
         # Pop keys we explicitly override to avoid "multiple values for keyword argument"
         rest = dict(schema)
         schema_type = str(rest.pop("type", "object"))
+        rest.pop("properties", None)
         schema_properties = self._normalize_schema_properties(schema)
-        
+
         parameters = ToolParameters(
             **rest,
             type=schema_type,

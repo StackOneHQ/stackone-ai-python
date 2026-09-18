@@ -355,6 +355,20 @@ def call_mcp_tool(
         raise _describe_mcp_failure(exc, endpoint) from exc
 
 
+def _strip_internal_keys(schema: Any) -> Any:
+    """Recursively drop the SDK's internal markers from a property schema.
+
+    Everything else is preserved verbatim: ``format``, ``pattern``, ``default``,
+    ``minimum``/``maximum``, ``oneOf``/``anyOf``, nested ``required`` and any
+    keyword the server sends that this SDK has never heard of.
+    """
+    if isinstance(schema, dict):
+        return {key: _strip_internal_keys(value) for key, value in schema.items() if key != "nullable"}
+    if isinstance(schema, list):
+        return [_strip_internal_keys(item) for item in schema]
+    return schema
+
+
 class StackOneTool(BaseModel):
     """A single tool: its served schema plus the request needed to execute it."""
 
@@ -609,10 +623,9 @@ class StackOneTool(BaseModel):
 
         for name, prop in self.parameters.properties.items():
             if isinstance(prop, dict):
-                clean_prop = dict(prop)
-                is_nullable = clean_prop.pop("nullable", False)
+                clean_prop = _strip_internal_keys(prop)
                 properties[name] = clean_prop
-                if not is_nullable:
+                if not prop.get("nullable", False):
                     required.append(name)
             else:
                 properties[name] = {"type": "string"}
