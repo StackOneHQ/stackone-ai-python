@@ -69,6 +69,7 @@ _HEADER_VALUE_PATTERN = re.compile(r"[\x20-\x7e\t\x80-\xff]*")
 
 _FLAT_ENVELOPE_KEY_PATTERN = re.compile(r"^(path|query|body|headers)_(.+)$")
 
+
 # Added per property by the toolset when normalising a served schema; it records
 # whether the field was absent from the schema's `required` list. It is an internal
 # marker, not part of the served schema, so it is stripped before a schema is
@@ -363,8 +364,6 @@ class StackOneTool(BaseModel):
     _execute_config: ExecuteConfig = PrivateAttr()
     _api_key: str = PrivateAttr()
     _account_id: str | None = PrivateAttr(default=None)
-
-
 
     def __init__(
         self,
@@ -1017,8 +1016,6 @@ class Tools:
             if isinstance(account_id, str):
                 return account_id
         return None
-
-
 
     def to_openai(self) -> list[JsonDict]:
         """Convert all tools to OpenAI function format"""
