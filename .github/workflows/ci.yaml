@@ -84,34 +84,41 @@ jobs:
       - name: Run Tests
         run: uv run pytest
 
-  # Enforces the wire contract in docs/SDK-UCA-CONTRACT.md: the schema the SDK
-  # lists to a model must match the schema the server served, and the request it
-  # sends must match that schema. --strict-schema fails on any dropped keyword.
-  #
-  # StackOneHQ/sdk-conformance is private, so the default GITHUB_TOKEN cannot
-  # check it out. Set the CONFORMANCE_REPO_TOKEN secret to a PAT or App token with
-  # read access. Without it this job fails rather than skipping — a skipped
-  # contract check reads as green while enforcing nothing.
+  # Enforces the wire contract in docs/SDK-UCA-CONTRACT.md.
+  # StackOneHQ/sdk-conformance is private and requires CONFORMANCE_REPO_TOKEN.
+  # Fork PRs and Dependabot runs cannot access this secret and skip this gate;
+  # internal branches and PRs require the secret and fail if it is absent or expired.
   check-secret:
     runs-on: ubuntu-latest
     outputs:
-      has-token: ${{ steps.check.outputs.has-token }}
+      can-skip: ${{ steps.check.outputs.can-skip }}
     steps:
       - id: check
         env:
           TOKEN: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork == true }}
+          IS_DEPENDABOT: ${{ github.actor == 'dependabot[bot]' }}
         run: |
-          if [ -n "$TOKEN" ]; then
-            echo "has-token=true" >> "$GITHUB_OUTPUT"
+          if [ -z "$TOKEN" ] && { [ "$IS_FORK" = "true" ] || [ "$IS_DEPENDABOT" = "true" ]; }; then
+            echo "can-skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has-token=false" >> "$GITHUB_OUTPUT"
+            echo "can-skip=false" >> "$GITHUB_OUTPUT"
           fi
 
   conformance:
     needs: check-secret
-    if: needs.check-secret.outputs.has-token == 'true'
+    if: needs.check-secret.outputs.can-skip != 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Check conformance token is configured
+        env:
+          TOKEN: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::CONFORMANCE_REPO_TOKEN is not set or has expired."
+            exit 1
+          fi
+
       - name: Checkout SDK
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -156,13 +163,17 @@ jobs:
   # missing when a job is renamed or a matrix entry is added, and nothing notices.
   ci-ok:
     if: always()
-    needs: [gitleaks, ci, conformance]
+    needs: [check-secret, gitleaks, ci, conformance]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to have passed
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "::error::A required job did not pass: ${{ toJSON(needs.*.result) }}"
+          if [ "${{ needs.gitleaks.result != 'success' || needs.ci.result != 'success' }}" = "true" ]; then
+            echo "::error::A required job did not pass (gitleaks: ${{ needs.gitleaks.result }}, ci: ${{ needs.ci.result }})"
+            exit 1
+          fi
+          if [ "${{ needs.conformance.result != 'success' && needs.check-secret.outputs.can-skip != 'true' }}" = "true" ]; then
+            echo "::error::Conformance check did not pass (result: ${{ needs.conformance.result }})"
             exit 1
           fi
 

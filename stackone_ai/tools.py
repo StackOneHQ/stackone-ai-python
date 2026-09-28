@@ -856,9 +856,9 @@ class StackOneRpcTool(StackOneTool):
         # this exists to protect — a declared body field called `path_to_file`.
         prefixed = not named or all(_FLAT_ENVELOPE_KEY_PATTERN.match(k) for k in named)
         if named and not prefixed:
-            logger.debug(
-                "Schema has at least one bare parameter name so flat-prefix detection "
-                "is disabled. Every parameter will fall into the body unless explicitly nested."
+            logger.warning(
+                "Tool schema contains bare parameter names; flat-prefix detection "
+                "is disabled and prefixed parameters may fall into the body."
             )
 
         # Two passes so precedence is deterministic rather than following the caller's
