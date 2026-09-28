@@ -363,7 +363,11 @@ def _strip_internal_keys(schema: Any) -> Any:
     keyword the server sends that this SDK has never heard of.
     """
     if isinstance(schema, dict):
-        return {key: _strip_internal_keys(value) for key, value in schema.items() if key != "nullable"}
+        return {
+            key: _strip_internal_keys(value)
+            for key, value in schema.items()
+            if not (key == "nullable" and isinstance(value, bool))
+        }
     if isinstance(schema, list):
         return [_strip_internal_keys(item) for item in schema]
     return schema
