@@ -2,13 +2,20 @@
  * Mock MCP server for testing using Hono's app.request() method.
  * This creates an MCP-compatible handler that can be used with MSW
  * without starting a real HTTP server.
+ *
+ * It refuses what the real endpoint refuses — an unscoped request, an unknown account — so a
+ * client bug that sends no account, or the wrong one, fails here instead of in production.
  */
 import type { Hono as HonoApp } from 'hono';
 import { StreamableHTTPTransport } from '@hono/mcp';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+	CallToolRequestSchema,
+	type CallToolResult,
+	ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { Hono } from 'hono';
 import { basicAuth } from 'hono/basic-auth';
-import { z } from 'zod';
 
 export interface McpToolDefinition {
 	name: string;
@@ -18,11 +25,12 @@ export interface McpToolDefinition {
 		properties?: Record<string, unknown>;
 		required?: string[];
 		additionalProperties?: boolean;
+		[keyword: string]: unknown;
 	};
 }
 
 export interface MockMcpServerOptions {
-	/** Tools available per account ID. Use 'default' for tools when no account header is provided. */
+	/** Tools available per account ID. An account not listed here is refused with a 404. */
 	accountTools: Record<string, readonly McpToolDefinition[]>;
 	/**
 	 * Serve the global `stackone_submit_feedback` tool, in every tool mode, the way the real
@@ -35,34 +43,100 @@ export interface MockMcpServerOptions {
 /** Mirrors the real `session_id` minted per search, so tests can assert it is carried through. */
 export const MOCK_SEARCH_SESSION_ID = 'mock-session-1';
 
-// The schema the real endpoint serves for its feedback tool, field for field.
-const submitFeedbackInputSchema = {
-	rating: z.enum(['positive', 'negative', 'neutral']),
-	feedback: z.string().optional(),
-	tool_names: z.array(z.string()),
-	source: z.enum(['model', 'user', 'system']).optional(),
-	category: z.enum(['search', 'execute', 'defender', 'connection', 'general']).optional(),
-	session_id: z.string().optional(),
+/** The schema the real endpoint serves for its feedback tool, field for field. */
+const submitFeedbackTool = {
+	name: 'stackone_submit_feedback',
+	description: 'Records a structured verdict on how well the tools served this session.',
+	inputSchema: {
+		type: 'object',
+		properties: {
+			rating: { type: 'string', enum: ['positive', 'negative', 'neutral'] },
+			feedback: { type: 'string' },
+			tool_names: { type: 'array', items: { type: 'string' } },
+			source: { type: 'string', enum: ['model', 'user', 'system'], default: 'model' },
+			category: {
+				type: 'string',
+				enum: ['search', 'execute', 'defender', 'connection', 'general'],
+			},
+			session_id: { type: 'string' },
+		},
+		required: ['rating', 'tool_names'],
+	},
+} as const satisfies McpToolDefinition;
+
+/**
+ * The two meta tools the real endpoint serves per connector under `tool-mode=search_execute`.
+ * Without them the SDK's search/execute path has nothing to talk to and goes untested.
+ */
+const metaTools = (accountId: string): McpToolDefinition[] => [
+	{
+		name: `mock_${accountId}_search_actions`,
+		description: 'Search for available actions in natural language.',
+		inputSchema: {
+			type: 'object',
+			properties: {
+				query: { type: 'string' },
+				top_k: { type: 'integer', minimum: 1, maximum: 50 },
+				session_id: { type: 'string' },
+			},
+			required: ['query'],
+		},
+	},
+	{
+		name: `mock_${accountId}_execute_action`,
+		description: 'Execute an action by its action_id.',
+		inputSchema: {
+			type: 'object',
+			properties: {
+				action_id: { type: 'string' },
+				path: { type: 'object' },
+				query: { type: 'object' },
+				body: { type: 'object' },
+				headers: { type: 'object' },
+				session_id: { type: 'string' },
+			},
+			required: ['action_id'],
+		},
+	},
+];
+
+const text = (payload: unknown, isError = false): CallToolResult => ({
+	isError,
+	content: [{ type: 'text', text: JSON.stringify(payload) }],
+});
+
+const callMetaTool = (name: string, args: Record<string, unknown>): CallToolResult | undefined => {
+	if (name.endsWith('_search_actions')) {
+		return text({
+			session_id: MOCK_SEARCH_SESSION_ID,
+			actions: [
+				{
+					action_id: 'mock_list_items',
+					description: 'List items',
+					example_request: { query: { page_size: 25 } },
+				},
+			],
+		});
+	}
+	if (name.endsWith('_execute_action')) {
+		// An unknown action must come back as isError — a normal response with the flag set —
+		// the way the real endpoint reports it.
+		if (args.action_id !== 'mock_list_items') {
+			return text({ error: `Unknown action ${String(args.action_id)}` }, true);
+		}
+		return text({ data: { nodes: [] }, echoed_query: args.query ?? null });
+	}
+	return undefined;
 };
 
 /**
- * Creates an MSW handler for mocking MCP protocol requests.
- * Uses Hono's app.request() to handle requests without starting a server.
+ * Creates a Hono app speaking the MCP protocol at `/mcp`.
  *
  * @example
  * ```ts
- * import { server } from './mocks/node';
- * import { createMcpHandler, defaultMcpTools, accountMcpTools } from './mocks/mcp-server';
+ * import { createMcpApp, accountMcpTools } from './mcp-server';
  *
- * // In your test setup
- * server.use(
- *   createMcpHandler({
- *     accountTools: {
- *       default: defaultMcpTools,
- *       'account-1': accountMcpTools.acc1,
- *     },
- *   })
- * );
+ * const app = createMcpApp({ accountTools: { acc1: accountMcpTools.acc1 } });
  * ```
  */
 export function createMcpApp(options: MockMcpServerOptions): HonoApp {
@@ -95,125 +169,50 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 		// that does not exist is the same permissiveness that hid the missing-header bug
 		// one line further up: any bug that sends a wrong, stale or mangled account id
 		// would be invisible. The real API refuses.
-		if (!(accountId in accountTools)) {
+		if (!Object.hasOwn(accountTools, accountId)) {
 			return c.json({ statusCode: 404, message: `Unknown account ${accountId}` }, 404);
 		}
-		let tools = accountTools[accountId] ?? [];
 
-		// The real endpoint swaps the per-action catalog for two meta tools per
-		// connector under this mode. Without it the SDK's search/execute path has
-		// nothing to talk to and goes untested.
-
-		// Create a new MCP server instance per request
-		const mcp = new McpServer({ name: 'test-mcp-server', version: '1.0.0' });
+		// The feedback tool comes first because the real endpoint does the same: it is one
+		// global tool, served identically in both modes and once per account listing. Under
+		// search_execute the per-action catalog is swapped for two meta tools per connector.
 		const searchExecute = c.req.query('tool-mode') === 'search_execute';
+		const listed: McpToolDefinition[] = [
+			...(submitFeedback ? [submitFeedbackTool] : []),
+			...(searchExecute ? metaTools(accountId) : (accountTools[accountId] ?? [])),
+		];
+
+		// A low-level Server rather than McpServer: McpServer.registerTool expects a Zod shape
+		// and lists a plain JSON Schema as `properties: {}`, so no test ever saw a declared
+		// parameter of a per-action tool. The real endpoint serves each schema verbatim, and
+		// so does this.
+		const mcp = new Server(
+			{ name: 'test-mcp-server', version: '1.0.0' },
+			{ capabilities: { tools: {} } },
+		);
+		mcp.setRequestHandler(ListToolsRequestSchema, () => ({
+			tools: listed.map((tool) => ({ ...tool, inputSchema: structuredClone(tool.inputSchema) })),
+		}));
+		mcp.setRequestHandler(CallToolRequestSchema, (request): CallToolResult => {
+			const { name } = request.params;
+			const args = request.params.arguments ?? {};
+
+			if (!listed.some((tool) => tool.name === name)) {
+				return text({ error: `Unknown tool ${name}` }, true);
+			}
+			if (name === submitFeedbackTool.name) {
+				return text({
+					message: 'Feedback recorded',
+					submitted_at: new Date(0).toISOString(),
+					session_id: args.session_id ?? null,
+				});
+			}
+			// A per-action tool answers with structuredContent and no text, a shape the
+			// protocol allows and the client must not flatten to `{}`.
+			return callMetaTool(name, args) ?? { content: [], structuredContent: args };
+		});
+
 		const transport = new StreamableHTTPTransport();
-
-		// Registered before the mode split because the real endpoint does the same: it is one
-		// global tool, served identically in both modes and once per account listing.
-		if (submitFeedback) {
-			mcp.registerTool(
-				'stackone_submit_feedback',
-				{
-					description: 'Records a structured verdict on how well the tools served this session.',
-					inputSchema: submitFeedbackInputSchema,
-				},
-				async ({ session_id }: { session_id?: string }) => ({
-					content: [
-						{
-							type: 'text' as const,
-							text: JSON.stringify({
-								message: 'Feedback recorded',
-								submitted_at: new Date(0).toISOString(),
-								session_id: session_id ?? null,
-							}),
-						},
-					],
-				}),
-			);
-		}
-
-		if (searchExecute) {
-			mcp.registerTool(
-				`mock_${accountId}_search_actions`,
-				{
-					description: 'Search for available actions in natural language.',
-					inputSchema: {
-						query: z.string(),
-						top_k: z.number().optional(),
-						session_id: z.string().optional(),
-					},
-				},
-				async () => ({
-					content: [
-						{
-							type: 'text' as const,
-							text: JSON.stringify({
-								session_id: MOCK_SEARCH_SESSION_ID,
-								actions: [
-									{
-										action_id: 'mock_list_items',
-										description: 'List items',
-										example_request: { query: { page_size: 25 } },
-									},
-								],
-							}),
-						},
-					],
-				}),
-			);
-			mcp.registerTool(
-				`mock_${accountId}_execute_action`,
-				{
-					description: 'Execute an action by its action_id.',
-					inputSchema: {
-						action_id: z.string(),
-						path: z.record(z.string(), z.unknown()).optional(),
-						query: z.record(z.string(), z.unknown()).optional(),
-						body: z.record(z.string(), z.unknown()).optional(),
-						headers: z.record(z.string(), z.string()).optional(),
-						session_id: z.string().optional(),
-					},
-				},
-				async ({ action_id, query }: { action_id: string; query?: Record<string, unknown> }) => {
-					// An unknown action must come back as isError — a normal response with
-					// the flag set — the way the real endpoint reports it.
-					const known = action_id === 'mock_list_items';
-					return {
-						isError: !known,
-						content: [
-							{
-								type: 'text' as const,
-								text: JSON.stringify(
-									known
-										? { data: { nodes: [] }, echoed_query: query ?? null }
-										: { error: `Unknown action ${action_id}` },
-								),
-							},
-						],
-					};
-				},
-			);
-			await mcp.connect(transport);
-			return transport.handleRequest(c);
-		}
-
-		for (const tool of tools) {
-			mcp.registerTool(
-				tool.name,
-				{
-					description: tool.description,
-					// MCP SDK expects Zod-like schema but accepts JSON Schema objects
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP SDK type mismatch
-					inputSchema: tool.inputSchema as any,
-				},
-				async ({ params }: { params: { arguments?: Record<string, unknown> } }) => {
-					const args = params.arguments ?? {};
-					return { content: [], structuredContent: args, _meta: undefined };
-				},
-			);
-		}
-
 		await mcp.connect(transport);
 		return transport.handleRequest(c);
 	});

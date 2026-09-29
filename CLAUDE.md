@@ -121,8 +121,8 @@ account the real API would have rejected. The mock now 400s an unscoped `/mcp` o
 make it refuse what the real API refuses. A fake whose signature has no failure mode
 cannot catch a bug.
 
-The mock logs every MCP `tools/call` and `/actions/rpc` request as sent — before zod
-parses it — at `GET /__requests` (`DELETE` clears it). Assert wire shape there, not
+The mock logs every MCP `tools/call` and `/actions/rpc` request as sent — before the
+MCP SDK parses it — at `GET /__requests` (`DELETE` clears it). Assert wire shape there, not
 on a handler's echo, which cannot show a stripped or null key. `MOCK_SUBMIT_FEEDBACK=off`
 (the `mcp_mock_server_without_feedback` fixture) serves a project without feedback.
 
@@ -139,9 +139,12 @@ pnpm install
 These tests **fail** rather than skip if Node dependencies are missing — a silent
 skip previously let them vanish while CI stayed green.
 
+The mock lists every `inputSchema` verbatim through the MCP SDK's low-level `Server`.
+Do not move it to `McpServer.registerTool`: that expects a Zod shape and lists a plain
+JSON Schema as `properties: {}`, so no test sees a declared parameter.
+
 The mock's dependencies are pinned exactly (`@modelcontextprotocol/sdk`, `zod`,
-`hono`, `@hono/mcp`). Do not loosen them to caret ranges: a newer MCP SDK rejects
-the raw `inputSchema` objects the mock passes.
+`hono`, `@hono/mcp`). Do not loosen them to caret ranges.
 
 ## Examples
 

@@ -863,6 +863,27 @@ class TestServerRefusals:
         assert excinfo.value.status_code == 400
 
 
+class TestMockServesSchemasVerbatim:
+    """The mock once listed every per-action JSON Schema as `properties: {}`.
+
+    MCP's high-level McpServer expects a Zod shape, and given a plain JSON Schema it
+    served an empty object, so no schema test against the mock ever saw a declared
+    parameter. A catalog with every field missing still looked like a working one.
+    """
+
+    def test_declared_properties_arrive(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["test-account"]).get_tool("dummy_action")
+        assert tool is not None
+
+        assert tool.to_openai_function()["function"]["parameters"] == {
+            "type": "object",
+            "properties": {"foo": {"type": "string", "description": "A string parameter"}},
+            "required": ["foo"],
+            "additionalProperties": False,
+        }
+
+
 class TestRecentlyFixedBehaviour:
     """Pins for fixes that could otherwise be reverted with the suite still green."""
 
