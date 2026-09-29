@@ -12,12 +12,6 @@ from pathlib import Path
 
 import pytest
 
-# Test base URL - used instead of production URLs in all test mocks.
-# Since respx intercepts at the HTTP client level before DNS resolution,
-# any URL string works for matching; http://localhost avoids exposing
-# real infrastructure URLs.
-TEST_BASE_URL = "http://localhost"
-
 
 def _find_free_port() -> int:
     """Find a free port on localhost."""
