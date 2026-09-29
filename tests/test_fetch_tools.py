@@ -433,6 +433,20 @@ class TestPerActionToolsExecuteOverToolsCall:
             "result": {"data": {"action": "hibob_list_employees", "received": arguments}},
         }
 
+    def test_a_call_does_not_relist_the_catalog(self, mcp_mock_server: str):
+        # The mcp client's call_tool lists tools first, to validate structuredContent against
+        # an output schema, and every call opens a fresh session — so each call relisted the
+        # whole catalog. The Node SDK sends only the tools/call.
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["acc1"]).get_tool("acc1_tool_1")
+        assert tool is not None
+        _reset_requests(mcp_mock_server)
+
+        tool.execute({"param": "x"})
+
+        response = httpx.get(f"{mcp_mock_server}/__requests")
+        assert [r["method"] for r in response.json()] == ["tools/call"]
+
     def test_x_account_id_is_the_listing_accounts(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         tools = toolset.fetch_tools(account_ids=["acc1", "acc2"])

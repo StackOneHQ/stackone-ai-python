@@ -79,7 +79,7 @@ app.use("/mcp", async (c, next) => {
       const payload = (await c.req.raw.clone().json()) as unknown;
       const messages = Array.isArray(payload) ? payload : [payload];
       for (const message of messages as { method?: string; params?: Record<string, unknown> }[]) {
-        if (message?.method !== "tools/call") continue;
+        if (message?.method !== "tools/call" && message?.method !== "tools/list") continue;
         recorded.push({
           path: "/mcp",
           search: new URL(c.req.url).search,

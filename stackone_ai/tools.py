@@ -331,7 +331,17 @@ def call_mcp_tool(
             )
             async with session:
                 await session.initialize()
-                return parse_tool_result(await session.call_tool(name, arguments), name)
+                # send_request rather than call_tool: call_tool validates structuredContent
+                # against the tool's output schema, and on a fresh session that means a
+                # tools/list first — relisting the whole catalog on every call, which the
+                # Node SDK never does. The result is parsed below either way.
+                request = mcp_types.ClientRequest(
+                    mcp_types.CallToolRequest(
+                        params=mcp_types.CallToolRequestParams(name=name, arguments=arguments),
+                    )
+                )
+                result = await session.send_request(request, mcp_types.CallToolResult)
+                return parse_tool_result(result, name)
 
     try:
         return run_async(_call())
