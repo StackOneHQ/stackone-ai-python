@@ -913,6 +913,18 @@ class TestRecentlyFixedBehaviour:
         with pytest.raises(ToolsetLoadError, match="Unexpected /accounts response shape"):
             toolset.fetch_accounts()
 
+    def test_fetch_accounts_handles_invalid_or_malformed_encoding(self, monkeypatch):
+        """Non-JSON or invalid UTF-8 (e.g. b'[\xff]') must raise ToolsetLoadError, not escape."""
+        import httpx
+
+        def fake_get(*_args, **_kwargs):
+            return httpx.Response(200, content=b"[\xff]")
+
+        monkeypatch.setattr("stackone_ai.toolset.httpx.get", fake_get)
+        toolset = StackOneToolSet(api_key="test-key")
+        with pytest.raises(ToolsetLoadError, match="Invalid JSON returned by"):
+            toolset.fetch_accounts()
+
 
 class TestCacheIsolation:
     """The cache must not be defeatable, and must not hand out shared mutable state."""

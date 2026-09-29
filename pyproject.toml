@@ -20,7 +20,7 @@ dependencies = [
   "httpx>=0.28.0",
   # fetch_tools() is the only route to a tool and talks MCP, so the client is
   # not optional: without it the SDK cannot do anything.
-  "mcp>=1.3.0,<2.0.0",
+  "mcp>=1.24.3,<2.0.0",
 ]
 
 [build-system]

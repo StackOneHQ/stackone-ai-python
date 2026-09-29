@@ -5,7 +5,6 @@ from __future__ import annotations
 import concurrent.futures
 import copy
 import fnmatch
-import json
 import logging
 import os
 import threading
@@ -506,7 +505,7 @@ class StackOneToolSet:
             )
         try:
             body = response.json()
-        except json.JSONDecodeError as exc:
+        except (ValueError, UnicodeDecodeError) as exc:
             raise ToolsetLoadError(f"Invalid JSON returned by {url}: {exc}") from exc
         accounts = body.get("data", body) if isinstance(body, dict) else body
         if not isinstance(accounts, list):

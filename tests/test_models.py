@@ -912,6 +912,22 @@ class TestOpenAISchemaPassThrough:
 
         assert "nullable" not in props["obj"]["properties"]["inner"]
 
+    def test_preserves_field_named_nullable(self):
+        """A field legitimately named 'nullable' must not be stripped."""
+        tool = self._tool(
+            {
+                "nullable": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "nullable": False,
+                }
+            }
+        )
+
+        props = tool.to_openai_function()["function"]["parameters"]["properties"]
+        assert "nullable" in props
+        assert props["nullable"]["type"] == "object"
+
 
 class TestExecuteOpenAIToolCalls:
     """Tools.execute_openai_tool_calls: model tool calls in, `tool` messages out."""
