@@ -105,6 +105,57 @@ const text = (payload: unknown, isError = false): CallToolResult => ({
 	content: [{ type: 'text', text: JSON.stringify(payload) }],
 });
 
+/**
+ * A result the way UCA's `createStructuredOutput` shapes it: `{ isError, result }` as
+ * structuredContent, and the same JSON as a text part.
+ */
+const uca = (result: unknown, isError = false, extra: Record<string, unknown> = {}): CallToolResult => {
+	const structured = { isError, result, ...extra };
+	return {
+		isError,
+		content: [{ type: 'text', text: JSON.stringify(structured) }],
+		structuredContent: structured,
+	};
+};
+
+/** The download-link shape UCA returns for a file action over tools/call (UCA #8861). */
+export const MOCK_DOWNLOAD_LINK = {
+	download_url: 'https://downloads.example.com/f/abc123?sig=xyz',
+	expires_at: '2026-01-01T00:00:00.000Z',
+	file: { name: 'report.pdf', content_type: 'application/pdf', content_length: 1024 },
+};
+
+/**
+ * How a per-action tool answers, modelled on UCA's per-action handler: a success wrapper
+ * around the action's payload, or an isError wrapper carrying the status.
+ */
+const callActionTool = (name: string, args: Record<string, unknown>): CallToolResult => {
+	switch (name) {
+		case 'bamboohr_list_employees':
+			return uca({
+				data: [
+					{ id: '1', name: 'Employee 1' },
+					{ id: '2', name: 'Employee 2' },
+				],
+			});
+		case 'bamboohr_get_employee':
+			return uca({ data: { id: args.id ?? 'test-id', name: 'Test Employee' } });
+		case 'files_download_file':
+			return uca(MOCK_DOWNLOAD_LINK);
+		case 'files_download_unavailable':
+			return uca(
+				{ statusCode: 501, message: 'Download links are not available for this action' },
+				true,
+			);
+		case 'files_list_defended':
+			return uca({ data: [] }, false, { defenderMetadata: { scanned: true, flagged: 0 } });
+		case 'files_count':
+			return uca(3);
+		default:
+			return uca({ data: { action: name, received: args } });
+	}
+};
+
 const callMetaTool = (name: string, args: Record<string, unknown>): CallToolResult | undefined => {
 	if (name.endsWith('_search_actions')) {
 		return text({
@@ -124,7 +175,7 @@ const callMetaTool = (name: string, args: Record<string, unknown>): CallToolResu
 		if (args.action_id !== 'mock_list_items') {
 			return text({ error: `Unknown action ${String(args.action_id)}` }, true);
 		}
-		return text({ data: { nodes: [] }, echoed_query: args.query ?? null });
+		return uca({ data: { nodes: [] }, echoed_query: args.query ?? null });
 	}
 	return undefined;
 };
@@ -207,9 +258,7 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 					session_id: args.session_id ?? null,
 				});
 			}
-			// A per-action tool answers with structuredContent and no text, a shape the
-			// protocol allows and the client must not flatten to `{}`.
-			return callMetaTool(name, args) ?? { content: [], structuredContent: args };
+			return callMetaTool(name, args) ?? callActionTool(name, args);
 		});
 
 		const transport = new StreamableHTTPTransport();
@@ -353,6 +402,38 @@ export const exampleBamboohrTools = [
 			},
 			required: ['name'],
 		},
+	},
+] as const satisfies McpToolDefinition[];
+
+/** File actions: a download link, a download that cannot be issued, and metadata beside a result. */
+export const fileTools = [
+	{
+		name: 'files_download_file',
+		description: 'Download a file',
+		inputSchema: {
+			type: 'object',
+			properties: { id: { type: 'string' } },
+			required: ['id'],
+		},
+	},
+	{
+		name: 'files_download_unavailable',
+		description: 'Download a file no link can be issued for',
+		inputSchema: {
+			type: 'object',
+			properties: { id: { type: 'string' } },
+			required: ['id'],
+		},
+	},
+	{
+		name: 'files_list_defended',
+		description: 'List files, with defender metadata',
+		inputSchema: { type: 'object', properties: {} },
+	},
+	{
+		name: 'files_count',
+		description: 'Count files: a result that is not an object',
+		inputSchema: { type: 'object', properties: {} },
 	},
 ] as const satisfies McpToolDefinition[];
 

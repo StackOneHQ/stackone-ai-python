@@ -1,113 +1,82 @@
 """Tests for tool calling functionality"""
 
-import json
+from typing import Any
 
-import httpx
 import pytest
-import respx
 
-from stackone_ai import StackOneTool
-from stackone_ai.tools import StackOneRpcTool
-from stackone_ai.types import (
-    ExecuteConfig,
-    ToolParameters,
-    _safe_basename,
-    filename_from_content_disposition,
-    is_json_content_type,
-)
-from tests.conftest import TEST_BASE_URL
+from stackone_ai import StackOneError, StackOneTool
+from stackone_ai.tools import StackOneMcpTool
+from stackone_ai.types import ExecuteConfig, ToolParameters
+
+
+def _mcp_tool(properties: dict[str, Any] | None = None, account_id: str | None = "real-account"):
+    return StackOneMcpTool(
+        name="linear_acct_execute_action",
+        description="Execute",
+        parameters=ToolParameters(type="object", properties=properties or {}),
+        api_key="test_key",
+        endpoint="https://api.example.com/mcp",
+        account_id=account_id,
+    )
+
+
+@pytest.fixture
+def seen(monkeypatch) -> dict[str, Any]:
+    """Replace the MCP transport and record what each call would have sent."""
+    captured: dict[str, Any] = {}
+
+    def fake_call(endpoint, headers, name, arguments, **_kwargs):
+        captured.update(endpoint=endpoint, headers=headers, name=name, arguments=arguments)
+        return {"success": True, "result": "test_result"}
+
+    monkeypatch.setattr("stackone_ai.tools.call_mcp_tool", fake_call)
+    return captured
 
 
 @pytest.fixture
 def mock_tool():
-    """Create a mock tool for testing"""
-    execute_config = ExecuteConfig(
+    """An MCP tool with two declared parameters"""
+    return StackOneMcpTool(
         name="test_tool",
-        method="POST",
-        url="https://api.example.com/test",
-        headers={"Content-Type": "application/json"},
-    )
-
-    parameters = ToolParameters(
-        type="object",
-        properties={
-            "name": {"type": "string", "description": "Name parameter"},
-            "value": {"type": "number", "description": "Value parameter"},
-        },
-    )
-
-    tool = StackOneTool(
         description="Test tool",
-        parameters=parameters,
-        _execute_config=execute_config,
-        _api_key="test_api_key",
+        parameters=ToolParameters(
+            type="object",
+            properties={
+                "name": {"type": "string", "description": "Name parameter"},
+                "value": {"type": "number", "description": "Value parameter"},
+            },
+        ),
+        api_key="test_api_key",
+        endpoint="https://api.example.com/mcp",
+        account_id="acc1",
     )
-
-    return tool
 
 
 class TestToolCalling:
     """Test tool calling functionality"""
 
-    @respx.mock
-    def test_call_with_kwargs(self, mock_tool):
+    def test_call_with_kwargs(self, mock_tool, seen):
         """Test calling a tool with keyword arguments"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
-        )
-
-        # Call the tool with kwargs
         result = mock_tool.call(name="test", value=42)
 
-        # Verify the result
         assert result == {"success": True, "result": "test_result"}
+        assert seen["name"] == "test_tool"
+        assert seen["endpoint"] == "https://api.example.com/mcp"
+        assert seen["arguments"] == {"name": "test", "value": 42}
 
-        # Verify the request was made correctly
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        assert json.loads(request.content) == {"name": "test", "value": 42}
-
-    @respx.mock
-    def test_call_with_dict_arg(self, mock_tool):
+    def test_call_with_dict_arg(self, mock_tool, seen):
         """Test calling a tool with a dictionary argument"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
-        )
-
-        # Call the tool with a dict
         result = mock_tool.call({"name": "test", "value": 42})
 
-        # Verify the result
         assert result == {"success": True, "result": "test_result"}
+        assert seen["arguments"] == {"name": "test", "value": 42}
 
-        # Verify the request
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        assert json.loads(request.content) == {"name": "test", "value": 42}
-
-    @respx.mock
-    def test_call_with_json_string(self, mock_tool):
+    def test_call_with_json_string(self, mock_tool, seen):
         """Test calling a tool with a JSON string argument"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
-        )
-
-        # Call the tool with a JSON string
         result = mock_tool.call('{"name": "test", "value": 42}')
 
-        # Verify the result
         assert result == {"success": True, "result": "test_result"}
-
-        # Verify the request
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        assert json.loads(request.content) == {"name": "test", "value": 42}
+        assert seen["arguments"] == {"name": "test", "value": 42}
 
     def test_call_with_both_args_and_kwargs_raises_error(self, mock_tool):
         """Test that providing both args and kwargs raises an error"""
@@ -119,580 +88,88 @@ class TestToolCalling:
         with pytest.raises(ValueError, match="Only one positional argument is allowed"):
             mock_tool.call({"name": "test"}, {"value": 42})
 
-    @respx.mock
-    def test_call_without_arguments(self, mock_tool):
-        """Test calling a tool without any arguments"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "no_args"})
-        )
+    def test_call_without_arguments(self, mock_tool, seen):
+        """Test calling a tool without any arguments sends an empty object"""
+        mock_tool.call()
+        assert seen["arguments"] == {}
 
-        # Call the tool without arguments
-        result = mock_tool.call()
+    def test_execute_with_none_arguments(self, mock_tool, seen):
+        mock_tool.execute(None)
+        assert seen["arguments"] == {}
 
-        # Verify the result
-        assert result == {"success": True, "result": "no_args"}
-
-        # Verify the request body is empty or contains empty JSON
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        # Handle case where body might be None for empty POST
-        if request.content:
-            assert json.loads(request.content) == {}
-        else:
-            assert request.content == b""
-
-
-class TestStackOneRpcTool:
-    """Test StackOneRpcTool functionality"""
-
-    @pytest.fixture
-    def rpc_tool(self):
-        """Create a mock RPC tool for testing"""
-        parameters = ToolParameters(
-            type="object",
-            properties={
-                "employee_id": {"type": "string", "description": "Employee ID"},
-            },
-        )
-        return StackOneRpcTool(
-            name="hibob_get_employee",
-            description="Get employee details",
-            parameters=parameters,
-            api_key="test_api_key",
-            base_url=TEST_BASE_URL,
-            account_id="test_account",
-        )
-
-    @respx.mock
-    def test_execute_basic(self, rpc_tool):
-        """Test basic RPC tool execution"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"data": {"id": "123", "name": "John"}})
-        )
-
-        result = rpc_tool.execute({"employee_id": "123"})
-
-        assert result == {"data": {"id": "123", "name": "John"}}
-        assert route.called
-        request = route.calls[0].request
-        body = json.loads(request.content)
-        assert body["action"] == "hibob_get_employee"
-        assert body["body"]["employee_id"] == "123"
-        assert body["headers"]["x-account-id"] == "test_account"
-
-    @respx.mock
-    def test_execute_with_json_string(self, rpc_tool):
-        """Test RPC tool execution with JSON string arguments"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute('{"employee_id": "456"}')
-
-        assert result == {"success": True}
-        assert route.called
-        body = json.loads(route.calls[0].request.content)
-        assert body["body"]["employee_id"] == "456"
-
-    @respx.mock
-    def test_execute_with_body_payload(self, rpc_tool):
-        """Test RPC tool execution with nested body payload"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"body": {"name": "Jane", "email": "jane@example.com"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["body"]["name"] == "Jane"
-        assert body["body"]["email"] == "jane@example.com"
-
-    @respx.mock
-    def test_execute_with_path_payload(self, rpc_tool):
-        """Test RPC tool execution with path parameters"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"path": {"id": "emp123"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["path"] == {"id": "emp123"}
-
-    @respx.mock
-    def test_execute_with_query_payload(self, rpc_tool):
-        """Test RPC tool execution with query parameters"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"query": {"limit": "10", "offset": "0"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"] == {"limit": "10", "offset": "0"}
-
-    @respx.mock
-    def test_execute_with_headers_payload(self, rpc_tool):
-        """Test RPC tool execution with custom headers"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"headers": {"X-Custom-Header": "custom_value"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert "X-Custom-Header" not in body["headers"]  # undeclared by the served schema
-        assert body["headers"]["x-account-id"] == "test_account"
-
-    @respx.mock
-    def test_execute_headers_strips_authorization(self, rpc_tool):
-        """Test that Authorization header is stripped from action headers"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"headers": {"Authorization": "Bearer token", "X-Other": "value"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert "Authorization" not in body["headers"]
-        assert "X-Other" not in body["headers"]  # undeclared by the served schema
-
-    @respx.mock
-    @pytest.mark.parametrize(
-        "header_name",
-        ["authorization", "AUTHORIZATION", "AuThOrIzAtIon"],
-    )
-    def test_execute_headers_strips_authorization_any_case(self, rpc_tool, header_name):
-        """Reserved headers are stripped case-insensitively.
-
-        HTTP header names are case-insensitive, and tool arguments are model-controlled,
-        so a case variant must not smuggle a credential into the RPC envelope.
-        """
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        rpc_tool.execute({"headers": {header_name: "Bearer attacker-token"}})
-
-        body = json.loads(route.calls[0].request.content)
-        assert all(key.lower() != "authorization" for key in body["headers"])
-
-    @respx.mock
-    def test_execute_headers_cannot_override_account_id(self, rpc_tool):
-        """A tool call must not be able to retarget another account.
-
-        x-account-id scopes the request to a tenant; letting model-supplied headers
-        override it would allow lateral movement across every account the key reaches.
-        """
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        rpc_tool.execute({"headers": {"x-account-id": "victim_account"}})
-
-        body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["x-account-id"] == "test_account"
-
-    @respx.mock
-    def test_execute_headers_skips_none_values(self, rpc_tool):
-        """Test that None header values are skipped"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"headers": {"X-Present": "value", "X-Absent": None}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert "X-Present" not in body["headers"]  # undeclared by the served schema
-        assert "X-Absent" not in body["headers"]
-
-    @respx.mock
-    def test_execute_without_account_id_sends_no_account_anywhere(self):
-        """A tool built with no account scopes nothing — and the server refuses it.
-
-        This used to assert only that the envelope omitted x-account-id, which is the
-        same shape as the assertion that pinned the bug that shipped: a green test
-        recording what the client happened to send. The point worth pinning is that
-        an unscoped request is not a usable request, so the HTTP header is checked
-        too — that is the one the API actually reads.
-        """
-        parameters = ToolParameters(
-            type="object",
-            properties={},
-        )
-        tool = StackOneRpcTool(
-            name="test_tool",
-            description="Test",
-            parameters=parameters,
-            api_key="test_key",
-            base_url=TEST_BASE_URL,
-            account_id=None,
-        )
-
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = tool.execute({})
-
-        assert result == {"success": True}
-        request = route.calls[0].request
-        body = json.loads(request.content)
-        assert "x-account-id" not in body["headers"]
-        # The header the API reads. The mock server 400s when it is absent, which is
-        # what makes tests/test_fetch_tools.py::TestRpcToolExecution meaningful.
-        assert "x-account-id" not in request.headers
-
-    @respx.mock
-    def test_execute_with_none_arguments(self, rpc_tool):
-        """Test RPC tool execution with None arguments"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute(None)
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["action"] == "hibob_get_employee"
-        assert body["body"] == {}
-
-    def test_parse_arguments_invalid_json(self, rpc_tool):
+    def test_parse_arguments_invalid_json(self, mock_tool):
         """Test that invalid JSON raises ValueError"""
-        with pytest.raises(ValueError):
-            rpc_tool._parse_arguments("not valid json")
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            mock_tool._parse_arguments("not valid json")
 
-    def test_parse_arguments_non_dict(self, rpc_tool):
+    def test_parse_arguments_non_dict(self, mock_tool):
         """Test that non-dict JSON raises ValueError"""
         with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
-            rpc_tool._parse_arguments("[1, 2, 3]")
+            mock_tool._parse_arguments("[1, 2, 3]")
 
-    def test_split_envelope_params_routes_flat_prefixed_keys(self, rpc_tool):
-        """flat_prefixed keys are bucketed into the RPC envelope by their location prefix"""
-        actual = rpc_tool._split_envelope_params(
-            {
-                "path_id": "123",
-                "query_limit": 10,
-                "headers_x-custom": "value",
-                "body_name": "test",
-            }
-        )
-        assert actual["path"] == {"id": "123"}
-        assert actual["query"] == {"limit": 10}
-        assert actual["headers"] == {"x-custom": "value"}
-        assert actual["body"] == {"name": "test"}
+    def test_arguments_are_not_split_or_renamed(self, seen):
+        """No envelope splitting, no prefix routing: the server maps arguments itself."""
+        tool = _mcp_tool({"path_id": {"type": "string"}, "path_to_file": {"type": "string"}})
+        arguments = {
+            "path_id": "1",
+            "path_to_file": "/tmp/x",
+            "query": {"limit": 5},
+            "body_foo": 1,
+            "foo": 2,
+            "body": {"foo": 9},
+        }
+        tool.execute(arguments)
+        assert seen["arguments"] == arguments
 
-    def test_split_envelope_params_buckets_nested_and_unprefixed_keys(self, rpc_tool):
-        """Bare nested envelopes are accepted and unprefixed keys fall through to the body"""
-        actual = rpc_tool._split_envelope_params(
-            {
-                "body": {"nested": "value"},
-                "path": {"id": "1"},
-                "extra": "x",
-            }
-        )
-        assert actual["path"] == {"id": "1"}
-        assert actual["query"] == {}
-        assert actual["body"] == {"nested": "value", "extra": "x"}
+    def test_the_callers_arguments_are_not_mutated(self, seen):
+        tool = _mcp_tool({"headers": {"type": "object", "properties": {}}})
+        arguments = {"headers": {"Authorization": "Bearer stolen"}}
+        tool.execute(arguments)
+        assert arguments == {"headers": {"Authorization": "Bearer stolen"}}
+        assert seen["arguments"] == {"headers": {}}
 
 
-class TestBinaryDownloadResponse:
-    """File-download actions return raw bytes + metadata instead of failing on JSON parsing.
-
-    The StackOne API serves file downloads as raw binary with the file's own MIME type
-    (e.g. application/pdf) and a Content-Disposition header - never JSON. The returned
-    shape mirrors the StackOne generated SDKs' download response (content + content_type +
-    status_code + headers), with content as raw bytes (the Python analog of the Java
-    client's byte[] body / the TypeScript client's response stream).
-    """
-
-    @respx.mock
-    def test_binary_response_returns_content_dict(self, mock_tool):
-        """A non-JSON (binary) body is returned as bytes + metadata, not JSON-parsed."""
-        # Leading bytes of a real PDF; the 0xc4 byte is invalid UTF-8 and is exactly
-        # what makes the unconditional response.json() raise UnicodeDecodeError.
-        pdf_bytes = b"%PDF-1.4\n%\xc4\xe5\xf2\xe5\xeb\xa7\xf3\xa0\xd0\xc4\xc6\n1 0 obj\n"
-        respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(
-                200,
-                headers={
-                    "content-type": "application/pdf",
-                    "content-disposition": 'attachment; filename="download.pdf"',
-                },
-                content=pdf_bytes,
-            )
-        )
-
-        result = mock_tool.execute({"name": "report", "value": 1})
-
-        assert result["content"] == pdf_bytes
-        assert result["content_type"] == "application/pdf"
-        assert result["status_code"] == 200
-        assert result["file_name"] == "download.pdf"
-        assert result["headers"]["content-type"] == "application/pdf"
-
-    @respx.mock
-    def test_rpc_download_action_returns_content_dict(self):
-        """The RPC download path (e.g. googledrive_unified_download_file) returns bytes.
-
-        Reproduces the reported failure: a download action invoked through /actions/rpc
-        previously raised UnicodeDecodeError because the binary body was JSON-parsed.
-        """
-        parameters = ToolParameters(
-            type="object",
-            properties={"id": {"type": "string", "description": "File ID"}},
-        )
-        tool = StackOneRpcTool(
-            name="googledrive_unified_download_file",
-            description="Download a file",
-            parameters=parameters,
-            api_key="test_api_key",
-            base_url=TEST_BASE_URL,
-            account_id="test_account",
-        )
-
-        rtf_bytes = b"{\\rtf1\\ansi\\ansicpg1252\\\xc4\xe5 hello}"
-        respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(
-                200,
-                headers={
-                    "content-type": "application/rtf",
-                    "content-disposition": 'attachment; filename="download.rtf"',
-                },
-                content=rtf_bytes,
-            )
-        )
-
-        result = tool.execute({"path": {"id": "file-123"}})
-
-        assert result["content"] == rtf_bytes
-        assert result["content_type"] == "application/rtf"
-        assert result["file_name"] == "download.rtf"
-
-    @respx.mock
-    def test_octet_stream_without_filename(self, mock_tool):
-        """A binary body with no Content-Disposition still returns content with file_name=None."""
-        blob = b"\x00\x01\x02\xc4\xff\xfe"
-        respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(
-                200,
-                headers={"content-type": "application/octet-stream"},
-                content=blob,
-            )
-        )
-
-        result = mock_tool.execute({})
-
-        assert result["content"] == blob
-        assert result["content_type"] == "application/octet-stream"
-        assert result["file_name"] is None
-
-    @respx.mock
-    def test_json_response_still_parsed(self, mock_tool):
-        """Regression guard: JSON responses are unchanged - parsed to a dict, not wrapped."""
-        respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"id": "123", "ok": True})
-        )
-
-        result = mock_tool.execute({"name": "x", "value": 1})
-
-        assert result == {"id": "123", "ok": True}
-        assert "content" not in result
-
-    @respx.mock
-    def test_json_with_charset_param_still_parsed(self, mock_tool):
-        """A JSON Content-Type with parameters (charset) is still parsed as JSON."""
-        respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(
-                200,
-                headers={"content-type": "application/json; charset=utf-8"},
-                content=b'{"ok": true}',
-            )
-        )
-
-        result = mock_tool.execute({})
-
-        assert result == {"ok": True}
-
-    @respx.mock
-    def test_missing_content_type_returns_bytes(self, mock_tool):
-        """A body with no Content-Type is treated as opaque content (bytes), not JSON.
-
-        Pins the deliberate contract: the SDK trusts Content-Type to decide JSON vs
-        file, so an absent Content-Type is returned as raw bytes rather than risking
-        a UTF-8/JSON decode of binary. (StackOne always labels JSON as application/json.)
-        """
-        blob = b"\xff\xd8\xff\xe0\x00\x10JFIF"  # JPEG magic bytes, no content-type
-        respx.post("https://api.example.com/test").mock(return_value=httpx.Response(200, content=blob))
-
-        result = mock_tool.execute({})
-
-        assert result["content"] == blob
-        assert result["content_type"] == "application/octet-stream"
-        assert result["file_name"] is None
-
-
-class TestResponseHelpers:
-    """Unit tests for the Content-Type and Content-Disposition helpers."""
-
-    @pytest.mark.parametrize(
-        ("content_type", "expected"),
-        [
-            ("application/json", True),
-            ("application/json; charset=utf-8", True),
-            ("APPLICATION/JSON", True),
-            ("application/problem+json", True),
-            ("application/vnd.api+json", True),
-            ("", False),
-            ("application/pdf", False),
-            ("application/octet-stream", False),
-            ("text/plain", False),
-            ("text/json-but-not-really", False),
-        ],
-    )
-    def test_is_json_content_type(self, content_type, expected):
-        assert is_json_content_type(content_type) is expected
-
-    @pytest.mark.parametrize(
-        ("header", "expected"),
-        [
-            ('attachment; filename="download.pdf"', "download.pdf"),
-            ("attachment; filename=download.pdf", "download.pdf"),
-            ('inline; filename="my report.docx"', "my report.docx"),
-            # RFC 5987 extended form is percent-decoded and takes precedence.
-            ("attachment; filename=\"fallback.txt\"; filename*=UTF-8''na%C3%AFve.txt", "naïve.txt"),
-            # Malformed percent-encoding must not raise - the malformed escape stays literal.
-            ("attachment; filename*=UTF-8''bad%ZZname", "bad%ZZname"),
-            # Non-UTF-8 charset is honoured: 0xA3 is "£" in ISO-8859-1, not UTF-8.
-            ("attachment; filename*=ISO-8859-1'en'%A3%20rates.txt", "£ rates.txt"),
-            # Unknown charset label falls back to UTF-8 instead of raising.
-            ("attachment; filename*=bogus-charset''%C2%A3.txt", "£.txt"),
-            # Non-conformant quoted extended value: surrounding quotes are stripped.
-            ("attachment; filename*=\"UTF-8''na%C3%AFve.txt\"", "naïve.txt"),
-            ("attachment", None),
-            (None, None),
-            ("", None),
-        ],
-    )
-    def test_filename_from_content_disposition(self, header, expected):
-        assert filename_from_content_disposition(header) == expected
-
-
-class TestEnvelopeSplitIsSchemaAware:
-    """The prefix pattern alone cannot tell a path param from a body field that
-    happens to start with "path_". The served schema settles it."""
+class TestBaseToolHasNoExecutor:
+    """The base class describes a tool; only a subclass can run one (mirrors Node's BaseTool)."""
 
     @pytest.fixture
-    def rpc_tool(self):
-        return StackOneRpcTool(
-            name="test_action",
-            description="Test",
+    def base_tool(self):
+        return StackOneTool(
+            description="Hand-built",
             parameters=ToolParameters(type="object", properties={}),
-            api_key="test_api_key",
-            base_url=TEST_BASE_URL,
-            account_id="test-account",
+            _execute_config=ExecuteConfig(name="hand_built"),
+            _api_key="k",
         )
 
-    def test_a_bare_schema_keeps_prefix_lookalikes_in_the_body(self, rpc_tool):
-        """No declared key is location-prefixed, so `path_to_file` is a real field name.
+    def test_execute_raises_a_stackone_error_naming_the_fix(self, base_tool):
+        with pytest.raises(StackOneError, match=r'Tool "hand_built" has no executor\. Override execute\(\)'):
+            base_tool.execute({})
 
-        Splitting it would send the server a path component it has no use for and drop
-        the argument the model supplied — silently.
-        """
-        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x"}, {"path_to_file", "name"})
-        assert actual["body"] == {"path_to_file": "/tmp/x"}
-        assert actual["path"] == {}
+    def test_call_raises_too(self, base_tool):
+        with pytest.raises(StackOneError, match="has no executor"):
+            base_tool.call()
 
-    def test_a_prefixed_schema_splits_every_match(self, rpc_tool):
-        """Under flat_prefixed every parameter is prefixed, so a match really is located."""
-        actual = rpc_tool._split_envelope_params(
-            {"path_id": "1", "query_offset": 10}, {"path_id", "query_limit"}
+    def test_an_override_runs(self):
+        class EchoTool(StackOneTool):
+            def execute(self, arguments=None):
+                return {"echo": self._parse_arguments(arguments)}
+
+        tool = EchoTool(
+            description="",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(name="echo"),
+            _api_key="k",
         )
-        assert actual["path"] == {"id": "1"}
-        # Undeclared but prefixed: the model may be working from a newer schema than the
-        # cached listing. Routing it to the body would silently drop the argument.
-        assert actual["query"] == {"offset": 10}
-
-    def test_a_declared_reserved_word_is_a_field_not_a_container(self, rpc_tool):
-        """A served property literally named `query` must not be rejected as malformed."""
-        actual = rpc_tool._split_envelope_params({"query": "sales"}, {"query", "id"})
-        assert actual["body"] == {"query": "sales"}
-
-    def test_no_schema_trusts_every_match(self, rpc_tool):
-        """Direct callers without a schema keep the old, purely pattern-based behaviour."""
-        actual = rpc_tool._split_envelope_params({"path_to_file": "/tmp/x"})
-        assert actual["path"] == {"to_file": "/tmp/x"}
-
-    def test_scalar_under_a_reserved_key_is_rejected_not_dropped(self, rpc_tool):
-        with pytest.raises(ValueError, match="envelope container"):
-            rpc_tool._split_envelope_params({"query": "not-an-object"})
-
-    def test_precedence_does_not_depend_on_caller_key_order(self, rpc_tool):
-        """flat_prefixed beats nested beats bare, whatever order the dict is built in."""
-        forwards = rpc_tool._split_envelope_params({"body_foo": 1, "foo": 2})
-        backwards = rpc_tool._split_envelope_params({"foo": 2, "body_foo": 1})
-        assert forwards["body"] == backwards["body"] == {"foo": 1}
-
-        nested_first = rpc_tool._split_envelope_params({"body": {"foo": 9}, "foo": 2})
-        bare_first = rpc_tool._split_envelope_params({"foo": 2, "body": {"foo": 9}})
-        assert nested_first["body"] == bare_first["body"] == {"foo": 9}
-
-    def test_empty_schema_falls_back_to_trusting_prefixes(self, rpc_tool):
-        """An empty declared set means "no schema", not "nothing is declared".
-
-        Treating it as an allowlist would route every path_* key into the body and
-        silently drop every path parameter.
-        """
-        assert rpc_tool._split_envelope_params({"path_id": "1"}, set())["path"] == {"id": "1"}
+        assert tool.call(a=1) == {"echo": {"a": 1}}
 
 
 class TestMcpToolHeaderGuard:
-    """The header guard on the MCP path — the one search()/execute() actually use.
+    """The guard on a nested ``headers`` argument, which the model controls."""
 
-    This had no coverage at all: the whole `_sanitise_headers` call could be deleted
-    from StackOneMcpTool.execute and every test still passed. Every existing header
-    test drives the RPC tool only.
-    """
-
-    @pytest.fixture
-    def mcp_tool(self):
-        from stackone_ai.tools import StackOneMcpTool
-
-        return StackOneMcpTool(
-            name="linear_acct_execute_action",
-            description="Execute",
-            parameters=ToolParameters(type="object", properties={}),
-            api_key="test_key",
-            endpoint="https://api.example.com/mcp",
-            headers={"Authorization": "Basic real", "x-account-id": "real-account"},
-            account_id="real-account",
-        )
-
-    @staticmethod
-    def _capture(monkeypatch):
-        seen: dict[str, object] = {}
-
-        def fake_call(endpoint, headers, name, arguments, **_kwargs):
-            seen["arguments"] = arguments
-            return {"ok": True}
-
-        monkeypatch.setattr("stackone_ai.tools.call_mcp_tool", fake_call)
-        return seen
-
-    def test_undeclared_headers_are_all_dropped(self, mcp_tool, monkeypatch):
+    def test_undeclared_headers_are_all_dropped(self, seen):
         """An allowlist, not a denylist: a two-name denylist let Proxy-Authorization,
-        x-stackone-account-id, Cookie and X-Api-Key through. No served action declares
-        a headers_* property, so nothing model-supplied belongs here."""
-        seen = self._capture(monkeypatch)
-        mcp_tool.execute(
+        x-stackone-account-id, Cookie and X-Api-Key through."""
+        _mcp_tool().execute(
             {
                 "action_id": "linear_list_issues",
                 "headers": {
@@ -712,35 +189,53 @@ class TestMcpToolHeaderGuard:
         "name",
         [" authorization", "AUTHORIZATION\t", "X-Account-Id", " x-account-id "],
     )
-    def test_whitespace_and_case_variants_do_not_slip_past(self, mcp_tool, monkeypatch, name):
-        seen = self._capture(monkeypatch)
-        mcp_tool.execute({"action_id": "a", "headers": {name: "stolen"}})
+    def test_whitespace_and_case_variants_do_not_slip_past(self, seen, name):
+        _mcp_tool().execute({"action_id": "a", "headers": {name: "stolen"}})
         assert seen["arguments"]["headers"] == {}
 
     @pytest.mark.parametrize("value", ["a\r\nEvil: 1", "trailing\n", "bad\rvalue"])
-    def test_crlf_injection_is_rejected(self, mcp_tool, monkeypatch, value):
+    def test_crlf_injection_is_rejected(self, seen, value):
         """`$` also matches before a trailing newline, so this needs fullmatch."""
-        seen = self._capture(monkeypatch)
-        mcp_tool.execute({"action_id": "a", "headers": {"X-Probe": value}})
+        _mcp_tool().execute({"action_id": "a", "headers": {"X-Probe": value}})
         assert seen["arguments"]["headers"] == {}
 
-    def test_a_header_the_served_schema_declares_survives(self, monkeypatch):
+    def test_a_flat_declared_header_survives(self, seen):
         """The allowlist is the schema itself, so a future action needing a header
         works with no SDK release."""
-        from stackone_ai.tools import StackOneMcpTool
-
-        tool = StackOneMcpTool(
-            name="linear_acct_execute_action",
-            description="Execute",
-            parameters=ToolParameters(type="object", properties={"headers_x-trace": {"type": "string"}}),
-            api_key="test_key",
-            endpoint="https://api.example.com/mcp",
-            headers={},
-            account_id="real-account",
-        )
-        seen = self._capture(monkeypatch)
+        tool = _mcp_tool({"headers_x-trace": {"type": "string"}})
         tool.execute({"action_id": "a", "headers": {"X-Trace": "abc", "X-Other": "no"}})
         assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
+
+    def test_a_nested_declared_header_survives(self, seen):
+        """With no param-style pin the server may serve headers nested under `headers`."""
+        tool = _mcp_tool({"headers": {"type": "object", "properties": {"x-trace": {"type": "string"}}}})
+        tool.execute({"headers": {"X-Trace": "abc", "X-Other": "no"}})
+        assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
+
+    @pytest.mark.parametrize("name", ["Authorization", "x-account-id", "User-Agent"])
+    def test_sdk_owned_headers_are_refused_even_when_declared(self, seen, name):
+        tool = _mcp_tool({"headers": {"type": "object", "properties": {name.lower(): {"type": "string"}}}})
+        tool.execute({"headers": {name: "stolen"}})
+        assert seen["arguments"]["headers"] == {}
+
+    def test_none_values_are_skipped(self, seen):
+        tool = _mcp_tool({"headers_x-present": {"type": "string"}, "headers_x-absent": {"type": "string"}})
+        tool.execute({"headers": {"X-Present": "value", "X-Absent": None}})
+        assert seen["arguments"]["headers"] == {"X-Present": "value"}
+
+    def test_a_non_object_headers_argument_is_sent_as_given(self, seen):
+        """Only a nested headers object is sanitised; any other value is the model's argument."""
+        _mcp_tool().execute({"headers": "not-an-object"})
+        assert seen["arguments"] == {"headers": "not-an-object"}
+
+    def test_the_request_is_scoped_to_the_tools_account(self, seen):
+        _mcp_tool().execute({"headers": {"x-account-id": "victim-account"}})
+        assert seen["headers"]["x-account-id"] == "real-account"
+
+    def test_no_account_sends_no_account_header(self, seen):
+        """A tool built with no account scopes nothing; the server refuses such a call."""
+        _mcp_tool(account_id=None).execute({})
+        assert "x-account-id" not in seen["headers"]
 
 
 class TestDeclaredHeaderValuesAreStillValidated:
@@ -749,17 +244,7 @@ class TestDeclaredHeaderValuesAreStillValidated:
 
     @pytest.fixture
     def tool(self):
-        from stackone_ai.tools import StackOneMcpTool
-
-        return StackOneMcpTool(
-            name="linear_acct_execute_action",
-            description="Execute",
-            parameters=ToolParameters(type="object", properties={"headers_x-trace": {"type": "string"}}),
-            api_key="k",
-            endpoint="https://api.example.com/mcp",
-            headers={},
-            account_id="acct",
-        )
+        return _mcp_tool({"headers_x-trace": {"type": "string"}}, account_id="acct")
 
     @pytest.mark.parametrize("value", ["trailing\n", "a\r\nInjected: 1", "bad\rvalue"])
     def test_crlf_in_a_declared_header_is_dropped(self, tool, value):
@@ -770,90 +255,9 @@ class TestDeclaredHeaderValuesAreStillValidated:
         assert tool._sanitise_headers({"X-Trace": "abc-123"}) == {"X-Trace": "abc-123"}
 
 
-class TestDownloadFilenamesAreSafe:
-    """The filename comes from a Content-Disposition an attacker can choose.
-
-    Every expected value is the Node SDK's ``filenameFromContentDisposition()`` /
-    ``safeBasename()`` output for the same input: the two SDKs must agree on what a
-    download may be called. The first block is Node's own table; the rest are inputs
-    where this SDK used to disagree with it.
-    """
-
-    @pytest.mark.parametrize(
-        ("header", "expected"),
-        [
-            ('attachment; filename="../../.ssh/authorized_keys"', "authorized_keys"),
-            ("attachment; filename*=UTF-8''%2e%2e%2f%2e%2e%2fetc%2fcron.d%2fx", "x"),
-            ('attachment; filename="/etc/passwd"', "passwd"),
-            ('attachment; filename="C:evil.exe"', "evil.exe"),
-            ('attachment; filename="..\\\\..\\\\windows\\\\x.dll"', "x.dll"),
-            ("attachment; filename*=UTF-8''..%5C..%5Cwindows%5Cx.dll", "x.dll"),
-            ('attachment; filename="report.pdf:hidden.exe"', "hidden.exe"),
-            ('attachment; filename="\u202egnp.exe"', "gnp.exe"),
-            ('attachment; filename="line\u0000break\u0007.txt"', "linebreak.txt"),
-            ('attachment; filename=".."', None),
-            ("attachment; filename*=UTF-8''%2e%2e", None),
-            ('attachment; filename="   "', None),
-            ('attachment; notfilename="decoy.txt"', None),
-            ('attachment; filename="report.pdf"', "report.pdf"),
-            # `:` is a separator wherever it appears, not only as a drive letter: this is an
-            # NTFS alternate data stream, and the percent-decoded form must not dodge it.
-            ("attachment; filename*=UTF-8''report.pdf%3Ahidden.exe", "hidden.exe"),
-            ('attachment; filename="C:\\\\x:y:z.txt"', "z.txt"),
-            ("attachment; filename*=UTF-8''%E2%80%AEgnp.exe", "gnp.exe"),
-            ("attachment; filename*=UTF-8''%C3", "\ufffd"),
-            # Charset labels resolve as Node's TextDecoder resolves them: Latin-1 means
-            # windows-1252, an unassigned 0x80-0x9F byte is its C1 control (then stripped),
-            # labels lowercase fully, and a label it refuses falls back to UTF-8.
-            ("attachment; filename*=ISO-8859-1''%80.txt", "\u20ac.txt"),
-            ("attachment; filename*=ISO-8859-1''a%81.txt", "a.txt"),
-            ("attachment; filename*=windows-1253''%AA.txt", "\u00aa.txt"),
-            ("attachment; filename*=windows-874''%DB.txt", "\uf8c1.txt"),
-            ("attachment; filename*=\u212aoi8-r''%E1.txt", "\u0410.txt"),
-            ("attachment; filename*=iso-8859-16''%A1.txt", "\ufffd.txt"),
-            # The parameter grammar: ASCII-only case folding and JavaScript's whitespace.
-            ('attachment; f\u0131lename="evil.txt"', None),
-            ('attachment;\u001cfilename="evil.txt"', None),
-            ('attachment;\ufefffilename="a.txt"', "a.txt"),
-            ('attachment; filename="\u2028report.pdf\u00a0"', "report.pdf"),
-            # A format character Python 3.11's Unicode 14 database does not know.
-            ('attachment; filename="a\U00013439b.txt"', "ab.txt"),
-        ],
-    )
-    def test_header_matches_node(self, header, expected):
-        assert filename_from_content_disposition(header) == expected
-
-    @pytest.mark.parametrize(
-        ("name", "expected"),
-        [
-            pytest.param("a" * 255, "a" * 255, id="exactly-255-bytes"),
-            pytest.param("a" * 400 + ".pdf", "a" * 251 + ".pdf", id="keeps-extension"),
-            pytest.param("é" * 300 + ".txt", "é" * 125 + ".txt", id="multibyte-on-a-character-boundary"),
-            pytest.param("a" * 300 + ".ééééé", "a" * 244 + ".ééééé", id="extension-counted-in-bytes"),
-            pytest.param("b" * 400, "b" * 255, id="no-extension"),
-            pytest.param("a." + "c" * 400, ("a." + "c" * 400)[:255], id="extension-alone-overlong"),
-            pytest.param("." + "c" * 400, ("." + "c" * 400)[:255], id="leading-dot-is-not-an-extension"),
-            pytest.param("é" * 128, "é" * 127, id="multibyte-no-extension"),
-            pytest.param("😀" * 100, "😀" * 63, id="astral-no-extension"),
-            pytest.param("x/" + "é" * 200, "é" * 127, id="capped-after-the-separator"),
-            pytest.param("\ud83d\u0007\ude00.txt", "😀.txt", id="halves-rejoin-as-in-a-js-string"),
-            pytest.param(None, None, id="none"),
-        ],
-    )
-    def test_basename_matches_node(self, name, expected):
-        assert _safe_basename(name) == expected
-
-
 @pytest.mark.parametrize("value", ["half an emoji \ud83d", {"a", "set"}, b"bytes"])
-def test_unencodable_arguments_raise_value_error(value):
-    """These escaped as a bare UnicodeEncodeError/TypeError from inside httpx."""
-    tool = StackOneRpcTool(
-        name="linear_x",
-        description="",
-        parameters=ToolParameters(type="object", properties={"body_q": {"type": "string"}}),
-        api_key="k",
-        base_url="https://api.example.invalid",
-        account_id="a",
-    )
+def test_unencodable_arguments_raise_value_error(value, seen):
+    """These would otherwise fail inside the MCP client and surface as a transport error."""
     with pytest.raises(ValueError, match="could not be encoded"):
-        tool.execute({"body_q": value})
+        _mcp_tool().execute({"q": value})
+    assert seen == {}

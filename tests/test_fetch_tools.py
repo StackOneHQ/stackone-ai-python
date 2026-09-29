@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import threading
 from contextlib import asynccontextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from stackone_ai.tools import McpToolDefinition, fetch_mcp_tools
@@ -17,6 +19,24 @@ from stackone_ai.types import (
     ToolsetError,
     ToolsetLoadError,
 )
+
+# Must match MOCK_DOWNLOAD_LINK in tests/mocks/mcp-server.ts.
+MOCK_DOWNLOAD_LINK = {
+    "download_url": "https://downloads.example.com/f/abc123?sig=xyz",
+    "expires_at": "2026-01-01T00:00:00.000Z",
+    "file": {"name": "report.pdf", "content_type": "application/pdf", "content_length": 1024},
+}
+
+
+def _reset_requests(base_url: str) -> None:
+    httpx.delete(f"{base_url}/__requests").raise_for_status()
+
+
+def _tool_calls(base_url: str, name: str) -> list[dict[str, Any]]:
+    """The tools/call requests the mock received for ``name``, as they were on the wire."""
+    response = httpx.get(f"{base_url}/__requests")
+    response.raise_for_status()
+    return [r for r in response.json() if r["method"] == "tools/call" and r["name"] == name]
 
 
 class TestAccountFiltering:
@@ -356,42 +376,111 @@ class TestServedRequiredOrder:
         assert tool.parameters.properties["1"]["nullable"] is True
 
 
-class TestRpcToolExecution:
-    """Test RPC tool execution through the MCP server."""
+class TestPerActionToolsExecuteOverToolsCall:
+    """Every per-action tool runs over MCP tools/call on the endpoint and account that listed it.
 
-    def test_execute_tool_returns_response(self, mcp_mock_server: str):
-        """Test executing a tool via RPC returns response"""
+    Assertions about the wire read the mock's request log, not a handler's view of the call.
+    """
+
+    def test_execute_returns_the_result_as_the_server_wrote_it(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
-        tools = toolset.fetch_tools(account_ids=["your-bamboohr-account-id"])
-        tool = tools.get_tool("bamboohr_list_employees")
+        tool = toolset.fetch_tools(account_ids=["your-bamboohr-account-id"]).get_tool(
+            "bamboohr_list_employees"
+        )
         assert tool is not None
 
-        result = tool.execute()
-        assert result is not None
-        assert "data" in result
+        assert tool.execute() == {
+            "isError": False,
+            "result": {"data": [{"id": "1", "name": "Employee 1"}, {"id": "2", "name": "Employee 2"}]},
+        }
 
-    def test_execute_tool_with_arguments(self, mcp_mock_server: str):
-        """Test executing a tool with arguments"""
+    def test_one_tools_call_on_the_listing_endpoint_and_no_param_style(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
-        tools = toolset.fetch_tools(account_ids=["your-bamboohr-account-id"])
-        tool = tools.get_tool("bamboohr_get_employee")
+        tool = toolset.fetch_tools(account_ids=["your-bamboohr-account-id"]).get_tool("bamboohr_get_employee")
         assert tool is not None
 
+        _reset_requests(mcp_mock_server)
         result = tool.execute({"id": "emp-123"})
-        assert result is not None
-        assert result.get("data", {}).get("id") == "emp-123"
 
-    def test_execute_tool_sends_account_id_header(self, mcp_mock_server: str):
-        """Test that tool execution sends x-account-id header"""
+        assert result == {"isError": False, "result": {"data": {"id": "emp-123", "name": "Test Employee"}}}
+        [call] = _tool_calls(mcp_mock_server, "bamboohr_get_employee")
+        assert call["path"] == "/mcp"
+        assert call["search"] == ""
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            pytest.param({"fields": "a,b"}, id="flat"),
+            pytest.param({"path_id": "1", "query_limit": 5, "body_name": "x"}, id="prefix-lookalikes"),
+            pytest.param({"path": {"id": "1"}, "query": {"limit": 5}, "body": {"n": [1, None]}}, id="nested"),
+            pytest.param({"query": "not-an-object", "headers_x": "y", "unicode": "é😀"}, id="odd-shapes"),
+            pytest.param({}, id="empty"),
+        ],
+    )
+    def test_arguments_are_sent_verbatim(self, mcp_mock_server: str, arguments: dict[str, Any]):
+        """No envelope splitting and no prefix routing: the server maps them itself."""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
-        tools = toolset.fetch_tools(account_ids=["test-account"])
-        tool = tools.get_tool("dummy_action")
+        tool = toolset.fetch_tools(account_ids=["mixed"]).get_tool("hibob_list_employees")
         assert tool is not None
-        assert tool.get_account_id() == "test-account"
 
-        # Execute and verify account context is preserved
-        result = tool.execute({"foo": "bar"})
-        assert result is not None
+        _reset_requests(mcp_mock_server)
+        result = tool.execute(arguments)
+
+        [call] = _tool_calls(mcp_mock_server, "hibob_list_employees")
+        assert call["arguments"] == arguments
+        assert result == {
+            "isError": False,
+            "result": {"data": {"action": "hibob_list_employees", "received": arguments}},
+        }
+
+    def test_x_account_id_is_the_listing_accounts(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tools = toolset.fetch_tools(account_ids=["acc1", "acc2"])
+
+        _reset_requests(mcp_mock_server)
+        for name in ("acc1_tool_1", "acc2_tool_1"):
+            tool = tools.get_tool(name)
+            assert tool is not None
+            tool.execute({"fields": "id"})
+
+        assert [c["accountId"] for c in _tool_calls(mcp_mock_server, "acc1_tool_1")] == ["acc1"]
+        assert [c["accountId"] for c in _tool_calls(mcp_mock_server, "acc2_tool_1")] == ["acc2"]
+
+    def test_a_download_link_is_returned_unchanged(self, mcp_mock_server: str):
+        """A file action over tools/call returns a link; the SDK neither follows nor reshapes it."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["files"]).get_tool("files_download_file")
+        assert tool is not None
+
+        assert tool.execute({"id": "f1"}) == {"isError": False, "result": MOCK_DOWNLOAD_LINK}
+
+    def test_a_download_with_no_link_raises_with_status_501(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["files"]).get_tool("files_download_unavailable")
+        assert tool is not None
+
+        with pytest.raises(StackOneAPIError) as excinfo:
+            tool.execute({"id": "f1"})
+        assert excinfo.value.status_code == 501
+        assert excinfo.value.response_body["isError"] is True
+
+    def test_defender_metadata_is_kept_beside_the_result(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["files"]).get_tool("files_list_defended")
+        assert tool is not None
+
+        assert tool.execute() == {
+            "isError": False,
+            "result": {"data": []},
+            "defenderMetadata": {"scanned": True, "flagged": 0},
+        }
+
+    def test_a_non_object_result_is_returned_as_served(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["files"]).get_tool("files_count")
+        assert tool is not None
+
+        assert tool.execute() == {"isError": False, "result": 3}
 
 
 class TestAccountIdFallback:
@@ -736,10 +825,18 @@ class TestParallelFetch:
             toolset.fetch_tools(account_ids=["a", "b"])
 
 
-class TestMcpParamStylePinning:
-    """The /mcp listing URL must pin param-style so the schema matches the RPC unwrap."""
+class TestMcpEndpoint:
+    """No param-style pin: the endpoint is {base}/mcp, plus ?tool-mode= when a mode is set."""
 
-    def test_fetch_tools_pins_flat_prefixed_param_style(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [
+            (None, "https://api.example.com/mcp"),
+            ("individual", "https://api.example.com/mcp?tool-mode=individual"),
+            ("search_execute", "https://api.example.com/mcp?tool-mode=search_execute"),
+        ],
+    )
+    def test_endpoint(self, monkeypatch, mode, expected):
         captured: dict[str, str] = {}
 
         def fake_fetch(endpoint: str, headers: dict[str, str], **_kwargs: object) -> list[McpToolDefinition]:
@@ -748,10 +845,10 @@ class TestMcpParamStylePinning:
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
 
-        toolset = StackOneToolSet(api_key="test-key", base_url="https://api.example.com")
+        toolset = StackOneToolSet(api_key="test-key", base_url="https://api.example.com/", tool_mode=mode)
         toolset.fetch_tools(account_ids=["acc1"])
 
-        assert captured["endpoint"] == "https://api.example.com/mcp?param-style=flat_prefixed"
+        assert captured["endpoint"] == expected
 
 
 class TestAccountDiscovery:
@@ -819,26 +916,17 @@ class TestListingFailuresAreDiagnosable:
 
 
 class TestToolModeRouting:
-    """search_execute tools are MCP-native: they must not be sent to /actions/rpc."""
+    """Every tool is an MCP tool, whatever the mode."""
 
-    def test_default_mode_builds_rpc_tools(self, monkeypatch):
-        from stackone_ai.tools import StackOneRpcTool
-
-        monkeypatch.setattr(
-            "stackone_ai.toolset.fetch_mcp_tools",
-            lambda _e, _h, **_k: [McpToolDefinition(name="t", description="", input_schema={})],
-        )
-        toolset = StackOneToolSet(api_key="k", account_id="acc1")
-        assert isinstance(toolset.fetch_tools().get_tool("t"), StackOneRpcTool)
-
-    def test_search_execute_mode_builds_mcp_tools(self, monkeypatch):
+    @pytest.mark.parametrize("mode", [None, "individual", "search_execute"])
+    def test_every_mode_builds_mcp_tools(self, monkeypatch, mode):
         from stackone_ai.tools import StackOneMcpTool
 
         monkeypatch.setattr(
             "stackone_ai.toolset.fetch_mcp_tools",
             lambda _e, _h, **_k: [McpToolDefinition(name="t", description="", input_schema={})],
         )
-        toolset = StackOneToolSet(api_key="k", account_id="acc1", tool_mode="search_execute")
+        toolset = StackOneToolSet(api_key="k", account_id="acc1", tool_mode=mode)
         assert isinstance(toolset.fetch_tools().get_tool("t"), StackOneMcpTool)
 
     def test_search_execute_mode_is_requested_on_the_url(self, monkeypatch):
@@ -933,6 +1021,10 @@ class TestToolResultParity:
         ],
     )
     def test_success(self, result: dict, expected: dict):
+        self._assert_parses_to(result, expected)
+
+    @staticmethod
+    def _assert_parses_to(result: dict, expected: dict) -> None:
         from mcp.types import CallToolResult
 
         from stackone_ai.tools import parse_tool_result
@@ -991,13 +1083,47 @@ class TestToolResultParity:
         assert excinfo.value.status_code == status
         assert excinfo.value.response_body == body
 
-    def test_structured_only_result_over_the_wire(self, mcp_mock_server: str):
-        """The mock answers a per-action tools/call with structuredContent and no text."""
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param({"isError": False, "result": {"data": {"id": "1"}}}, id="wrapper"),
+            pytest.param(
+                {
+                    "isError": False,
+                    "result": {"data": []},
+                    "defenderMetadata": {"flagged": 0},
+                    "policyMetadata": {"policy": "p1"},
+                },
+                id="wrapper-with-metadata",
+            ),
+            pytest.param({"isError": False, "result": [1, 2]}, id="wrapper-with-a-list"),
+            pytest.param(
+                {"session_id": "s1", "actions": [{"action_id": "a", "similarity_score": 0.9}]},
+                id="search-result",
+            ),
+            pytest.param({"message": "Feedback recorded", "session_id": None}, id="feedback-receipt"),
+        ],
+    )
+    def test_a_result_is_returned_as_the_server_wrote_it(self, payload: dict):
+        """UCA's { isError: false, result, ...metadata } wrapper included, as Node returns it."""
+        import json
+
+        self._assert_parses_to({"content": [_text(json.dumps(payload))]}, payload)
+        self._assert_parses_to({"content": [], "structuredContent": payload}, payload)
+        self._assert_parses_to(
+            {"content": [_text(json.dumps(payload))], "structuredContent": payload}, payload
+        )
+
+    def test_uca_wrapper_over_the_wire(self, mcp_mock_server: str):
+        """The mock answers a per-action tools/call as UCA does: wrapper as structuredContent and text."""
         from stackone_ai.tools import build_auth_header, call_mcp_tool
 
         headers = {"Authorization": build_auth_header("test-key"), "x-account-id": "test-account"}
         result = call_mcp_tool(f"{mcp_mock_server}/mcp", headers, "dummy_action", {"foo": "bar"})
-        assert result == {"foo": "bar"}
+        assert result == {
+            "isError": False,
+            "result": {"data": {"action": "dummy_action", "received": {"foo": "bar"}}},
+        }
 
 
 class TestSearchAndExecuteApi:
@@ -1011,7 +1137,7 @@ class TestSearchAndExecuteApi:
     def test_execute_runs_a_searched_action(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         action_id = toolset.search("list items")[0]["action_id"]
-        assert toolset.execute(action_id)["data"] == {"nodes": []}
+        assert toolset.execute(action_id)["result"]["data"] == {"nodes": []}
 
     def test_execute_passes_the_nested_envelope_through(self, mcp_mock_server: str):
         """execute() takes the envelope an action's example_request shows, verbatim.
@@ -1024,7 +1150,7 @@ class TestSearchAndExecuteApi:
         assert action["example_request"] == {"query": {"page_size": 25}}
 
         result = toolset.execute(action["action_id"], action["example_request"])
-        assert result["echoed_query"] == {"page_size": 25}
+        assert result["result"]["echoed_query"] == {"page_size": 25}
 
     def test_unknown_action_raises_rather_than_returning_an_error_body(self, mcp_mock_server: str):
         from stackone_ai.types import StackOneAPIError
@@ -1050,7 +1176,7 @@ class TestServerRefusals:
             toolset.fetch_tools(account_ids=["no-such-account"])
 
     def test_execution_without_an_account_is_rejected_by_the_server(self, mcp_mock_server: str):
-        """/actions/rpc is account-scoped too — the sibling of the bug that shipped."""
+        """tools/call is account-scoped too — the sibling of the bug that shipped."""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         tool = toolset.fetch_tools(account_ids=["test-account"]).get_tool("dummy_action")
         assert tool is not None
@@ -1195,22 +1321,13 @@ class TestCacheIsolation:
 
 
 class TestExecuteReturnShape:
-    def test_execute_unwraps_the_meta_tool_envelope(self, monkeypatch):
-        """Both surfaces return the payload itself, not a wrapper whose flag is always False."""
-        from stackone_ai.tools import StackOneMcpTool
-
-        def fake_execute(self, arguments):
-            return {"isError": False, "result": {"data": {"nodes": [1, 2]}}}
-
-        monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
-        monkeypatch.setattr(
-            "stackone_ai.toolset.fetch_mcp_tools",
-            lambda _e, _h, **_k: [
-                McpToolDefinition(name="linear_acc1_execute_action", description="", input_schema={})
-            ],
-        )
-        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
-        assert toolset.execute("linear_list_issues") == {"data": {"nodes": [1, 2]}}
+    def test_execute_returns_the_same_shape_as_the_tool(self, mcp_mock_server: str):
+        """Both return the result as the server wrote it, UCA's wrapper included."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        assert toolset.execute("mock_list_items") == {
+            "isError": False,
+            "result": {"data": {"nodes": []}, "echoed_query": None},
+        }
 
 
 class TestTimeoutIsHonoured:
@@ -1363,15 +1480,15 @@ class TestAdapterErrorsReachTheModel:
 
     @staticmethod
     def _failing_tool():
-        from stackone_ai.tools import StackOneRpcTool
+        from stackone_ai.tools import StackOneMcpTool
         from stackone_ai.types import ToolParameters
 
-        tool = StackOneRpcTool(
+        tool = StackOneMcpTool(
             name="linear_get_issue",
             description="",
             parameters=ToolParameters(type="object", properties={"path_id": {"type": "string"}}),
             api_key="k",
-            base_url="https://api.example.com",
+            endpoint="https://api.example.com/mcp",
             account_id="acc1",
         )
 
@@ -1383,21 +1500,21 @@ class TestAdapterErrorsReachTheModel:
     def test_langchain_raises_tool_exception_carrying_the_response_body(self, monkeypatch):
         from langchain_core.tools import ToolException
 
-        from stackone_ai.tools import StackOneRpcTool
+        from stackone_ai.tools import StackOneMcpTool
 
         tool, reject = self._failing_tool()
-        monkeypatch.setattr(StackOneRpcTool, "execute", reject)
+        monkeypatch.setattr(StackOneMcpTool, "execute", reject)
         with pytest.raises(ToolException, match="path.id is missing") as excinfo:
             tool.to_langchain()._run(path_id="x")
         assert excinfo.value.status_code == 400
 
     def test_langchain_does_not_forward_unsupplied_optionals_as_null(self, monkeypatch):
         """The API reads an explicit null as "required field missing", so this 400'd every call."""
-        from stackone_ai.tools import StackOneRpcTool
+        from stackone_ai.tools import StackOneMcpTool
 
         seen: dict[str, object] = {}
         tool, _ = self._failing_tool()
-        monkeypatch.setattr(StackOneRpcTool, "execute", lambda _self, args=None: seen.update(args=args) or {})
+        monkeypatch.setattr(StackOneMcpTool, "execute", lambda _self, args=None: seen.update(args=args) or {})
         tool.to_langchain()._run(path_id="x", body_after=None)
         assert seen["args"] == {"path_id": "x"}
 
@@ -1405,9 +1522,9 @@ class TestAdapterErrorsReachTheModel:
         pytest.importorskip("pydantic_ai")
         from pydantic_ai.exceptions import ModelRetry
 
-        from stackone_ai.tools import StackOneRpcTool
+        from stackone_ai.tools import StackOneMcpTool
 
         tool, reject = self._failing_tool()
-        monkeypatch.setattr(StackOneRpcTool, "execute", reject)
+        monkeypatch.setattr(StackOneMcpTool, "execute", reject)
         with pytest.raises(ModelRetry, match="path.id is missing"):
             tool.to_pydantic_ai_tool().function(path_id="x")

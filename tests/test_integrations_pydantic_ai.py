@@ -27,8 +27,6 @@ def sample_tool() -> StackOneTool:
         ),
         _execute_config=ExecuteConfig(
             headers={},
-            method="GET",
-            url="https://api.example.com/employees",
             name="bamboohr_list_employees",
         ),
         _api_key="test_key",
@@ -42,8 +40,6 @@ def second_tool() -> StackOneTool:
         parameters=ToolParameters(type="object", properties={}),
         _execute_config=ExecuteConfig(
             headers={},
-            method="GET",
-            url="https://api.example.com/employees/{id}",
             name="bamboohr_get_employee",
         ),
         _api_key="test_key",

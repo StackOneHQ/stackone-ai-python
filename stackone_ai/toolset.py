@@ -13,11 +13,9 @@ from typing import Any
 import httpx
 
 from stackone_ai.tools import (
-    MCP_PARAM_STYLE,
     USER_AGENT,
     McpToolDefinition,
     StackOneMcpTool,
-    StackOneRpcTool,
     StackOneTool,
     Tools,
     build_auth_header,
@@ -30,7 +28,6 @@ from stackone_ai.types import (
     FeedbackCategory,
     FeedbackRating,
     FeedbackSource,
-    Headers,
     JsonDict,
     StackOneAPIError,
     StackOneError,
@@ -46,6 +43,9 @@ logger = logging.getLogger("stackone.tools")
 _UNSET = object()
 """Sentinel: `mode=None` is a real mode (individual), so it cannot mean "use the default"."""
 
+_Listing = tuple[McpToolDefinition, str | None, str]
+"""A served tool, the account that listed it, and the endpoint it was listed from."""
+
 # The search_actions meta tool's served schema caps top_k at 50.
 _MAX_TOP_K = 50
 
@@ -54,8 +54,8 @@ class StackOneToolSet:
     """Main class for accessing StackOne tools.
 
     The toolset is a thin client over the served catalog: it lists tools from the
-    MCP endpoint and executes them against the actions RPC endpoint. It does not
-    rewrite, filter or invent schemas.
+    MCP endpoint and executes each one over MCP ``tools/call`` on the endpoint, and
+    with the account, that listed it. It does not rewrite, filter or invent schemas.
     """
 
     def __init__(
@@ -76,7 +76,7 @@ class StackOneToolSet:
             execute: Execution configuration. Controls default account scoping
                 for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
                 tools to specific accounts.
-            timeout: Request timeout in seconds for tool execution HTTP calls.
+            timeout: Request timeout in seconds for tool listing and execution.
                 Default: 60. Takes precedence over ``execute.timeout`` if set.
                 Increase for slow providers (e.g. Workday).
             tool_mode: How the endpoint lists tools. ``"search_execute"`` returns
@@ -104,9 +104,7 @@ class StackOneToolSet:
         # Cache the listing, not the Tools wrapper. StackOneTool objects are mutable
         # (Tools.set_account_id rebinds them), so handing the same instances back on a
         # cache hit let one caller silently rescope every later caller's tools.
-        self._catalog_cache: dict[
-            tuple[Any, ...], list[tuple[McpToolDefinition, str | None, str, Headers]]
-        ] = {}
+        self._catalog_cache: dict[tuple[Any, ...], list[_Listing]] = {}
         self._discovered_account_ids: list[str] | None = None
         # Bumped by clear_catalog_cache(). A listing already in flight when the cache is
         # cleared captured the generation it started under, and refuses to write back if
@@ -204,8 +202,8 @@ class StackOneToolSet:
                 cached = self._list_catalog(account_scope, mode)
 
             all_tools = [
-                self._create_tool(tool_def, account, endpoint, headers, mode)
-                for tool_def, account, endpoint, headers in self._dedupe_global_tools(cached)
+                self._create_tool(tool_def, account, endpoint)
+                for tool_def, account, endpoint in self._dedupe_global_tools(cached)
             ]
 
             if providers:
@@ -223,25 +221,23 @@ class StackOneToolSet:
         except Exception as exc:  # pragma: no cover - unexpected runtime errors
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
 
-    def _list_catalog(
-        self, account_scope: list[str | None], mode: ToolMode | None
-    ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
+    def _list_catalog(self, account_scope: list[str | None], mode: ToolMode | None) -> list[_Listing]:
         """List every scoped account's catalog, tolerating accounts that fail."""
         generation = self._cache_generation
-        endpoint = f"{self.base_url.rstrip('/')}/mcp?param-style={MCP_PARAM_STYLE}"
+        # No param-style pin: arguments are sent verbatim and the server maps them with its
+        # own reverse map, so the model sees whatever style the server serves.
+        endpoint = f"{self.base_url.rstrip('/')}/mcp"
         if mode:
-            endpoint = f"{endpoint}&tool-mode={mode}"
+            endpoint = f"{endpoint}?tool-mode={mode}"
 
         def _fetch_for_account(
             account: str | None,
-        ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
+        ) -> list[_Listing]:
             headers = self._build_mcp_headers(account)
-            return [
-                (tool_def, account, endpoint, headers)
-                for tool_def in fetch_mcp_tools(endpoint, headers, timeout=self._timeout)
-            ]
+            listed = fetch_mcp_tools(endpoint, headers, timeout=self._timeout)
+            return [(tool_def, account, endpoint) for tool_def in listed]
 
-        listings: list[tuple[McpToolDefinition, str | None, str, Headers]] = []
+        listings: list[_Listing] = []
         if len(account_scope) == 1:
             listings.extend(_fetch_for_account(account_scope[0]))
             self._store_listing(account_scope, mode, listings, generation)
@@ -272,7 +268,7 @@ class StackOneToolSet:
         self,
         account_scope: list[str | None],
         mode: ToolMode | None,
-        listings: list[tuple[McpToolDefinition, str | None, str, Headers]],
+        listings: list[_Listing],
         generation: int,
     ) -> None:
         """Cache a listing, unless the cache was cleared while it was being fetched."""
@@ -282,8 +278,8 @@ class StackOneToolSet:
 
     @staticmethod
     def _dedupe_global_tools(
-        listings: list[tuple[McpToolDefinition, str | None, str, Headers]],
-    ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
+        listings: list[_Listing],
+    ) -> list[_Listing]:
         """Keep only the first listing of the feedback tool.
 
         It is global rather than account-scoped, so every account's listing carries an
@@ -292,7 +288,7 @@ class StackOneToolSet:
         to ignore the warning that does matter.
         """
         seen_feedback = False
-        kept: list[tuple[McpToolDefinition, str | None, str, Headers]] = []
+        kept: list[_Listing] = []
         for listing in listings:
             if listing[0].name == SUBMIT_FEEDBACK_TOOL_NAME:
                 if seen_feedback:
@@ -408,11 +404,11 @@ class StackOneToolSet:
         """Execute an action by id, as returned by :meth:`search`.
 
         Always runs through the connector's ``_execute_action`` meta tool, so
-        ``arguments`` is the nested envelope every action's ``example_request``
-        shows — ``{"query": {...}, "path": {...}, "body": {...}}``. The flat,
-        prefixed form belongs to ``fetch_tools()`` tools, whose own served schema
-        names the keys; routing by whether an id happened to be in the catalog
-        would make the argument shape depend on something the caller cannot see.
+        ``arguments`` is the nested form every action's ``example_request``
+        shows — ``{"query": {...}, "path": {...}, "body": {...}}``. A
+        ``fetch_tools()`` tool takes the keys its own served schema names instead;
+        routing by whether an id happened to be in the catalog would make the
+        argument shape depend on something the caller cannot see.
 
         ``session_id`` is the value a :meth:`search` hit carries. Passing it links
         this call to that search server-side.
@@ -457,15 +453,8 @@ class StackOneToolSet:
             if session_id is not None:
                 call_arguments["session_id"] = session_id
             call_arguments["action_id"] = action_id
-            result = tool.execute(call_arguments)
-            # The meta tool wraps its payload as {"isError": ..., "result": ...}, but an
-            # isError response has already raised by this point — so the flag could
-            # only ever be False, and the wrapper just made this surface return a
-            # different shape from tool.execute() for the same action. Unwrap it.
-            if isinstance(result, dict) and set(result) == {"isError", "result"}:
-                inner = result["result"]
-                return inner if isinstance(inner, dict) else {"result": inner}
-            return result
+            # Returned as the server wrote it, the same shape tool.execute() returns.
+            return tool.execute(call_arguments)
 
         raise ToolsetLoadError(
             f'No connector found for "{action_id}". Use search() to discover valid action ids.'
@@ -662,17 +651,11 @@ class StackOneToolSet:
         tool_def: McpToolDefinition,
         account_id: str | None,
         endpoint: str,
-        headers: dict[str, str],
-        mode: ToolMode | None = None,
     ) -> StackOneTool:
         """Build an executable tool from a served catalog entry.
 
-        In ``search_execute`` mode the served tools are MCP meta tools with no
-        action behind them on ``/actions/rpc``, so they are executed over
-        ``tools/call`` instead. The feedback tool goes over ``tools/call`` in every mode
-        too. The server would also accept it on ``/actions/rpc``, but it is served over
-        MCP and is not a connector action, so it is called where it was listed rather
-        than having its transport depend on a tool-mode setting unrelated to it.
+        Every tool, in every mode, executes over MCP ``tools/call`` on the endpoint that
+        listed it, with the ``x-account-id`` of the account that listed it.
         """
         schema = tool_def.input_schema or {}
         # Pop keys we explicitly override to avoid "multiple values for keyword argument"
@@ -686,26 +669,12 @@ class StackOneToolSet:
             type=schema_type,
             properties=schema_properties,
         )
-        if mode == "search_execute" or tool_def.name == SUBMIT_FEEDBACK_TOOL_NAME:
-            return StackOneMcpTool(
-                name=tool_def.name,
-                description=tool_def.description or "",
-                parameters=parameters,
-                api_key=self.api_key,
-                endpoint=endpoint,
-                # A copy: one headers dict is shared by every tuple in a cached listing,
-                # so handing it straight to the tool leaked one caller's mutation into
-                # every other caller's tools.
-                headers=dict(headers),
-                account_id=account_id,
-                timeout=self._timeout,
-            )
-        return StackOneRpcTool(
+        return StackOneMcpTool(
             name=tool_def.name,
             description=tool_def.description or "",
             parameters=parameters,
             api_key=self.api_key,
-            base_url=self.base_url,
+            endpoint=endpoint,
             account_id=account_id,
             timeout=self._timeout,
         )

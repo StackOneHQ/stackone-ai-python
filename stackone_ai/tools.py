@@ -1,9 +1,9 @@
-"""Tools served by the StackOne MCP endpoint, and their execution over the RPC endpoint.
+"""Tools served by the StackOne MCP endpoint, and their execution over MCP ``tools/call``.
 
 The guiding property of this module is that a tool is the served catalog entry:
-the schema listed to a model is the schema the MCP server sent, and the request
-sent to ``/actions/rpc`` matches that schema. Nothing is invented, nothing is
-dropped, nothing is rebuilt.
+the schema listed to a model is the schema the MCP server sent, and a call sends the
+model's arguments back to the endpoint that listed it, as given. Nothing is invented,
+nothing is dropped, nothing is rebuilt.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from collections import Counter
 from collections.abc import Coroutine, Iterable, Sequence
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 import anyio
 import httpx
@@ -28,15 +28,12 @@ from stackone_ai.types import (
     ExecuteConfig,
     Headers,
     JsonDict,
-    ParameterLocation,
     StackOneAPIError,
     StackOneError,
     ToolParameters,
     ToolsetConfigError,
     ToolsetError,
     ToolsetLoadError,
-    filename_from_content_disposition,
-    is_json_content_type,
 )
 
 logger = logging.getLogger("stackone.tools")
@@ -50,24 +47,13 @@ except metadata.PackageNotFoundError:  # pragma: no cover - best-effort fallback
 
 USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
 
-_RPC_PARAMETER_LOCATIONS = {
-    "action": ParameterLocation.BODY,
-    "body": ParameterLocation.BODY,
-    "headers": ParameterLocation.BODY,
-    "path": ParameterLocation.BODY,
-    "query": ParameterLocation.BODY,
-}
-
-# Param-style pinned on the /mcp tool-listing URL. The MCP schema and the RPC-execution unwrap
-# (_split_envelope_params) must agree on this, so it is pinned rather than following the server
-# default — the server default is free to change without breaking the SDK.
-MCP_PARAM_STYLE = "flat_prefixed"
-
-# Matches a flat_prefixed envelope key: `<location>_<field>` (e.g. `path_id`, `query_limit`).
 _HEADER_NAME_PATTERN = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+")
 _HEADER_VALUE_PATTERN = re.compile(r"[\x20-\x7e\t\x80-\xff]*")
 
-_FLAT_ENVELOPE_KEY_PATTERN = re.compile(r"^(path|query|body|headers)_(.+)$")
+# Header names the SDK sets itself, after every other header. A tool call may not supply
+# them even when a served schema declares them: they are the credential, the tenant
+# selector and the client identity.
+_SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
 
 
 # Added per property by the toolset when normalising a served schema; it records
@@ -243,29 +229,6 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str) -> Exception:
     return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
 
 
-def _describe_api_failure(exc: httpx.HTTPStatusError, body: Any) -> str:
-    """Lead with the server's own explanation of what went wrong.
-
-    ``str(httpx.HTTPStatusError)`` is "Client error '400 Bad Request' for url ..." plus a
-    link to MDN's generic status page — it never says which field was wrong, even though
-    the answer is already in hand. This is the error a user hits on every bad tool call,
-    so it is the one worth making actionable.
-    """
-    detail: Any = None
-    if isinstance(body, dict):
-        for key in ("message", "error", "detail"):
-            if isinstance(body.get(key), str):
-                detail = body[key]
-                break
-        else:
-            detail = body
-    elif isinstance(body, str) and body.strip():
-        detail = body.strip()[:500]
-
-    status = f"{exc.response.status_code} {exc.response.reason_phrase}".strip()
-    return f"{status}: {detail}" if detail else f"{status} from {exc.request.url}"
-
-
 def _status_of(parsed: JsonDict) -> int:
     """Dig the HTTP status out of an MCP error payload.
 
@@ -297,6 +260,10 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     ``{"result": ...}``. With no text at all, ``structuredContent`` is used, and text
     wins when both are present. Parts that are not text (images, embedded resources)
     are kept under ``content_parts``.
+
+    The result is returned as the server wrote it. For an action tool, ``*_execute_action``
+    and feedback that is ``{"isError": false, "result": ..., "defenderMetadata"?: ...,
+    "policyMetadata"?: ...}``; a search result is bare JSON.
 
     Raises:
         StackOneAPIError: If the result carries ``isError``. A failed tool call comes
@@ -339,10 +306,9 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
 def call_mcp_tool(
     endpoint: str, headers: dict[str, str], name: str, arguments: JsonDict, *, timeout: float = 60.0
 ) -> JsonDict:
-    """Invoke a tool over MCP ``tools/call``.
+    """Invoke a tool over MCP ``tools/call``, the one way every tool is executed.
 
-    The search/execute meta tools exist only on the MCP endpoint — they have no
-    ``/actions/rpc`` action behind them — so they must be called this way.
+    ``arguments`` are sent exactly as given; the server maps them onto the action.
     """
     from mcp import types as mcp_types  # ty: ignore[unresolved-import]
     from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
@@ -392,7 +358,13 @@ def _strip_internal_keys(schema: Any) -> Any:
 
 
 class StackOneTool(BaseModel):
-    """A single tool: its served schema plus the request needed to execute it."""
+    """A single tool: its served schema, and how to call it.
+
+    The base class describes a tool and converts it for agent frameworks, but cannot run
+    it: :meth:`execute` raises. Tools from :meth:`StackOneToolSet.fetch_tools` are
+    :class:`StackOneMcpTool` instances, which execute over MCP ``tools/call``. A hand-built
+    tool must override :meth:`execute`.
+    """
 
     name: str = Field(description="Tool name")
     description: str = Field(description="Tool description")
@@ -419,51 +391,54 @@ class StackOneTool(BaseModel):
         self._account_id = _account_id
 
     def _prepare_headers(self) -> Headers:
-        """Prepare headers for the API request"""
-        headers: Headers = {
-            "Authorization": build_auth_header(self._api_key),
-            "User-Agent": USER_AGENT,
-        }
+        """The request headers: the configured extras first, then the SDK's own.
 
+        Authorization, x-account-id and User-Agent are set last, and any case variant of
+        them among the extras is dropped first, so neither can replace the credential or
+        retarget the call at another account.
+        """
+        headers: Headers = {
+            name: value
+            for name, value in self._execute_config.headers.items()
+            if name.strip().casefold() not in _SDK_OWNED_HEADERS
+        }
+        headers["User-Agent"] = USER_AGENT
+        headers["Authorization"] = build_auth_header(self._api_key)
         if self._account_id:
             headers["x-account-id"] = self._account_id
-
-        headers.update(self._execute_config.headers)
         return headers
 
-    def _prepare_request_params(self, kwargs: JsonDict) -> tuple[str, JsonDict, JsonDict]:
-        """Prepare URL and parameters for the API request
+    def _parse_arguments(self, arguments: str | JsonDict | None) -> JsonDict:
+        """Arguments as a dict, from a dict, a JSON string, or nothing.
 
-        Returns:
-            Tuple of (url, body_params, query_params)
+        Raises:
+            ValueError: If the string is not JSON, or the value is not a JSON object.
         """
-        from urllib.parse import quote
+        if arguments is None:
+            return {}
+        if isinstance(arguments, str):
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
+        else:
+            parsed = arguments
+        if not isinstance(parsed, dict):
+            raise ValueError("Tool arguments must be a JSON object")
+        return dict(parsed)
 
-        url = self._execute_config.url
-        body_params: JsonDict = {}
-        query_params: JsonDict = {}
+    def _declared_headers(self) -> set[str]:
+        """The header names this tool's served schema declares, casefolded.
 
-        for key, value in kwargs.items():
-            param_location = self._execute_config.parameter_locations.get(key)
-
-            if param_location == ParameterLocation.PATH:
-                # Safely encode path parameters to prevent SSRF attacks
-                encoded_value = quote(str(value), safe="")
-                url = url.replace(f"{{{key}}}", encoded_value)
-            elif param_location == ParameterLocation.QUERY:
-                query_params[key] = value
-            elif param_location in (ParameterLocation.BODY, ParameterLocation.FILE):
-                body_params[key] = value
-            else:
-                if f"{{{key}}}" in url:
-                    encoded_value = quote(str(value), safe="")
-                    url = url.replace(f"{{{key}}}", encoded_value)
-                elif self._execute_config.method in {"GET", "DELETE"}:
-                    query_params[key] = value
-                else:
-                    body_params[key] = value
-
-        return url, body_params, query_params
+        The schema itself is the allowlist, in whichever param-style the server served it:
+        a flat ``headers_<name>`` property, or a ``<name>`` under a nested ``headers`` object.
+        """
+        properties = self.parameters.properties or {}
+        allowed = {prop[len("headers_") :].casefold() for prop in properties if prop.startswith("headers_")}
+        nested = properties.get("headers")
+        if isinstance(nested, dict) and isinstance(nested.get("properties"), dict):
+            allowed.update(str(name).casefold() for name in nested["properties"])
+        return allowed
 
     def _sanitise_headers(self, supplied: dict[str, Any] | None) -> dict[str, str]:
         """Keep only headers the served schema declared; drop everything else.
@@ -472,20 +447,14 @@ class StackOneTool(BaseModel):
         prompt-injected call reaches this dict directly — and a denylist has to
         enumerate every synonym of "credential" and "tenant selector" in every
         provider's vocabulary (Proxy-Authorization, x-stackone-account-id, Cookie,
-        X-Api-Key, ...) and is wrong the moment one is missed. The previous two-name
-        list let all of those through.
+        X-Api-Key, ...) and is wrong the moment one is missed.
 
-        The allowlist is the served schema itself, so this needs no maintenance: today
-        zero of the served actions declare a ``headers_*`` property, and the RPC server
-        ignores the envelope's ``headers`` object outright. (Note: on the MCP path for
-        meta tools, headers are always dropped because the target action's schema is not
-        fetched ahead of execution to build an allowlist.)
+        The allowlist is the served schema itself, so this needs no maintenance. The
+        meta tools declare no header names, so for them every model-supplied header is
+        dropped. Authorization, x-account-id and User-Agent are refused even when
+        declared: the SDK sets them itself.
         """
-        allowed = {
-            prop[len("headers_") :].casefold()
-            for prop in (self.parameters.properties or {})
-            if prop.startswith("headers_")
-        }
+        allowed = self._declared_headers()
 
         clean: dict[str, str] = {}
         for key, value in (supplied or {}).items():
@@ -494,7 +463,8 @@ class StackOneTool(BaseModel):
             # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to
             # any server, and casefold() closes the non-ASCII folding holes lower() leaves.
             name = key.strip()
-            if name.casefold() not in allowed:
+            folded = name.casefold()
+            if folded not in allowed or folded in _SDK_OWNED_HEADERS:
                 logger.warning("Dropping header %r from a tool call: no served schema declares it", name)
                 continue
             # Defence in depth on a declared header's model-supplied value. fullmatch,
@@ -507,108 +477,17 @@ class StackOneTool(BaseModel):
         return clean
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
-        """Execute the tool with the given parameters
+        """Execute the tool. Not implemented on the base class.
 
-        Returns:
-            For JSON responses, the parsed API response as a dict.
-
-            For file downloads (any non-JSON Content-Type, e.g. a
-            ``documents_download_file`` action), a dict describing the file:
-            ``{"content": <bytes>, "content_type": str, "status_code": int,
-            "headers": dict, "file_name": str | None}``. Note ``content`` holds
-            the raw bytes and is therefore not JSON-serializable - callers that
-            re-serialize tool results (e.g. for an LLM) should handle this key.
+        Tools from :meth:`StackOneToolSet.fetch_tools` execute over MCP ``tools/call``.
+        A hand-built ``StackOneTool`` has nothing to call, so override this to run one.
 
         Raises:
-            StackOneAPIError: If the API request fails
-            ValueError: If the arguments are invalid
+            StackOneError: Always, on the base class.
         """
-        try:
-            if isinstance(arguments, str):
-                parsed_arguments = json.loads(arguments)
-            else:
-                parsed_arguments = arguments or {}
-
-            if not isinstance(parsed_arguments, dict):
-                raise ValueError("Tool arguments must be a JSON object")
-
-            headers = self._prepare_headers()
-            url_used, body_params, query_params = self._prepare_request_params(parsed_arguments)
-
-            request_kwargs: dict[str, Any] = {
-                "method": self._execute_config.method,
-                "url": url_used,
-                "headers": headers,
-            }
-
-            if body_params:
-                body_type = self._execute_config.body_type or "json"
-                if body_type == "json":
-                    request_kwargs["json"] = body_params
-                elif body_type == "form":
-                    request_kwargs["data"] = body_params
-
-            if query_params:
-                request_kwargs["params"] = query_params
-
-            response = httpx.request(**request_kwargs, timeout=self._execute_config.timeout)
-            response.raise_for_status()
-
-            content_type = response.headers.get("content-type", "")
-            if response.status_code in (204, 205) or (
-                not response.content and is_json_content_type(content_type)
-            ):
-                # A bodyless JSON success is not a file download. Falling through would
-                # return `content: b""` with a made-up octet-stream type, breaking any
-                # caller that re-serialises the result for a model. A zero-byte body with
-                # a download content type IS a download, though — an empty file, with a
-                # filename the caller still needs — so it must not be caught here.
-                return {"status_code": response.status_code}
-            if is_json_content_type(content_type):
-                try:
-                    result = response.json()
-                except json.JSONDecodeError as exc:
-                    # Not the caller's arguments — the server sent a JSON content type
-                    # with a body that is not JSON. Saying "invalid JSON in arguments"
-                    # here sends people to debug the wrong end of the call.
-                    raise StackOneAPIError(
-                        f"Server sent malformed JSON for {self.name!r}: {exc}",
-                        response.status_code,
-                        response.text[:500],
-                    ) from exc
-                return cast(JsonDict, result) if isinstance(result, dict) else {"result": result}
-
-            # Non-JSON bodies are file downloads (e.g. documents_download_file), which the
-            # API serves as raw binary with the file's own MIME type and a Content-Disposition
-            # header. Return the bytes plus metadata rather than forcing a JSON/UTF-8 decode.
-            return {
-                "content": response.content,
-                "content_type": content_type or "application/octet-stream",
-                "status_code": response.status_code,
-                "headers": dict(response.headers),
-                "file_name": filename_from_content_disposition(response.headers.get("content-disposition")),
-            }
-
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid JSON in arguments: {exc}") from exc
-        except httpx.HTTPStatusError as exc:
-            response_body = None
-            if exc.response.text:
-                try:
-                    response_body = exc.response.json()
-                except json.JSONDecodeError:
-                    response_body = exc.response.text
-            raise StackOneAPIError(
-                _describe_api_failure(exc, response_body), exc.response.status_code, response_body
-            ) from exc
-        except httpx.RequestError as exc:
-            raise StackOneError(f"Request failed: {exc}") from exc
-        except (UnicodeEncodeError, TypeError) as exc:
-            # A lone surrogate — what a model emits when a token boundary splits an emoji —
-            # or a value JSON cannot encode (a set, bytes, a datetime) failed deep inside
-            # httpx and escaped as a bare UnicodeEncodeError/TypeError, outside the SDK's
-            # exception contract. It is an argument problem, so report it as one.
-            raise ValueError(f"Arguments for {self.name!r} could not be encoded as JSON: {exc}") from exc
+        raise StackOneError(
+            f'Tool "{self.name}" has no executor. Override execute() to run a hand-built tool.'
+        )
 
     def call(self, *args: Any, **kwargs: Any) -> JsonDict:
         """Call the tool with the given arguments
@@ -713,8 +592,7 @@ class StackOneTool(BaseModel):
                     # a caller opt into feeding that back and retrying.
                     # Carry the structured fields across: without them handle_tool_error
                     # leaves a caller with only str(exc), unable to tell 401 from 429.
-                    # str(exc) on an httpx error is just "Client error '400 Bad Request'
-                    # for url ..." — the field that is actually wrong is in response_body.
+                    # The field that is actually wrong is often only in response_body.
                     # Without it the agent retries blind, which is the whole point of
                     # handing the error back.
                     body = getattr(exc, "response_body", None)
@@ -774,160 +652,14 @@ class StackOneTool(BaseModel):
         return self._account_id
 
 
-class StackOneRpcTool(StackOneTool):
-    """RPC-backed tool wired to the StackOne actions RPC endpoint."""
-
-    def __init__(
-        self,
-        *,
-        name: str,
-        description: str,
-        parameters: ToolParameters,
-        api_key: str,
-        base_url: str,
-        account_id: str | None,
-        timeout: float = 60.0,
-    ) -> None:
-        execute_config = ExecuteConfig(
-            method="POST",
-            url=f"{base_url.rstrip('/')}/actions/rpc",
-            name=name,
-            headers={},
-            body_type="json",
-            parameter_locations=dict(_RPC_PARAMETER_LOCATIONS),
-            timeout=timeout,
-        )
-        super().__init__(
-            description=description,
-            parameters=parameters,
-            _execute_config=execute_config,
-            _api_key=api_key,
-            _account_id=account_id,
-        )
-
-    def execute(self, arguments: str | dict[str, Any] | None = None) -> dict[str, Any]:
-        parsed_arguments = self._parse_arguments(arguments)
-        envelope = self._split_envelope_params(parsed_arguments, set(self.parameters.properties) or None)
-
-        payload: dict[str, Any] = {
-            "action": self.name,
-            "body": envelope["body"],
-            "headers": self._build_action_headers(envelope["headers"] or None),
-        }
-        if envelope["path"]:
-            payload["path"] = envelope["path"]
-        if envelope["query"]:
-            payload["query"] = envelope["query"]
-
-        return super().execute(payload)
-
-    def _parse_arguments(self, arguments: str | dict[str, Any] | None) -> dict[str, Any]:
-        if arguments is None:
-            return {}
-        if isinstance(arguments, str):
-            try:
-                parsed = json.loads(arguments)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
-        else:
-            parsed = arguments
-        if not isinstance(parsed, dict):
-            raise ValueError("Tool arguments must be a JSON object")
-        return dict(parsed)
-
-    @staticmethod
-    def _split_envelope_params(
-        params: dict[str, Any], declared: set[str] | None = None
-    ) -> dict[str, dict[str, Any]]:
-        """Split LLM-supplied tool arguments into the RPC envelope (path/query/headers/body).
-
-        Tools are listed with ``?param-style=flat_prefixed``, so keys arrive as
-        ``<location>_<field>`` (for example ``path_id``, ``query_limit``) and the prefix
-        carries the parameter location. A bare dict-valued ``path``/``query``/``headers``/
-        ``body`` key is still bucketed for clients holding a cached nested schema, and any
-        other key falls through to the body.
-
-        ``declared`` is the served schema's property names. The prefix is stripped only from
-        a key the server actually declared, because the pattern alone cannot tell
-        ``path_id`` (a path param) from ``path_to_file`` (a body field that merely starts
-        with "path_"). Splitting the latter would drop the argument from the body and send
-        the server a path component it has no use for — silently, with the model none the
-        wiser.
-
-        ``None`` or an EMPTY set both mean "no schema to consult" and trust every match:
-        a served schema with no usable ``properties`` must not route every ``path_*``
-        key into the body and lose every path parameter.
-        """
-        buckets: dict[str, dict[str, Any]] = {"path": {}, "query": {}, "headers": {}, "body": {}}
-        reserved = ("path", "query", "headers", "body")
-        named = declared or set()
-
-        # Whether to read a `<location>_<field>` key as located, decided ONCE from the
-        # schema rather than per key. Under flat_prefixed every parameter is prefixed,
-        # so `path_to_file` means path.to_file; under a bare schema it is a body field
-        # that merely starts with "path_". Asking "is THIS key declared?" got that
-        # wrong in both directions: it demoted undeclared `query_offset` to a body
-        # field silently, and it would still have mis-split a declared bare name.
-        # ALL, not any: under flat_prefixed every parameter is prefixed, so one bare
-        # name is proof the schema is not. `any` would be satisfied by the very key
-        # this exists to protect — a declared body field called `path_to_file`.
-        prefixed = not named or all(_FLAT_ENVELOPE_KEY_PATTERN.match(k) for k in named)
-        if named and not prefixed:
-            logger.warning(
-                "Tool schema contains bare parameter names; flat-prefix detection "
-                "is disabled and prefixed parameters may fall into the body."
-            )
-
-        # Two passes so precedence is deterministic rather than following the caller's
-        # dict order: an explicit flat_prefixed key always wins over a nested one.
-        nested: list[tuple[str, dict[str, Any]]] = []
-        bare: list[tuple[str, Any]] = []
-        for key, value in params.items():
-            match = _FLAT_ENVELOPE_KEY_PATTERN.match(key)
-            if match and prefixed:
-                buckets[match.group(1)][match.group(2)] = value
-                continue
-            # A reserved word the schema declares as a property is a field, not a
-            # container — refusing it would reject a schema-valid call.
-            if key in reserved and key not in named:
-                # Reserved keys are containers. A scalar here is malformed input, not a
-                # body field — putting it in the body would smuggle `path` into the payload.
-                if not isinstance(value, dict):
-                    raise ValueError(
-                        f"{key!r} is an envelope container and must be an object, "
-                        f"got {type(value).__name__}. Did you mean {key}_<field>?"
-                    )
-                nested.append((key, value))
-                continue
-            bare.append((key, value))
-
-        # Deferred so precedence is a property of the KIND of key, not of the caller's
-        # dict order: flat_prefixed beats nested beats bare, always. Assigning bare keys
-        # in the first pass made {"body_foo": 1, "foo": 2} and {"foo": 2, "body_foo": 1}
-        # produce different wire bodies — and the Node SDK a third, breaking the
-        # cross-language byte-equality the conformance suite asserts.
-        for key, value in nested:
-            for field, field_value in value.items():
-                buckets[key].setdefault(field, field_value)
-        for key, value in bare:
-            buckets["body"].setdefault(key, value)
-        return buckets
-
-    def _build_action_headers(self, additional_headers: dict[str, Any] | None) -> dict[str, str]:
-        headers = self._sanitise_headers(additional_headers)
-
-        account_id = self.get_account_id()
-        if account_id:
-            headers["x-account-id"] = account_id
-
-        return headers
-
-
 class StackOneMcpTool(StackOneTool):
-    """A tool executed over MCP ``tools/call`` rather than the RPC endpoint."""
+    """A tool executed over MCP ``tools/call`` on the endpoint that listed it.
+
+    Every tool the toolset builds is one of these: per-action tools, the
+    ``*_search_actions`` / ``*_execute_action`` meta tools and ``stackone_submit_feedback``.
+    """
 
     _endpoint: str = PrivateAttr()
-    _mcp_headers: Headers = PrivateAttr()
 
     def __init__(
         self,
@@ -937,43 +669,54 @@ class StackOneMcpTool(StackOneTool):
         parameters: ToolParameters,
         api_key: str,
         endpoint: str,
-        headers: Headers,
         account_id: str | None,
+        headers: Headers | None = None,
         timeout: float = 60.0,
     ) -> None:
         super().__init__(
             description=description,
             parameters=parameters,
-            _execute_config=ExecuteConfig(
-                method="POST", url=endpoint, name=name, headers={}, timeout=timeout
-            ),
+            _execute_config=ExecuteConfig(name=name, headers=dict(headers or {}), timeout=timeout),
             _api_key=api_key,
             _account_id=account_id,
         )
         self._endpoint = endpoint
-        self._mcp_headers = headers
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
-        if isinstance(arguments, str):
-            try:
-                parsed = json.loads(arguments)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
-        else:
-            parsed = arguments or {}
-        if not isinstance(parsed, dict):
-            raise ValueError("Tool arguments must be a JSON object")
+        """Call the tool over MCP ``tools/call``.
 
-        # The meta tools take a `headers` object in the envelope, and these arguments
-        # are model-controlled. Without this, a prompt-injected call could put its own
-        # Authorization or x-account-id in the envelope the server unpacks — the guard
-        # the RPC path has had all along, on the path search()/execute() actually use.
+        Arguments are sent as given; the server maps them onto the action. A ``headers``
+        object among them is filtered to the headers this tool's own schema declares, since
+        these arguments are model-controlled.
+
+        Returns:
+            The tool's result as the server wrote it (see :func:`parse_tool_result`): for an
+            action, ``{"isError": false, "result": ..., ...}``. A file action's ``result`` is a
+            download link, not the file.
+
+        Raises:
+            StackOneAPIError: If the result carries ``isError``, with the status from its
+                payload, or the endpoint answers with an HTTP error.
+            ValueError: If the arguments are not a JSON object or cannot be encoded.
+        """
+        parsed = self._parse_arguments(arguments)
+
+        # Without this a prompt-injected call could put its own Authorization or
+        # x-account-id in the `headers` object the server unpacks.
         supplied_headers = parsed.get("headers")
         if isinstance(supplied_headers, dict):
             parsed = {**parsed, "headers": self._sanitise_headers(supplied_headers)}
 
+        try:
+            json.dumps(parsed, ensure_ascii=False).encode("utf-8")
+        except (UnicodeEncodeError, TypeError, ValueError) as exc:
+            # A lone surrogate — what a model emits when a token boundary splits an emoji —
+            # or a value JSON cannot encode (a set, bytes) would otherwise fail deep inside
+            # the MCP client and surface as a transport error. It is an argument problem.
+            raise ValueError(f"Arguments for {self.name!r} could not be encoded as JSON: {exc}") from exc
+
         return call_mcp_tool(
-            self._endpoint, self._mcp_headers, self.name, parsed, timeout=self._execute_config.timeout
+            self._endpoint, self._prepare_headers(), self.name, parsed, timeout=self._execute_config.timeout
         )
 
 
@@ -984,14 +727,6 @@ def _read_openai_tool_call(call: Any) -> tuple[str, str, str | JsonDict]:
         return str(call.get("id", "")), str(function.get("name", "")), function.get("arguments") or {}
     function = call.function
     return str(call.id), str(function.name), function.arguments or {}
-
-
-def _json_default(value: Any) -> Any:
-    """Serialise what json cannot. A file download returns raw bytes, which would
-    otherwise crash json.dumps — base64 keeps the content intact for the model."""
-    if isinstance(value, bytes):
-        return base64.b64encode(value).decode("ascii")
-    return str(value)
 
 
 class Tools:
@@ -1081,7 +816,8 @@ class Tools:
                 except (StackOneError, ValueError) as exc:
                     body = getattr(exc, "response_body", None)
                     result = {"error": str(exc), **({"response_body": body} if body else {})}
-            content = json.dumps(result, default=_json_default)
+            # default=str: non-text content parts (images, embedded resources) are objects.
+            content = json.dumps(result, default=str)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": content})
         return messages
 

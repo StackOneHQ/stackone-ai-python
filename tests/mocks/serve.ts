@@ -1,7 +1,7 @@
 #!/usr/bin/env -S pnpm exec tsx
 /**
  * Standalone HTTP server for MCP mock testing.
- * Imports createMcpApp from stackone-ai-node vendor submodule.
+ * Serves the MCP endpoint every tool is listed from and executed on, plus /accounts.
  *
  * Usage:
  *   ./tests/mocks/serve.ts [port]
@@ -16,6 +16,7 @@ import {
   createMcpApp,
   defaultMcpTools,
   exampleBamboohrTools,
+  fileTools,
   mixedProviderTools,
 } from "./mcp-server";
 
@@ -26,12 +27,13 @@ const port = parseInt(process.env.PORT || process.argv[2] || "8787", 10);
 const submitFeedback = process.env.MOCK_SUBMIT_FEEDBACK !== "off";
 
 interface RecordedRequest {
-  path: "/mcp" | "/actions/rpc";
+  path: "/mcp";
+  /** The query string the call was made with, e.g. "" or "?tool-mode=search_execute". */
+  search: string;
   accountId: string | null;
-  method?: string;
+  method: string;
   name?: string;
   arguments?: unknown;
-  action?: string;
 }
 
 // What actually reached the wire. A handler only sees arguments after zod has parsed
@@ -48,6 +50,7 @@ const mcpApp = createMcpApp({
     acc3: accountMcpTools.acc3,
     "test-account": accountMcpTools["test-account"],
     mixed: mixedProviderTools,
+    files: fileTools,
     "your-bamboohr-account-id": exampleBamboohrTools,
     "your-stackone-account-id": exampleBamboohrTools,
   },
@@ -79,6 +82,7 @@ app.use("/mcp", async (c, next) => {
         if (message?.method !== "tools/call") continue;
         recorded.push({
           path: "/mcp",
+          search: new URL(c.req.url).search,
           accountId,
           method: message.method,
           name: message.params?.name as string | undefined,
@@ -101,104 +105,8 @@ app.get("/accounts", (c) =>
   ]),
 );
 
-// Every request, recorded before auth, so a refused one still counts as having been sent.
-app.use("/actions/rpc", async (c, next) => {
-  let action: string | undefined;
-  try {
-    action = ((await c.req.raw.clone().json()) as { action?: string }).action;
-  } catch {
-    action = undefined;
-  }
-  recorded.push({ path: "/actions/rpc", accountId: c.req.header("x-account-id") ?? null, action });
-  await next();
-});
-
 // Mount the MCP app (handles /mcp endpoint)
 app.route("/", mcpApp);
-
-// RPC endpoint for tool execution
-app.post("/actions/rpc", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  const accountIdHeader = c.req.header("x-account-id");
-
-  // Check for authentication
-  if (!authHeader || !authHeader.startsWith("Basic ")) {
-    return c.json(
-      { error: "Unauthorized", message: "Missing or invalid authorization header" },
-      401,
-    );
-  }
-
-  // Execution is account-scoped too. This endpoint used to accept anything with a
-  // "Basic " prefix and no account at all, so the sibling of the bug that shipped —
-  // an unscoped execution request — could not be caught by any test.
-  if (!accountIdHeader) {
-    return c.json(
-      { error: "Bad Request", message: "Missing x-account-id header in request" },
-      400,
-    );
-  }
-
-  const body = (await c.req.json()) as {
-    action?: string;
-    body?: Record<string, unknown>;
-    headers?: Record<string, string>;
-    path?: Record<string, string>;
-    query?: Record<string, string>;
-  };
-
-  // Validate action is provided
-  if (!body.action) {
-    return c.json({ error: "Bad Request", message: "Action is required" }, 400);
-  }
-
-  // Test action to verify x-account-id is sent as HTTP header
-  if (body.action === "test_account_id_header") {
-    return c.json({
-      data: {
-        httpHeader: accountIdHeader,
-        bodyHeader: body.headers?.["x-account-id"],
-      },
-    });
-  }
-
-  // Return mock response based on action
-  if (body.action === "bamboohr_get_employee") {
-    return c.json({
-      data: {
-        id: body.path?.id || "test-id",
-        name: "Test Employee",
-        ...body.body,
-      },
-    });
-  }
-
-  if (body.action === "bamboohr_list_employees") {
-    return c.json({
-      data: [
-        { id: "1", name: "Employee 1" },
-        { id: "2", name: "Employee 2" },
-      ],
-    });
-  }
-
-  if (body.action === "test_error_action") {
-    return c.json({ error: "Internal Server Error", message: "Test error response" }, 500);
-  }
-
-  // Default response for other actions
-  return c.json({
-    data: {
-      action: body.action,
-      received: {
-        body: body.body,
-        headers: body.headers,
-        path: body.path,
-        query: body.query,
-      },
-    },
-  });
-});
 
 console.log(`MCP Mock Server starting on port ${port}...`);
 
@@ -208,4 +116,5 @@ console.log(`MCP Mock Server running at http://localhost:${port}`);
 console.log("Endpoints:");
 console.log(`  - GET  /health       - Health check`);
 console.log(`  - ALL  /mcp          - MCP protocol endpoint`);
-console.log(`  - POST /actions/rpc  - RPC execution endpoint`);
+console.log(`  - GET  /accounts     - Linked accounts`);
+console.log(`  - GET  /__requests  - tools/call requests received`);

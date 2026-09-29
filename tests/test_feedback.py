@@ -35,10 +35,6 @@ def _tool_calls(base_url: str, name: str) -> list[dict[str, Any]]:
     return [r for r in _requests(base_url) if r["path"] == "/mcp" and r.get("name") == name]
 
 
-def _rpc_requests(base_url: str) -> list[dict[str, Any]]:
-    return [r for r in _requests(base_url) if r["path"] == "/actions/rpc"]
-
-
 def _execute_calls(base_url: str) -> list[dict[str, Any]]:
     return [
         r
@@ -48,7 +44,7 @@ def _execute_calls(base_url: str) -> list[dict[str, Any]]:
 
 
 class TestFeedbackToolIsAnMcpTool:
-    """Contract 1: built as an MCP tool in every mode, never as an RPC tool."""
+    """Contract 1: built as an MCP tool in every mode."""
 
     @pytest.mark.parametrize("mode", [None, "individual", "search_execute"])
     def test_built_as_an_mcp_tool_in_every_mode(self, mcp_mock_server: str, mode):
@@ -57,8 +53,7 @@ class TestFeedbackToolIsAnMcpTool:
         assert isinstance(tool, StackOneMcpTool)
 
     @pytest.mark.parametrize("mode", [None, "search_execute"])
-    def test_calling_it_sends_tools_call_and_no_rpc_request(self, mcp_mock_server: str, mode):
-        """In individual mode it used to be built as an RPC tool and sent to /actions/rpc."""
+    def test_calling_it_sends_one_tools_call(self, mcp_mock_server: str, mode):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
         tool = toolset.fetch_tools(account_ids=["acc1"]).get_tool(SUBMIT_FEEDBACK_TOOL_NAME)
         assert tool is not None
@@ -68,7 +63,6 @@ class TestFeedbackToolIsAnMcpTool:
 
         assert result["message"] == "Feedback recorded"
         assert len(_tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)) == 1
-        assert _rpc_requests(mcp_mock_server) == []
 
 
 class TestFeedbackToolIsListedOnce:
@@ -134,7 +128,8 @@ class TestFeedbackToolAbsent:
     def test_search_and_execute_are_unaffected(self, mcp_mock_server_without_feedback: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server_without_feedback)
         hit = toolset.search("list items")[0]
-        assert toolset.execute(hit["action_id"], session_id=hit["session_id"])["data"] == {"nodes": []}
+        result = toolset.execute(hit["action_id"], session_id=hit["session_id"])
+        assert result["result"]["data"] == {"nodes": []}
 
 
 class TestSearchSessionId:
@@ -247,7 +242,6 @@ class TestSubmitFeedback:
             "source": "model",
         }
         assert all(value is not None for value in call["arguments"].values())
-        assert _rpc_requests(mcp_mock_server) == []
         assert result["session_id"] == MOCK_SESSION_ID
 
     def test_sends_every_field_in_contract_order(self, mcp_mock_server: str):
