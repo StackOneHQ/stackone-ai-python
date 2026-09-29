@@ -36,6 +36,10 @@ It is not a connector action, so the SDK calls it over MCP ``tools/call`` — wh
 was listed — rather than ``/actions/rpc``, whatever the toolset's mode.
 """
 
+FeedbackRating = Literal["positive", "negative", "neutral"]
+FeedbackSource = Literal["model", "user", "system"]
+FeedbackCategory = Literal["search", "execute", "defender", "connection", "general"]
+
 
 class StackOneError(Exception):
     """Base exception for StackOne errors"""

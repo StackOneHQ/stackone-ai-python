@@ -48,16 +48,30 @@ hits = toolset.search("list recent comments", top_k=3)
 #   "description": "Returns a page of Linear comments as a connection object ...",
 #   "similarity_score": 0.86,
 #   "example_request": {"action_id": "linear_list_comments"},
-#   "input_schema": {"type": "object", "properties": {"body": {...}}}}, ...]
+#   "input_schema": {"type": "object", "properties": {"body": {...}}},
+#   "session_id": "3f9c..."}, ...]
+hit = hits[0]
 
 # 2. Run it. Build the arguments from input_schema.
-result = toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
+result = toolset.execute(
+    hit["action_id"], {"body": {"variables": {"first": 25}}}, session_id=hit.get("session_id")
+)
 result["data"]  # the provider's payload — a failed call raises instead
+
+# 3. Optionally, say how it went. The same session_id links it to the search.
+toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("session_id"))
 ```
 
 `search()` asks every linked connector and returns actions ranked by
 `similarity_score`, so a catalog of hundreds of tools never has to fit in a
 model's context. This is the recommended way to use the SDK.
+
+Each hit carries the `session_id` of the search that found it. Passing it to
+`execute()` and `submit_feedback()` links the calls server-side; leaving it out
+is fine. `submit_feedback()` raises `ToolsetLoadError` when feedback is not
+enabled for your project. When it is, `fetch_tools()` also returns a single
+`stackone_submit_feedback` tool — one, however many accounts are linked — that a
+model can call itself.
 
 ## Integration Examples
 

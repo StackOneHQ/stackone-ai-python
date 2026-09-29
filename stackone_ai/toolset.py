@@ -27,6 +27,9 @@ from stackone_ai.types import (
     DEFAULT_BASE_URL,
     SUBMIT_FEEDBACK_TOOL_NAME,
     ExecuteToolsConfig,
+    FeedbackCategory,
+    FeedbackRating,
+    FeedbackSource,
     Headers,
     JsonDict,
     StackOneAPIError,
@@ -335,7 +338,9 @@ class StackOneToolSet:
             account_ids: Restrict to these accounts. Defaults to all active ones.
 
         Returns:
-            Action dicts carrying at least ``action_id`` and ``description``.
+            Action dicts carrying at least ``action_id`` and ``description``, plus the
+            ``session_id`` of the search that found them when the server issued one.
+            Pass it to :meth:`execute` and :meth:`submit_feedback` to link the calls.
         """
         # The server rejects anything outside 1..50, but only after a round trip per
         # connector — and reports it as a load failure, which reads like an outage
@@ -349,7 +354,14 @@ class StackOneToolSet:
 
         def _search_one(tool: StackOneTool) -> list[JsonDict]:
             found = tool.execute({"query": query, "top_k": top_k})
-            return list(found.get("actions", []))
+            actions = list(found.get("actions", []))
+            # The server returns session_id once per search, beside the actions. Results
+            # from every connector are merged and re-ranked below, so this is the last
+            # point at which a hit can still be traced to the search that produced it.
+            session_id = found.get("session_id")
+            if not isinstance(session_id, str) or not session_id:
+                return actions
+            return [{**action, "session_id": session_id} for action in actions]
 
         results: list[JsonDict] = []
         failures: list[str] = []
@@ -391,6 +403,7 @@ class StackOneToolSet:
         arguments: JsonDict | None = None,
         *,
         account_ids: list[str] | None = None,
+        session_id: str | None = None,
     ) -> JsonDict:
         """Execute an action by id, as returned by :meth:`search`.
 
@@ -401,6 +414,9 @@ class StackOneToolSet:
         names the keys; routing by whether an id happened to be in the catalog
         would make the argument shape depend on something the caller cannot see.
 
+        ``session_id`` is the value a :meth:`search` hit carries. Passing it links
+        this call to that search server-side.
+
         Raises:
             ToolsetLoadError: If no connector matches.
         """
@@ -408,6 +424,8 @@ class StackOneToolSet:
             raise ToolsetConfigError(f"action_id must be a non-empty string, got {action_id!r}")
         if arguments is not None and not isinstance(arguments, dict):
             raise ToolsetConfigError(f"arguments must be a JSON object, got {type(arguments).__name__}")
+        if session_id is not None and (not isinstance(session_id, str) or not session_id):
+            raise ToolsetConfigError(f"session_id must be a non-empty string, got {session_id!r}")
 
         meta_tools = self._meta_tools("_execute_action", account_ids)
         matches = [
@@ -433,8 +451,13 @@ class StackOneToolSet:
             tool = finalists[0]
             # action_id LAST. Spreading arguments over it let a model-supplied
             # "action_id" silently replace the action the caller pinned — the exact
-            # thing a host app pins it for.
-            result = tool.execute({**(arguments or {}), "action_id": action_id})
+            # thing a host app pins it for. session_id only when given: the served schema
+            # makes it an optional string, so an absent key is valid and a null is not.
+            call_arguments: JsonDict = dict(arguments or {})
+            if session_id is not None:
+                call_arguments["session_id"] = session_id
+            call_arguments["action_id"] = action_id
+            result = tool.execute(call_arguments)
             # The meta tool wraps its payload as {"isError": ..., "result": ...}, but an
             # isError response has already raised by this point — so the flag could
             # only ever be False, and the wrapper just made this surface return a
@@ -447,6 +470,57 @@ class StackOneToolSet:
         raise ToolsetLoadError(
             f'No connector found for "{action_id}". Use search() to discover valid action ids.'
         )
+
+    def submit_feedback(
+        self,
+        rating: FeedbackRating,
+        tool_names: list[str],
+        *,
+        feedback: str | None = None,
+        category: FeedbackCategory | None = None,
+        session_id: str | None = None,
+        source: FeedbackSource = "model",
+        account_ids: list[str] | None = None,
+    ) -> JsonDict:
+        """Record a verdict on how well the tools served this session.
+
+        Calls the server's ``stackone_submit_feedback`` tool. Pass the ``session_id``
+        from a :meth:`search` hit to attach the feedback to that session.
+
+        Args:
+            rating: ``"positive"``, ``"negative"`` or ``"neutral"``.
+            tool_names: The tools or action ids the feedback is about.
+            feedback: An optional one-line reason.
+            category: What the feedback is about, e.g. ``"search"`` or ``"execute"``.
+            session_id: The session to link this feedback to.
+            source: Who produced the feedback.
+            account_ids: Accounts to list the tool through. Defaults to all active ones.
+
+        Raises:
+            ToolsetLoadError: If feedback is not enabled for this project.
+        """
+        if isinstance(tool_names, str):
+            raise ToolsetConfigError(
+                f"tool_names must be a list of tool names, not a string. Did you mean [{tool_names!r}]?"
+            )
+
+        # Found in the served catalog, never built here: the server only serves the tool
+        # when the org flag and the project setting are both on, and a client-side stand-in
+        # would report success for feedback that went nowhere.
+        tool = self.fetch_tools(account_ids=account_ids).get_tool(SUBMIT_FEEDBACK_TOOL_NAME)
+        if tool is None:
+            raise ToolsetLoadError(
+                f"The server did not serve {SUBMIT_FEEDBACK_TOOL_NAME}: feedback is not enabled "
+                "for this project."
+            )
+
+        # Unset optionals are omitted, never sent as null: the served schema declares them
+        # as optional strings, so a null is a present key of the wrong type and fails
+        # validation where an absent one would not.
+        arguments: JsonDict = {"rating": rating, "tool_names": list(tool_names)}
+        optional = {"feedback": feedback, "category": category, "session_id": session_id, "source": source}
+        arguments.update({key: value for key, value in optional.items() if value is not None})
+        return tool.execute(arguments)
 
     def openai(self, *, account_ids: list[str] | None = None) -> list[JsonDict]:
         """Get tools in OpenAI function calling format."""

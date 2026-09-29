@@ -121,6 +121,11 @@ account the real API would have rejected. The mock now 400s an unscoped `/mcp` o
 make it refuse what the real API refuses. A fake whose signature has no failure mode
 cannot catch a bug.
 
+The mock logs every MCP `tools/call` and `/actions/rpc` request as sent — before zod
+parses it — at `GET /__requests` (`DELETE` clears it). Assert wire shape there, not
+on a handler's echo, which cannot show a stripped or null key. `MOCK_SUBMIT_FEEDBACK=off`
+(the `mcp_mock_server_without_feedback` fixture) serves a project without feedback.
+
 Verify live behaviour against a real key before claiming it works — a green suite is
 not evidence. Put credentials in the gitignored `.env` and run
 `uv run --env-file .env python ...`.
@@ -193,7 +198,10 @@ via release-please after a merge to main, never from a developer machine.
 toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
 
 hits = toolset.search("list recent comments", top_k=3)
-toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
+toolset.execute(
+    "linear_list_comments", {"body": {"variables": {"first": 25}}}, session_id=hits[0].get("session_id")
+)
+toolset.submit_feedback("positive", ["linear_list_comments"], session_id=hits[0].get("session_id"))
 
 tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ```
@@ -202,6 +210,12 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
   case-sensitive glob. **A leading `!` is not exclusion syntax** — it is a literal
   character, so `["*", "!*_delete_*"]` matches every tool.
 - `top_k` is per connector, and must be 1..50.
+- `stackone_submit_feedback` is one global tool the server lists with every
+  account's catalog, in both modes, when feedback is enabled. It is always a
+  `StackOneMcpTool` (never RPC), is deduped to one across accounts, and is never
+  invented client-side — when the server omits it, `submit_feedback()` raises.
+- `session_id` is copied onto each `search()` hit and forwarded by `execute()` /
+  `submit_feedback()` only when given. Optional wire keys are omitted, never null.
 
 ## Important Considerations
 
@@ -221,6 +235,8 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 - Core execution logic: `StackOneTool.execute()` in `tools.py`
 - RPC envelope split: `StackOneRpcTool._split_envelope_params`
 - Meta-tool execution: `StackOneMcpTool.execute()` and `StackOneToolSet.execute()`
+- MCP-vs-RPC routing and the feedback-tool dedupe: `StackOneToolSet._create_tool` and
+  `_dedupe_global_tools`
 
 Schemas must reach the model intact. `to_openai_function` passes the served schema
 through verbatim, stripping only the SDK's internal `nullable` marker (which becomes

@@ -9,7 +9,7 @@ uv run examples/search_and_execute.py
 Prerequisites: STACKONE_API_KEY in .env and at least one active linked account.
 
 Expected output: the ranked actions matching the query, the JSON Schema for the
-best one, and the result of executing it.
+best one, the result of executing it, and whether feedback was recorded.
 
 This is the recommended way to use the SDK: search() asks every linked connector
 and returns ranked actions, so a catalog of hundreds of tools never has to fit in
@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     pass
 
 from stackone_ai import StackOneToolSet
-from stackone_ai.types import StackOneError, ToolsetError
+from stackone_ai.types import StackOneError, ToolsetError, ToolsetLoadError
 
 
 def search_and_execute() -> None:
@@ -54,8 +54,20 @@ def search_and_execute() -> None:
     print(f"\ninput_schema for {best['action_id']}:")
     print(json.dumps(best.get("input_schema", {}), indent=2)[:600])
 
-    result = toolset.execute(best["action_id"], {"body": {"variables": {"first": 2}}})
+    # session_id links this call, and the feedback below, to the search that found
+    # the action. It is optional: leave it out and each call stands alone.
+    session_id = best.get("session_id")
+    result = toolset.execute(best["action_id"], {"body": {"variables": {"first": 2}}}, session_id=session_id)
     print(f"\nresult: {json.dumps(result, default=str)[:300]}...")
+
+    try:
+        toolset.submit_feedback(
+            "positive", [best["action_id"]], feedback="Found it first try", session_id=session_id
+        )
+        print("\nfeedback recorded")
+    except ToolsetLoadError as exc:
+        # Raised when feedback is not enabled for this project. Not worth failing over.
+        print(f"\nfeedback skipped: {exc}")
 
 
 if __name__ == "__main__":
