@@ -16,9 +16,8 @@ coverage/
 dist/
 build/
 
-# Git hooks (managed by Nix)
-.pre-commit-config.yaml
+# Node tooling for the MCP mock server
+node_modules/
 
-# Agent skills (managed by Nix via agent-skills-nix)
-.claude/skills
-.agents/skills
+# Hypothesis test database
+.hypothesis/

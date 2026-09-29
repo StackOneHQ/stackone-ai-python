@@ -43,7 +43,7 @@ def single_account(account_id: str) -> None:
     print("\n--- Single Account via fetch_tools ---")
 
     toolset = StackOneToolSet()
-    tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
+    tools = toolset.fetch_tools(actions=["*_list_*"], account_ids=[account_id])
     print(f"Fetched {len(tools)} tools for configured account")
 
 
@@ -55,7 +55,7 @@ def set_accounts_globally(account_id: str) -> None:
     toolset.set_accounts([account_id])
     print("Set global accounts via set_accounts()")
 
-    tools = toolset.fetch_tools(actions=["workday_*"])
+    tools = toolset.fetch_tools(actions=["*_list_*"])
     print(f"Fetched {len(tools)} tools (account inherited from toolset)")
 
 
@@ -64,20 +64,18 @@ def per_tool_override(account_id: str) -> None:
     print("\n--- Per-Tool Account Override ---")
 
     toolset = StackOneToolSet()
-    tools = toolset.fetch_tools(actions=["workday_*"], account_ids=[account_id])
+    tools = toolset.fetch_tools(actions=["*_list_*"], account_ids=[account_id])
+    if not tools:
+        raise SystemExit(f"Account {account_id} served no list tools — nothing to demonstrate.")
 
     # Override on the entire tools collection
     tools.set_account_id("overridden-account")
     print("Called tools.set_account_id('overridden-account')")
 
-    # Override on a single tool
-    tool = tools.get_tool("workday_list_workers")
-    if tool:
-        tool.set_account_id("per-tool-account")
-        current = tool.get_account_id()
-        print(f"Single tool account_id is now: '{current}'")
-    else:
-        print("Tool 'workday_list_workers' not found -- skipping single-tool override")
+    # Override on a single tool — whichever one this key happens to reach.
+    tool = tools.to_list()[0]
+    tool.set_account_id("per-tool-account")
+    print(f"{tool.name} account_id is now: '{tool.get_account_id()}'")
 
 
 def main() -> None:

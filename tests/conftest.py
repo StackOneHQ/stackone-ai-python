@@ -43,10 +43,9 @@ def mcp_mock_server() -> Generator[str, None, None]:
     """
     Start the Node MCP mock server for integration tests.
 
-    This fixture starts the Hono-based MCP mock server using bun,
-    importing from the stackone-ai-node submodule.
+    This fixture starts the Hono-based MCP mock server using tsx.
 
-    Requires: bun to be installed (via Nix flake).
+    Requires: pnpm install (provides tsx and the Hono dependencies).
 
     Usage:
         def test_mcp_integration(mcp_mock_server):
@@ -58,13 +57,16 @@ def mcp_mock_server() -> Generator[str, None, None]:
     """
     project_root = Path(__file__).parent.parent
     serve_script = project_root / "tests" / "mocks" / "serve.ts"
-    vendor_dir = project_root / "vendor" / "stackone-ai-node"
 
+    # Fail rather than skip: the mock server is committed to this repo, so a missing
+    # script or missing node_modules is a broken checkout, not an absent optional
+    # dependency. Skipping here previously let these tests vanish silently while CI
+    # stayed green.
     if not serve_script.exists():
-        pytest.skip("MCP mock server script not found at tests/mocks/serve.ts")
+        pytest.fail(f"MCP mock server script missing at {serve_script}")
 
-    if not (vendor_dir / "package.json").exists():
-        pytest.skip("stackone-ai-node submodule not initialized. Run 'git submodule update --init'")
+    if not (project_root / "node_modules").is_dir():
+        pytest.fail("Node dependencies missing for the MCP mock server. Run 'pnpm install'.")
 
     # find port
     port = _find_free_port()
@@ -105,9 +107,3 @@ def mcp_mock_server() -> Generator[str, None, None]:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-
-
-@pytest.fixture
-def mcp_server_url(mcp_mock_server: str) -> str:
-    """Alias for mcp_mock_server for clearer test naming."""
-    return mcp_mock_server

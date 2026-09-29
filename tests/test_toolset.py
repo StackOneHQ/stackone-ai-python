@@ -11,14 +11,13 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from stackone_ai.constants import DEFAULT_BASE_URL
-from stackone_ai.toolset import (
-    StackOneToolSet,
+from stackone_ai.tools import build_auth_header, run_async
+from stackone_ai.toolset import StackOneToolSet
+from stackone_ai.types import (
+    DEFAULT_BASE_URL,
     ToolsetConfigError,
     ToolsetError,
     ToolsetLoadError,
-    _build_auth_header,
-    _run_async,
 )
 
 # Hypothesis strategies for PBT
@@ -74,25 +73,25 @@ class TestToolsetErrors:
 
 
 class TestBuildAuthHeader:
-    """Test _build_auth_header function."""
+    """Test build_auth_header function."""
 
     def test_builds_basic_auth_header(self):
         """Test building Basic auth header from API key."""
-        result = _build_auth_header("test_api_key")
+        result = build_auth_header("test_api_key")
         # Base64 of "test_api_key:"
         assert result.startswith("Basic ")
         assert result == "Basic dGVzdF9hcGlfa2V5Og=="
 
     def test_builds_auth_header_with_special_chars(self):
         """Test auth header with special characters in key."""
-        result = _build_auth_header("key:with:colons")
+        result = build_auth_header("key:with:colons")
         assert result.startswith("Basic ")
 
     @given(api_key=api_key_strategy)
     @settings(max_examples=100)
     def test_auth_header_format_pbt(self, api_key: str):
         """PBT: Test auth header format for various API keys."""
-        result = _build_auth_header(api_key)
+        result = build_auth_header(api_key)
 
         # Should start with "Basic "
         assert result.startswith("Basic ")
@@ -108,7 +107,7 @@ class TestBuildAuthHeader:
     @settings(max_examples=100)
     def test_auth_header_round_trip_pbt(self, api_key: str):
         """PBT: Test that auth header can be decoded back to original key."""
-        result = _build_auth_header(api_key)
+        result = build_auth_header(api_key)
         encoded_part = result.replace("Basic ", "")
         decoded = base64.b64decode(encoded_part).decode("utf-8")
 
@@ -119,7 +118,7 @@ class TestBuildAuthHeader:
 
 
 class TestRunAsync:
-    """Test _run_async function."""
+    """Test run_async function."""
 
     def test_run_async_outside_event_loop(self):
         """Test running async function when no event loop exists."""
@@ -127,7 +126,7 @@ class TestRunAsync:
         async def simple_coroutine():
             return "result"
 
-        result = _run_async(simple_coroutine())
+        result = run_async(simple_coroutine())
         assert result == "result"
 
     def test_run_async_inside_event_loop(self):
@@ -137,10 +136,10 @@ class TestRunAsync:
             return "inner_result"
 
         async def outer_coroutine():
-            # This simulates calling _run_async from within an event loop
-            return _run_async(inner_coroutine())
+            # This simulates calling run_async from within an event loop
+            return run_async(inner_coroutine())
 
-        # Run the outer coroutine which calls _run_async internally
+        # Run the outer coroutine which calls run_async internally
         result = asyncio.run(outer_coroutine())
         assert result == "inner_result"
 
@@ -151,7 +150,7 @@ class TestRunAsync:
             raise ValueError("test error")
 
         with pytest.raises(ValueError, match="test error"):
-            _run_async(failing_coroutine())
+            run_async(failing_coroutine())
 
     def test_run_async_propagates_exceptions_from_thread(self):
         """Test that exceptions are propagated when running in a thread."""
@@ -160,7 +159,7 @@ class TestRunAsync:
             raise RuntimeError("thread error")
 
         async def wrapper():
-            return _run_async(failing_coroutine())
+            return run_async(failing_coroutine())
 
         with pytest.raises(RuntimeError, match="thread error"):
             asyncio.run(wrapper())

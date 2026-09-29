@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,7 +13,8 @@ from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.tools import Tool  # noqa: E402
 
 from stackone_ai import StackOneToolSet  # noqa: E402
-from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters, Tools  # noqa: E402
+from stackone_ai.tools import StackOneTool, Tools  # noqa: E402
+from stackone_ai.types import ExecuteConfig, ToolParameters  # noqa: E402
 
 
 @pytest.fixture
@@ -126,23 +127,9 @@ def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool)
     assert tools[0].name == "bamboohr_list_employees"
 
 
-def test_toolset_pydantic_ai_search_and_execute_uses_build_tools(sample_tool: StackOneTool):
-    toolset = StackOneToolSet.__new__(StackOneToolSet)
-    toolset.fetch_tools = MagicMock()  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._execute_config = None  # type: ignore[attr-defined]
-
-    tools = toolset.pydantic_ai(mode="search_and_execute")
-
-    toolset._build_tools.assert_called_once_with(account_ids=None)
-    toolset.fetch_tools.assert_not_called()
-    assert len(tools) == 1
-
-
 def test_toolset_pydantic_ai_account_ids_override(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock()  # type: ignore[method-assign]
     toolset._execute_config = {"account_ids": ["from-config"]}  # type: ignore[attr-defined]
 
     toolset.pydantic_ai(account_ids=["override"])
@@ -150,15 +137,25 @@ def test_toolset_pydantic_ai_account_ids_override(sample_tool: StackOneTool):
     toolset.fetch_tools.assert_called_once_with(account_ids=["override"])
 
 
-def test_toolset_pydantic_ai_falls_back_to_execute_config_account_ids(sample_tool: StackOneTool):
-    toolset = StackOneToolSet.__new__(StackOneToolSet)
-    toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock()  # type: ignore[method-assign]
-    toolset._execute_config = {"account_ids": ["from-config"]}  # type: ignore[attr-defined]
+def test_execute_config_account_ids_scope_the_catalog_fetch(sample_tool: StackOneTool):
+    """Account IDs from the execute config reach the MCP fetch when none are passed.
 
-    toolset.pydantic_ai()
+    Asserted through a real constructor rather than by mocking dispatch: the
+    fallback lives in fetch_tools, so a test that bypasses __init__ would only
+    be checking which method forwards the argument.
+    """
+    toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["from-config"]})
 
-    toolset.fetch_tools.assert_called_once_with(account_ids=["from-config"])
+    seen: list[str | None] = []
+
+    def _capture(endpoint: str, headers: dict[str, str], **_kwargs: object):
+        seen.append(headers.get("x-account-id"))
+        return []
+
+    with patch("stackone_ai.toolset.fetch_mcp_tools", side_effect=_capture):
+        toolset.fetch_tools()
+
+    assert seen == ["from-config"]
 
 
 # --- Import error path ---
