@@ -56,7 +56,7 @@ hit = hits[0]
 result = toolset.execute(
     hit["action_id"], {"body": {"variables": {"first": 25}}}, session_id=hit.get("session_id")
 )
-result["data"]  # the provider's payload — a failed call raises instead
+result["result"]["data"]  # as the server wrote it: {"isError": false, "result": ...}; a failure raises
 
 # 3. Optionally, say how it went. The same session_id links it to the search.
 toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("session_id"))
@@ -221,28 +221,35 @@ tools = toolset.fetch_tools(providers=["linear"])
 
 ### Two ways to call a tool
 
-The SDK exposes the same actions through two surfaces. They take **different
-argument shapes**, because each mirrors the schema the server served for it. Both
-return the payload itself.
+The SDK exposes the same actions through two surfaces. Both execute over MCP
+`tools/call`, on the endpoint and with the account that listed the tool, and send
+your arguments exactly as given. They take **different argument shapes**, because
+each mirrors the schema the server served for it. Both return the server's result exactly
+as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.
 
 | | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
 |---|---|---|
 | Schema to read | `input_schema` on each hit | `tool.parameters.properties` |
-| Argument shape | nested — `{"body": {"variables": {...}}}` | flat, prefixed — `body_variables`, `path_id` |
+| Argument shape | nested — `{"body": {"variables": {...}}}` | the keys the tool's served schema names |
 | Best for | agents that discover actions at run time | binding a fixed, filtered set of tools to a model |
 
 ```python
-# Same action, both surfaces:
+# The search/execute surface always takes the nested form:
 toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
 
+# A fetch_tools() tool takes whatever its own schema declares:
 tool = toolset.fetch_tools(actions=["linear_list_comments"]).get_tool("linear_list_comments")
-tool.execute({"body_variables": {"first": 25}})
+print(tool.parameters.properties)
 ```
 
-Mixing them fails silently in **one direction**. A `fetch_tools()` tool also
-accepts the nested form. But flat keys like `body_variables` passed to
-`toolset.execute()` are not an error — they are dropped, and you get the server's
-defaults.
+Keys `toolset.execute()` does not recognise are not an error — they are dropped,
+and you get the server's defaults.
+
+A file action's `result` is a download link, `{"download_url", "expires_at", "file":
+{"name", "content_type", "content_length"}}`, rather than the file itself; the SDK does
+not follow it, and `file.name` is chosen by the provider, so reduce it to a safe
+basename before writing to disk. When no link can be issued the call raises `StackOneAPIError` with
+`status_code` 501.
 
 
 ## Examples

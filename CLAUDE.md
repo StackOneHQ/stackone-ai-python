@@ -15,20 +15,23 @@ Requires Python >= 3.11.
 
 The package is three modules. The guiding property is that **the toolset is the
 served catalog** — the schema listed to a model is the schema the MCP server sent,
-and the request sent to `/actions/rpc` matches it. Nothing invented, nothing lost.
+and a call sends the model's arguments, as given, over MCP `tools/call` to the
+endpoint and account that listed the tool. Nothing invented, nothing lost. The only
+non-MCP request is `GET /accounts`.
 
-1. **`types.py`** — `ToolParameters`, `ToolMode`, the error hierarchy, filename
-   sanitising, shared aliases and `DEFAULT_BASE_URL`.
-2. **`tools.py`** — `StackOneTool` (execution, header sanitising, framework
-   converters), `Tools` (container), `StackOneRpcTool` (per-action tools over
-   `/actions/rpc`), `StackOneMcpTool` (meta tools over MCP `tools/call`), and the
-   MCP client.
+1. **`types.py`** — `ToolParameters`, `ToolMode`, `ExecuteConfig`, the error
+   hierarchy, shared aliases and `DEFAULT_BASE_URL`.
+2. **`tools.py`** — `StackOneTool` (schema, header sanitising, framework converters;
+   its `execute()` raises — a hand-built tool must override it), `Tools` (container),
+   `StackOneMcpTool` (every tool the toolset builds, executed over MCP `tools/call`),
+   and the MCP client, including `parse_tool_result`.
 3. **`toolset.py`** — `StackOneToolSet`: account discovery, the cached catalog,
    `search()` and `execute()`.
 
-Tools are listed from `/mcp?param-style=flat_prefixed`. An API key alone is enough:
-with no account given, `GET /accounts` is called and every `active` account is used.
-There is no OpenAPI parsing and no client-side search.
+Tools are listed from `/mcp` (plus `?tool-mode=` when a mode is set; there is no
+param-style pin, so the model sees whatever style the server serves). An API key
+alone is enough: with no account given, `GET /accounts` is called and every `active`
+account is used. There is no OpenAPI parsing and no client-side search.
 
 ### Two calling surfaces
 
@@ -36,14 +39,20 @@ The same actions are reachable two ways, with **different argument shapes**:
 
 - `toolset.search()` + `toolset.execute(action_id, args)` drives the per-connector
   `_search_actions` / `_execute_action` meta tools (`?tool-mode=search_execute`).
-  Arguments are the **nested** envelope: `{"body": {"variables": {...}}}`.
-- `toolset.fetch_tools()` + `tool.execute(args)` uses per-action tools over
-  `/actions/rpc`. Arguments are **flat-prefixed**: `body_variables`, `path_id`.
+  Arguments are the **nested** form: `{"body": {"variables": {...}}}`.
+- `toolset.fetch_tools()` + `tool.execute(args)` calls per-action tools. Arguments
+  are the keys the tool's served schema names.
 
-Both return the payload itself. The server **silently drops** arguments that do not
-match the schema — a wrong key returns a normal-looking success with your filter
-ignored. Flat keys passed to `toolset.execute()` fail this way; nested keys passed to
-a `fetch_tools()` tool are accepted.
+Both go over `tools/call` with arguments sent verbatim — the SDK never splits or
+renames them. The server **silently drops** arguments that do not match the schema —
+a wrong key returns a normal-looking success with your filter ignored.
+
+Results follow one rule for every tool (`parse_tool_result`): text parts win, else
+`structuredContent`; `isError` raises `StackOneAPIError` with the payload's status.
+UCA's success wrapper `{"isError": false, "result": ...}` (optionally with
+`defenderMetadata` / `policyMetadata`) is unwrapped to `{**result, **metadata}`, or
+`{"result": value, **metadata}` for a non-object. Anything else, search results
+included, is returned as parsed. Keep the result shape identical to the Node SDK's.
 
 ## Commands
 
@@ -116,12 +125,13 @@ import, never in core.
 **Test doubles must model what the server demands, not what the client happens to
 send.** The SDK once shipped unable to list a single tool while every test passed,
 because the mock defaulted a missing `x-account-id` to `'default'` — inventing an
-account the real API would have rejected. The mock now 400s an unscoped `/mcp` or
-`/actions/rpc` request and 404s an unknown account. When adding a mock behaviour,
+account the real API would have rejected. The mock now 400s an unscoped `/mcp`
+request and 404s an unknown account. When adding a mock behaviour,
 make it refuse what the real API refuses. A fake whose signature has no failure mode
 cannot catch a bug.
 
-The mock logs every MCP `tools/call` and `/actions/rpc` request as sent — before the
+The mock logs every MCP `tools/call` request as sent — with its account and query
+string, before the
 MCP SDK parses it — at `GET /__requests` (`DELETE` clears it). Assert wire shape there, not
 on a handler's echo, which cannot show a stripped or null key. `MOCK_SUBMIT_FEEDBACK=off`
 (the `mcp_mock_server_without_feedback` fixture) serves a project without feedback.
@@ -215,7 +225,7 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 - `top_k` is per connector, and must be 1..50.
 - `stackone_submit_feedback` is one global tool the server lists with every
   account's catalog, in both modes, when feedback is enabled. It is always a
-  `StackOneMcpTool` (never RPC), is deduped to one across accounts, and is never
+  `StackOneMcpTool`, like every tool, is deduped to one across accounts, and is never
   invented client-side — when the server omits it, `submit_feedback()` raises.
 - `session_id` is copied onto each `search()` hit and forwarded by `execute()` /
   `submit_feedback()` only when given. Optional wire keys are omitted, never null.
@@ -226,19 +236,22 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
   `StackOneAPIError` and the `ToolsetError` family. Nothing outside that hierarchy
   should escape a public method. `str(StackOneAPIError)` leads with the server's own
   message.
-- **File downloads**: non-JSON responses return raw bytes plus metadata. The filename
-  comes from an attacker-controllable header and is reduced to a safe basename.
-- **Headers**: model-supplied headers are an **allowlist** driven by the served
-  schema — only a declared `headers_*` property passes. Match header grammar with
+- **File downloads**: a file action returns a download link
+  (`{download_url, expires_at, file}`), unchanged; the SDK does not follow it. When no
+  link can be issued the server answers `isError` with status 501, which raises.
+- **Headers**: a nested `headers` argument is an **allowlist** driven by the served
+  schema — only a header declared as a `headers_*` property or under a nested
+  `headers` object passes, and `Authorization` / `x-account-id` / `User-Agent` never
+  do. The SDK sets those three itself, after any configured headers. Match header grammar with
   `fullmatch`, never `match`: `$` also matches before a trailing newline, so `match`
   lets `"value\n"` through.
 
 ### Modifying Tool Behaviour
 
-- Core execution logic: `StackOneTool.execute()` in `tools.py`
-- RPC envelope split: `StackOneRpcTool._split_envelope_params`
-- Meta-tool execution: `StackOneMcpTool.execute()` and `StackOneToolSet.execute()`
-- MCP-vs-RPC routing and the feedback-tool dedupe: `StackOneToolSet._create_tool` and
+- Execution: `StackOneMcpTool.execute()` and `call_mcp_tool()` in `tools.py`
+- Result parsing and the UCA unwrap: `parse_tool_result()` / `_unwrap_success()`
+- search/execute routing: `StackOneToolSet.execute()`
+- Tool construction and the feedback-tool dedupe: `StackOneToolSet._create_tool` and
   `_dedupe_global_tools`
 
 Schemas must reach the model intact. `to_openai_function` passes the served schema
