@@ -286,8 +286,17 @@ def _status_of(parsed: JsonDict) -> int:
     return 0
 
 
+def _reject_json_constant(constant: str) -> Any:
+    raise ValueError(f"{constant} is not JSON")
+
+
 def parse_tool_result(result: Any, name: str) -> JsonDict:
     """Turn an MCP ``CallToolResult`` into a plain dict.
+
+    Text parts are joined and parsed as JSON; a non-object is wrapped as
+    ``{"result": ...}``. With no text at all, ``structuredContent`` is used, and text
+    wins when both are present. Parts that are not text (images, embedded resources)
+    are kept under ``content_parts``.
 
     Raises:
         StackOneAPIError: If the result carries ``isError``. A failed tool call comes
@@ -301,17 +310,26 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     non_text = [part for part in result.content if not getattr(part, "text", "")]
 
     parsed: JsonDict = {}
+    structured = getattr(result, "structuredContent", None)
     if payload:
         try:
-            loaded = json.loads(payload)
-        except json.JSONDecodeError:
+            # NaN and Infinity are not JSON; json.loads accepts them, JSON.parse does not,
+            # and the Node SDK hands such a payload back as text.
+            loaded = json.loads(payload, parse_constant=_reject_json_constant)
+        except ValueError:
             loaded = payload
         parsed = loaded if isinstance(loaded, dict) else {"result": loaded}
+    elif isinstance(structured, dict):
+        # A result may carry only structuredContent. Without this it came back as `{}`,
+        # a success with the whole payload missing. A copy, so content_parts below does
+        # not write into the caller's result.
+        parsed = dict(structured)
 
     if getattr(result, "isError", False):
         # The transport succeeded, so there is no HTTP status here — but the payload
         # carries the real one, and a caller cannot branch on 0.
-        raise StackOneAPIError(f"Tool {name!r} failed: {payload or parsed}", _status_of(parsed), parsed)
+        detail = payload or json.dumps(parsed, ensure_ascii=False, separators=(",", ":"), default=str)
+        raise StackOneAPIError(f'Tool "{name}" failed: {detail}', _status_of(parsed), parsed)
 
     if non_text:
         parsed["content_parts"] = non_text

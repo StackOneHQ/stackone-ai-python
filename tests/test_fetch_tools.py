@@ -884,6 +884,122 @@ class TestMcpCallFailuresSurface:
         assert parse_tool_result(_Result(), "t")["actions"][0]["action_id"] == "linear_list_comments"
 
 
+def _text(text: str) -> dict[str, str]:
+    return {"type": "text", "text": text}
+
+
+_IMAGE = {"type": "image", "data": "AAAA", "mimeType": "image/png"}
+
+
+class TestToolResultParity:
+    """parse_tool_result() matches the Node SDK's parseToolResult() case for case.
+
+    A result carrying only structuredContent came back as `{}` — a success with the
+    whole payload missing. Text wins when both are present, in success and in error.
+    """
+
+    @pytest.mark.parametrize(
+        ("result", "expected"),
+        [
+            pytest.param({"content": [_text('{"a":1}')]}, {"a": 1}, id="text-object"),
+            pytest.param({"content": [_text("[1,2]")]}, {"result": [1, 2]}, id="text-array"),
+            pytest.param({"content": [_text("plain")]}, {"result": "plain"}, id="text-plain"),
+            pytest.param({"content": [_text("NaN")]}, {"result": "NaN"}, id="text-nan-is-not-json"),
+            pytest.param({"content": [_text('{"a":'), _text("1}")]}, {"a": 1}, id="text-parts-joined"),
+            pytest.param(
+                {"content": [], "structuredContent": {"ok": True}}, {"ok": True}, id="structured-only"
+            ),
+            pytest.param(
+                {"content": [_text('{"a":1}')], "structuredContent": {"b": 2}},
+                {"a": 1},
+                id="text-wins-over-structured",
+            ),
+            pytest.param(
+                {"content": [_text("")], "structuredContent": {"ok": True}},
+                {"ok": True, "content_parts": [_text("")]},
+                id="empty-text-is-not-text",
+            ),
+            pytest.param({"content": []}, {}, id="neither"),
+            pytest.param(
+                {"content": [_text('{"a":1}'), _IMAGE]},
+                {"a": 1, "content_parts": [_IMAGE]},
+                id="text-and-image",
+            ),
+            pytest.param(
+                {"content": [_IMAGE], "structuredContent": {"ok": True}},
+                {"ok": True, "content_parts": [_IMAGE]},
+                id="structured-and-image",
+            ),
+        ],
+    )
+    def test_success(self, result: dict, expected: dict):
+        from mcp.types import CallToolResult
+
+        from stackone_ai.tools import parse_tool_result
+
+        parsed = parse_tool_result(CallToolResult.model_validate(result), "t")
+        # Non-text parts are kept as the MCP types they arrived as; compare their wire form.
+        if "content_parts" in parsed:
+            parsed["content_parts"] = [part.model_dump(exclude_none=True) for part in parsed["content_parts"]]
+        assert parsed == expected
+
+    @pytest.mark.parametrize(
+        ("result", "message", "status", "body"),
+        [
+            pytest.param(
+                {"content": [_text('{"error":"Lambda execution failed","status_code":502}')]},
+                'Tool "t" failed: {"error":"Lambda execution failed","status_code":502}',
+                502,
+                {"error": "Lambda execution failed", "status_code": 502},
+                id="text",
+            ),
+            pytest.param(
+                {"content": [], "structuredContent": {"error": "boom", "status_code": 503}},
+                'Tool "t" failed: {"error":"boom","status_code":503}',
+                503,
+                {"error": "boom", "status_code": 503},
+                id="structured-only",
+            ),
+            pytest.param(
+                {"content": [_text('{"statusCode":409}')], "structuredContent": {"status_code": 500}},
+                'Tool "t" failed: {"statusCode":409}',
+                409,
+                {"statusCode": 409},
+                id="text-wins-over-structured",
+            ),
+            pytest.param({"content": []}, 'Tool "t" failed: {}', 0, {}, id="neither"),
+            pytest.param(
+                {"content": [_text("oops")]}, 'Tool "t" failed: oops', 0, {"result": "oops"}, id="plain-text"
+            ),
+            pytest.param(
+                {"content": [_IMAGE], "structuredContent": {"status_code": 404}},
+                'Tool "t" failed: {"status_code":404}',
+                404,
+                {"status_code": 404},
+                id="structured-and-image",
+            ),
+        ],
+    )
+    def test_is_error(self, result: dict, message: str, status: int, body: dict):
+        from mcp.types import CallToolResult
+
+        from stackone_ai.tools import parse_tool_result
+
+        with pytest.raises(StackOneAPIError) as excinfo:
+            parse_tool_result(CallToolResult.model_validate({**result, "isError": True}), "t")
+        assert str(excinfo.value) == message
+        assert excinfo.value.status_code == status
+        assert excinfo.value.response_body == body
+
+    def test_structured_only_result_over_the_wire(self, mcp_mock_server: str):
+        """The mock answers a per-action tools/call with structuredContent and no text."""
+        from stackone_ai.tools import build_auth_header, call_mcp_tool
+
+        headers = {"Authorization": build_auth_header("test-key"), "x-account-id": "test-account"}
+        result = call_mcp_tool(f"{mcp_mock_server}/mcp", headers, "dummy_action", {"foo": "bar"})
+        assert result == {"foo": "bar"}
+
+
 class TestSearchAndExecuteApi:
     """The recommended surface: search() then execute(), no account id needed."""
 
