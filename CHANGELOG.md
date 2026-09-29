@@ -1,11 +1,5 @@
 # Changelog
 
-## 3.0.0 (Unreleased)
-
-### Breaking Changes
-
-* **tools:** removed `StackOneTool.connector` property and `Tools.get_connectors()`. The MCP server exposes flat action names without provider metadata, so naive underscore-splitting is removed in favour of prefix-aware filtering via `fetch_tools(providers=[...])`.
-
 ## [2.10.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.0...stackone-ai-v2.10.1) (2026-07-28)
 
 
