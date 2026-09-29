@@ -201,9 +201,10 @@ class ToolParameters(BaseModel):
     """Schema definition for tool parameters.
 
     ``properties`` is a faithful mirror of the ``inputSchema`` the MCP server served,
-    with the SDK's internal ``nullable`` marker added per property. Consumers that
-    need the raw served schema (for example the ADK plugin) read this directly, so
-    nothing here may be invented or dropped.
+    with the SDK's internal ``nullable`` marker added per property. Every other root
+    keyword the server sent, ``required`` included, is kept verbatim as an extra field.
+    Consumers that need the raw served schema (for example the ADK plugin) read this
+    directly, so nothing here may be invented or dropped.
     """
 
     model_config = ConfigDict(extra="allow")

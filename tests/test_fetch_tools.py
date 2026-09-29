@@ -274,6 +274,88 @@ class TestSchemaPropertyNormalization:
         assert tool.parameters.properties["optional_field"].get("nullable") is True
 
 
+# Served `required` -> the `required` every adapter emits (absent means the key is omitted).
+# Mirrors the Node SDK's toJsonSchema() and toolParametersFromInputSchema().
+_ABSENT = object()
+_SERVED_REQUIRED_CASES = [
+    pytest.param(["b", "a"], ["b", "a"], id="served-order-not-property-order"),
+    pytest.param(["a", "b"], ["a", "b"], id="already-in-property-order"),
+    pytest.param(["c", "a", "b"], ["c", "a", "b"], id="three-reversed"),
+    pytest.param(["ghost"], ["ghost"], id="undeclared-name-kept"),
+    pytest.param(["a", "a"], ["a", "a"], id="duplicates-kept"),
+    pytest.param(["b", 1, "a"], ["b", "a"], id="non-string-entry-dropped"),
+    pytest.param([], None, id="empty"),
+    pytest.param(_ABSENT, None, id="absent"),
+    pytest.param(None, None, id="null"),
+    pytest.param("a string", None, id="string"),
+    pytest.param([1, 2], None, id="only-non-strings"),
+]
+
+
+class TestServedRequiredOrder:
+    """`required` is the served list, verbatim and in the served order, on every adapter.
+
+    It was rebuilt from the per-property `nullable` markers, which walked the properties
+    and so re-sorted it into property order: a model was shown a list the server never
+    sent, and the Node SDK's schema differed from this one for the same tool.
+    """
+
+    @staticmethod
+    def _tool(monkeypatch, served_required: object):
+        schema: dict[str, object] = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}, "c": {"type": "string"}},
+        }
+        if served_required is not _ABSENT:
+            schema["required"] = served_required
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h, **_k: [McpToolDefinition(name="t", description="", input_schema=schema)],
+        )
+        tool = StackOneToolSet(api_key="k", account_id="acc1").fetch_tools().get_tool("t")
+        assert tool is not None
+        return tool
+
+    @pytest.mark.parametrize(("served", "expected"), _SERVED_REQUIRED_CASES)
+    def test_openai(self, monkeypatch, served, expected):
+        parameters = self._tool(monkeypatch, served).to_openai_function()["function"]["parameters"]
+        assert parameters.get("required") == expected
+        if expected is None:
+            assert "required" not in parameters
+
+    @pytest.mark.parametrize(("served", "expected"), _SERVED_REQUIRED_CASES)
+    def test_langchain(self, monkeypatch, served, expected):
+        assert self._tool(monkeypatch, served).to_langchain().args_schema.get("required") == expected
+
+    @pytest.mark.parametrize(("served", "expected"), _SERVED_REQUIRED_CASES)
+    def test_pydantic_ai(self, monkeypatch, served, expected):
+        pytest.importorskip("pydantic_ai")
+        schema = self._tool(monkeypatch, served).to_pydantic_ai_tool().function_schema.json_schema
+        assert schema.get("required") == expected
+
+    def test_parameters_still_carry_the_served_list_and_markers(self, monkeypatch):
+        """The ADK plugin reads `tool.parameters` directly, so it must not change shape."""
+        tool = self._tool(monkeypatch, ["b", "a"])
+        dumped = tool.parameters.model_dump()
+        assert dumped["required"] == ["b", "a"]
+        assert {name: prop["nullable"] for name, prop in dumped["properties"].items()} == {
+            "a": False,
+            "b": False,
+            "c": True,
+        }
+
+    def test_non_string_entry_does_not_mark_a_property_required(self, monkeypatch):
+        """The marker agrees with the emitted list: `1` is not the property named "1"."""
+        schema = {"type": "object", "properties": {"1": {"type": "string"}}, "required": [1]}
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h, **_k: [McpToolDefinition(name="t", description="", input_schema=schema)],
+        )
+        tool = StackOneToolSet(api_key="k", account_id="acc1").fetch_tools().get_tool("t")
+        assert tool is not None
+        assert tool.parameters.properties["1"]["nullable"] is True
+
+
 class TestRpcToolExecution:
     """Test RPC tool execution through the MCP server."""
 

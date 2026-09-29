@@ -882,8 +882,8 @@ class TestOpenAISchemaPassThrough:
 
         assert props["x"]["x-vendor-hint"] == "something"
 
-    def test_strips_internal_nullable_marker_and_derives_required(self):
-        """`nullable` is an SDK-internal marker; it becomes JSON Schema `required`."""
+    def test_strips_internal_nullable_marker_without_deriving_required(self):
+        """`nullable` is an SDK-internal marker; `required` comes only from the root."""
         tool = self._tool(
             {
                 "needed": {"type": "string", "nullable": False},
@@ -895,7 +895,7 @@ class TestOpenAISchemaPassThrough:
 
         assert "nullable" not in params["properties"]["needed"]
         assert "nullable" not in params["properties"]["optional"]
-        assert params["required"] == ["needed"]
+        assert "required" not in params
 
     def test_strips_nested_internal_marker(self):
         tool = self._tool(

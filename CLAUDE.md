@@ -242,8 +242,9 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
   `_dedupe_global_tools`
 
 Schemas must reach the model intact. `to_openai_function` passes the served schema
-through verbatim, stripping only the SDK's internal `nullable` marker (which becomes
-the JSON Schema `required` list). `to_langchain` and `to_pydantic_ai_tool` hand over
+through verbatim, stripping only the SDK's internal `nullable` marker. Its `required`
+is the served root list in the served order — never rebuilt from the markers, which
+re-sorted it into property order. `to_langchain` and `to_pydantic_ai_tool` hand over
 that same schema — never rebuild one from property types, which silently loses every
 nested field, enum and bound. The conformance suite's `--strict-schema` gate checks
 the OpenAI surface.

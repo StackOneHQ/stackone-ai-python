@@ -617,32 +617,27 @@ class StackOneTool(BaseModel):
         """Convert this tool to OpenAI's function format.
 
         The served schema is passed through verbatim apart from the SDK's internal
-        ``nullable`` marker, which is translated into the JSON Schema ``required``
-        list. Constraints such as ``format``, ``pattern``, ``default``,
-        ``minimum``/``maximum`` and ``oneOf``/``anyOf`` reach the model intact —
-        without them a model cannot generate valid arguments for a constrained field.
+        ``nullable`` marker, which is stripped. Constraints such as ``format``,
+        ``pattern``, ``default``, ``minimum``/``maximum`` and ``oneOf``/``anyOf``
+        reach the model intact — without them a model cannot generate valid arguments
+        for a constrained field. ``required`` is the served list, in the served order,
+        and is omitted when the server sent none or an empty one.
         """
         properties: JsonDict = {}
-        required: list[str] = []
-
         for name, prop in self.parameters.properties.items():
-            if isinstance(prop, dict):
-                clean_prop = _strip_internal_keys(prop)
-                properties[name] = clean_prop
-                if not prop.get("nullable", False):
-                    required.append(name)
-            else:
-                properties[name] = {"type": "string"}
-                required.append(name)
+            properties[name] = _strip_internal_keys(prop) if isinstance(prop, dict) else {"type": "string"}
 
         parameters: JsonDict = self.parameters.model_dump()
         parameters["properties"] = properties
 
-        # Only set required if there are required properties, else remove it if it existed
-        if required:
-            parameters["required"] = required
-        else:
-            parameters.pop("required", None)
+        # Taken from the served root, not rebuilt from the per-property markers: that
+        # rebuild re-sorted `required` into property order, so the model saw a list the
+        # server never sent. A non-list `required`, or a non-string entry in one, is
+        # malformed and dropped rather than iterated as characters or sent on.
+        required = parameters.pop("required", None)
+        names = [name for name in required if isinstance(name, str)] if isinstance(required, list) else []
+        if names:
+            parameters["required"] = names
 
         return {
             "type": "function",

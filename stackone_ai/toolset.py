@@ -723,8 +723,11 @@ class StackOneToolSet:
 
         raw_required = schema.get("required")
         # A string `required` would iterate as characters and mark every real property
-        # optional; a null would raise and fail the whole catalog over one bad tool.
-        required_fields = {str(name) for name in raw_required} if isinstance(raw_required, list) else set()
+        # optional; a null would raise and fail the whole catalog over one bad tool. A
+        # non-string entry is dropped, as to_openai_function() drops it, so the marker and
+        # the `required` a model is shown cannot disagree.
+        served_required = raw_required if isinstance(raw_required, list) else []
+        required_fields = {name for name in served_required if isinstance(name, str)}
         normalized: dict[str, Any] = {}
 
         for name, details in properties.items():
