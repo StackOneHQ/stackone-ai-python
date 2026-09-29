@@ -11,6 +11,7 @@ from stackone_ai.tools import StackOneRpcTool
 from stackone_ai.types import (
     ExecuteConfig,
     ToolParameters,
+    _safe_basename,
     filename_from_content_disposition,
     is_json_content_type,
 )
@@ -568,6 +569,8 @@ class TestResponseHelpers:
             ('inline; filename="my report.docx"', "my report.docx"),
             # RFC 5987 extended form is percent-decoded and takes precedence.
             ("attachment; filename=\"fallback.txt\"; filename*=UTF-8''na%C3%AFve.txt", "naïve.txt"),
+            # Malformed percent-encoding must not raise - the malformed escape stays literal.
+            ("attachment; filename*=UTF-8''bad%ZZname", "bad%ZZname"),
             # Non-UTF-8 charset is honoured: 0xA3 is "£" in ISO-8859-1, not UTF-8.
             ("attachment; filename*=ISO-8859-1'en'%A3%20rates.txt", "£ rates.txt"),
             # Unknown charset label falls back to UTF-8 instead of raising.
@@ -768,7 +771,13 @@ class TestDeclaredHeaderValuesAreStillValidated:
 
 
 class TestDownloadFilenamesAreSafe:
-    """The filename comes from a Content-Disposition an attacker can choose."""
+    """The filename comes from a Content-Disposition an attacker can choose.
+
+    Every expected value is the Node SDK's ``filenameFromContentDisposition()`` /
+    ``safeBasename()`` output for the same input: the two SDKs must agree on what a
+    download may be called. The first block is Node's own table; the rest are inputs
+    where this SDK used to disagree with it.
+    """
 
     @pytest.mark.parametrize(
         ("header", "expected"),
@@ -778,18 +787,61 @@ class TestDownloadFilenamesAreSafe:
             ('attachment; filename="/etc/passwd"', "passwd"),
             ('attachment; filename="C:evil.exe"', "evil.exe"),
             ('attachment; filename="..\\\\..\\\\windows\\\\x.dll"', "x.dll"),
-            ('attachment; filename="‮gnp.exe"', "gnp.exe"),
+            ("attachment; filename*=UTF-8''..%5C..%5Cwindows%5Cx.dll", "x.dll"),
+            ('attachment; filename="report.pdf:hidden.exe"', "hidden.exe"),
+            ('attachment; filename="\u202egnp.exe"', "gnp.exe"),
+            ('attachment; filename="line\u0000break\u0007.txt"', "linebreak.txt"),
             ('attachment; filename=".."', None),
+            ("attachment; filename*=UTF-8''%2e%2e", None),
+            ('attachment; filename="   "', None),
             ('attachment; notfilename="decoy.txt"', None),
             ('attachment; filename="report.pdf"', "report.pdf"),
+            # `:` is a separator wherever it appears, not only as a drive letter: this is an
+            # NTFS alternate data stream, and the percent-decoded form must not dodge it.
+            ("attachment; filename*=UTF-8''report.pdf%3Ahidden.exe", "hidden.exe"),
+            ('attachment; filename="C:\\\\x:y:z.txt"', "z.txt"),
+            ("attachment; filename*=UTF-8''%E2%80%AEgnp.exe", "gnp.exe"),
+            ("attachment; filename*=UTF-8''%C3", "\ufffd"),
+            # Charset labels resolve as Node's TextDecoder resolves them: Latin-1 means
+            # windows-1252, an unassigned 0x80-0x9F byte is its C1 control (then stripped),
+            # labels lowercase fully, and a label it refuses falls back to UTF-8.
+            ("attachment; filename*=ISO-8859-1''%80.txt", "\u20ac.txt"),
+            ("attachment; filename*=ISO-8859-1''a%81.txt", "a.txt"),
+            ("attachment; filename*=windows-1253''%AA.txt", "\u00aa.txt"),
+            ("attachment; filename*=windows-874''%DB.txt", "\uf8c1.txt"),
+            ("attachment; filename*=\u212aoi8-r''%E1.txt", "\u0410.txt"),
+            ("attachment; filename*=iso-8859-16''%A1.txt", "\ufffd.txt"),
+            # The parameter grammar: ASCII-only case folding and JavaScript's whitespace.
+            ('attachment; f\u0131lename="evil.txt"', None),
+            ('attachment;\u001cfilename="evil.txt"', None),
+            ('attachment;\ufefffilename="a.txt"', "a.txt"),
+            ('attachment; filename="\u2028report.pdf\u00a0"', "report.pdf"),
+            # A format character Python 3.11's Unicode 14 database does not know.
+            ('attachment; filename="a\U00013439b.txt"', "ab.txt"),
         ],
     )
-    def test_traversal_and_spoofing_are_neutralised(self, header, expected):
+    def test_header_matches_node(self, header, expected):
         assert filename_from_content_disposition(header) == expected
 
-    def test_overlong_names_are_capped_keeping_the_extension(self):
-        name = filename_from_content_disposition(f'attachment; filename="{"a" * 400}.pdf"')
-        assert name is not None and name.endswith(".pdf") and len(name.encode()) <= 255
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            pytest.param("a" * 255, "a" * 255, id="exactly-255-bytes"),
+            pytest.param("a" * 400 + ".pdf", "a" * 251 + ".pdf", id="keeps-extension"),
+            pytest.param("é" * 300 + ".txt", "é" * 125 + ".txt", id="multibyte-on-a-character-boundary"),
+            pytest.param("a" * 300 + ".ééééé", "a" * 244 + ".ééééé", id="extension-counted-in-bytes"),
+            pytest.param("b" * 400, "b" * 255, id="no-extension"),
+            pytest.param("a." + "c" * 400, ("a." + "c" * 400)[:255], id="extension-alone-overlong"),
+            pytest.param("." + "c" * 400, ("." + "c" * 400)[:255], id="leading-dot-is-not-an-extension"),
+            pytest.param("é" * 128, "é" * 127, id="multibyte-no-extension"),
+            pytest.param("😀" * 100, "😀" * 63, id="astral-no-extension"),
+            pytest.param("x/" + "é" * 200, "é" * 127, id="capped-after-the-separator"),
+            pytest.param("\ud83d\u0007\ude00.txt", "😀.txt", id="halves-rejoin-as-in-a-js-string"),
+            pytest.param(None, None, id="none"),
+        ],
+    )
+    def test_basename_matches_node(self, name, expected):
+        assert _safe_basename(name) == expected
 
 
 @pytest.mark.parametrize("value", ["half an emoji \ud83d", {"a", "set"}, b"bytes"])
