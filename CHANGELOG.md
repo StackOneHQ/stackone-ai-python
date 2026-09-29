@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.1...stackone-ai-v3.0.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* removed StackOneTool.connector property and Tools.get_connectors().
+
+### Code Refactoring
+
+* MCP-only toolset with account discovery, search/execute, and hardened security ([#199](https://github.com/StackOneHQ/stackone-ai-python/issues/199)) ([e53edf0](https://github.com/StackOneHQ/stackone-ai-python/commit/e53edf0c7cc1da6cc5376df9ca27c6b845597e22))
+
 ## [2.10.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.0...stackone-ai-v2.10.1) (2026-07-28)
 
 
