@@ -11,6 +11,7 @@ import pytest
 from stackone_ai.tools import McpToolDefinition, fetch_mcp_tools
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import (
+    SUBMIT_FEEDBACK_TOOL_NAME,
     StackOneAPIError,
     ToolsetConfigError,
     ToolsetError,
@@ -31,7 +32,8 @@ class TestAccountFiltering:
         """Test fetching tools without account filtering"""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         tools = toolset.fetch_tools()
-        assert len(tools) == 2
+        # Plus the mock's global feedback tool, served alongside every account's catalog.
+        assert len(tools) == 3
         tool_names = [t.name for t in tools.to_list()]
         assert "default_tool_1" in tool_names
         assert "default_tool_2" in tool_names
@@ -40,7 +42,7 @@ class TestAccountFiltering:
         """Test fetching tools with specific account IDs"""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         tools = toolset.fetch_tools(account_ids=["acc1"])
-        assert len(tools) == 2
+        assert len(tools) == 3
         tool_names = [t.name for t in tools.to_list()]
         assert "acc1_tool_1" in tool_names
         assert "acc1_tool_2" in tool_names
@@ -50,8 +52,8 @@ class TestAccountFiltering:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         toolset.set_accounts(["acc1", "acc2"])
         tools = toolset.fetch_tools()
-        # acc1 has 2 tools, acc2 has 2 tools, total should be 4
-        assert len(tools) == 4
+        # acc1 has 2 tools, acc2 has 2 tools, plus one feedback tool however many accounts list it
+        assert len(tools) == 5
         tool_names = [t.name for t in tools.to_list()]
         assert "acc1_tool_1" in tool_names
         assert "acc1_tool_2" in tool_names
@@ -63,8 +65,8 @@ class TestAccountFiltering:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         toolset.set_accounts(["acc1", "acc2"])
         tools = toolset.fetch_tools(account_ids=["acc3"])
-        # Should fetch tools only for acc3 (ignoring acc1, acc2)
-        assert len(tools) == 1
+        # Should fetch tools only for acc3 (ignoring acc1, acc2), plus the feedback tool
+        assert len(tools) == 2
         tool_names = [t.name for t in tools.to_list()]
         assert "acc3_tool_1" in tool_names
         # Verify set_accounts state is preserved
@@ -74,8 +76,8 @@ class TestAccountFiltering:
         """Test fetching tools for multiple account IDs"""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         tools = toolset.fetch_tools(account_ids=["acc1", "acc2", "acc3"])
-        # acc1: 2 tools, acc2: 2 tools, acc3: 1 tool = 5 total
-        assert len(tools) == 5
+        # acc1: 2 tools, acc2: 2 tools, acc3: 1 tool, feedback: 1 = 6 total
+        assert len(tools) == 6
 
     def test_fetch_tools_preserves_account_context(self, mcp_mock_server: str):
         """Test that tools preserve their account context"""
@@ -163,7 +165,8 @@ class TestMcpHeaders:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         # When we fetch with acc1, we should get acc1's tools, proving header was sent
         tools = toolset.fetch_tools(account_ids=["acc1"])
-        tool_names = [t.name for t in tools.to_list()]
+        tool_names = [t.name for t in tools.to_list() if t.name != SUBMIT_FEEDBACK_TOOL_NAME]
+        assert tool_names
         assert all("acc1" in name for name in tool_names)
 
 

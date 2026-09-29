@@ -24,7 +24,26 @@ export interface McpToolDefinition {
 export interface MockMcpServerOptions {
 	/** Tools available per account ID. Use 'default' for tools when no account header is provided. */
 	accountTools: Record<string, readonly McpToolDefinition[]>;
+	/**
+	 * Serve the global `stackone_submit_feedback` tool, in every tool mode, the way the real
+	 * endpoint does when the org flag and project setting are on. Off models a project without
+	 * it: the tool is simply absent, so the SDK has nothing to call.
+	 */
+	submitFeedback?: boolean;
 }
+
+/** Mirrors the real `session_id` minted per search, so tests can assert it is carried through. */
+export const MOCK_SEARCH_SESSION_ID = 'mock-session-1';
+
+// The schema the real endpoint serves for its feedback tool, field for field.
+const submitFeedbackInputSchema = {
+	rating: z.enum(['positive', 'negative', 'neutral']),
+	feedback: z.string().optional(),
+	tool_names: z.array(z.string()),
+	source: z.enum(['model', 'user', 'system']).optional(),
+	category: z.enum(['search', 'execute', 'defender', 'connection', 'general']).optional(),
+	session_id: z.string().optional(),
+};
 
 /**
  * Creates an MSW handler for mocking MCP protocol requests.
@@ -47,7 +66,7 @@ export interface MockMcpServerOptions {
  * ```
  */
 export function createMcpApp(options: MockMcpServerOptions): HonoApp {
-	const { accountTools } = options;
+	const { accountTools, submitFeedback = false } = options;
 
 	// Create a Hono app that handles MCP protocol
 	const app = new Hono();
@@ -90,18 +109,47 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 		const searchExecute = c.req.query('tool-mode') === 'search_execute';
 		const transport = new StreamableHTTPTransport();
 
+		// Registered before the mode split because the real endpoint does the same: it is one
+		// global tool, served identically in both modes and once per account listing.
+		if (submitFeedback) {
+			mcp.registerTool(
+				'stackone_submit_feedback',
+				{
+					description: 'Records a structured verdict on how well the tools served this session.',
+					inputSchema: submitFeedbackInputSchema,
+				},
+				async ({ session_id }: { session_id?: string }) => ({
+					content: [
+						{
+							type: 'text' as const,
+							text: JSON.stringify({
+								message: 'Feedback recorded',
+								submitted_at: new Date(0).toISOString(),
+								session_id: session_id ?? null,
+							}),
+						},
+					],
+				}),
+			);
+		}
+
 		if (searchExecute) {
 			mcp.registerTool(
 				`mock_${accountId}_search_actions`,
 				{
 					description: 'Search for available actions in natural language.',
-					inputSchema: { query: z.string(), top_k: z.number().optional() },
+					inputSchema: {
+						query: z.string(),
+						top_k: z.number().optional(),
+						session_id: z.string().optional(),
+					},
 				},
 				async () => ({
 					content: [
 						{
 							type: 'text' as const,
 							text: JSON.stringify({
+								session_id: MOCK_SEARCH_SESSION_ID,
 								actions: [
 									{
 										action_id: 'mock_list_items',
@@ -124,6 +172,7 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 						query: z.record(z.string(), z.unknown()).optional(),
 						body: z.record(z.string(), z.unknown()).optional(),
 						headers: z.record(z.string(), z.string()).optional(),
+						session_id: z.string().optional(),
 					},
 				},
 				async ({ action_id, query }: { action_id: string; query?: Record<string, unknown> }) => {

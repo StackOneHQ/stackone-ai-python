@@ -21,6 +21,24 @@ import {
 
 const port = parseInt(process.env.PORT || process.argv[2] || "8787", 10);
 
+// On by default, as it is for a project with feedback enabled. MOCK_SUBMIT_FEEDBACK=off
+// serves a project without it, so the SDK's handling of its absence can be tested.
+const submitFeedback = process.env.MOCK_SUBMIT_FEEDBACK !== "off";
+
+interface RecordedRequest {
+  path: "/mcp" | "/actions/rpc";
+  accountId: string | null;
+  method?: string;
+  name?: string;
+  arguments?: unknown;
+  action?: string;
+}
+
+// What actually reached the wire. A handler only sees arguments after zod has parsed
+// them, which strips unknown keys and hides whether a key was sent as null — the very
+// things a test of the SDK's wire shape needs to see.
+const recorded: RecordedRequest[] = [];
+
 // Create the MCP app with all test tool configurations
 const mcpApp = createMcpApp({
   accountTools: {
@@ -33,6 +51,7 @@ const mcpApp = createMcpApp({
     "your-bamboohr-account-id": exampleBamboohrTools,
     "your-stackone-account-id": exampleBamboohrTools,
   },
+  submitFeedback,
 });
 
 // Create the main app with CORS and mount the MCP app
@@ -44,6 +63,35 @@ app.use("/*", cors());
 // Health check endpoint
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+app.get("/__requests", (c) => c.json(recorded));
+app.delete("/__requests", (c) => {
+  recorded.length = 0;
+  return c.json({ cleared: true });
+});
+
+app.use("/mcp", async (c, next) => {
+  if (c.req.method === "POST") {
+    const accountId = c.req.header("x-account-id") ?? null;
+    try {
+      const payload = (await c.req.raw.clone().json()) as unknown;
+      const messages = Array.isArray(payload) ? payload : [payload];
+      for (const message of messages as { method?: string; params?: Record<string, unknown> }[]) {
+        if (message?.method !== "tools/call") continue;
+        recorded.push({
+          path: "/mcp",
+          accountId,
+          method: message.method,
+          name: message.params?.name as string | undefined,
+          arguments: message.params?.arguments,
+        });
+      }
+    } catch {
+      // Not JSON: the MCP handler rejects it, so there is nothing to record.
+    }
+  }
+  await next();
+});
+
 // The SDK discovers accounts here when none is supplied. Returned as a bare list
 // with an inactive entry, matching the shape and statuses the real API serves.
 app.get("/accounts", (c) =>
@@ -52,6 +100,18 @@ app.get("/accounts", (c) =>
     { id: "dead", provider: "brokenprovider", status: "error" },
   ]),
 );
+
+// Every request, recorded before auth, so a refused one still counts as having been sent.
+app.use("/actions/rpc", async (c, next) => {
+  let action: string | undefined;
+  try {
+    action = ((await c.req.raw.clone().json()) as { action?: string }).action;
+  } catch {
+    action = undefined;
+  }
+  recorded.push({ path: "/actions/rpc", accountId: c.req.header("x-account-id") ?? null, action });
+  await next();
+});
 
 // Mount the MCP app (handles /mcp endpoint)
 app.route("/", mcpApp);

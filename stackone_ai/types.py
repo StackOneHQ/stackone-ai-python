@@ -29,6 +29,13 @@ account. ``"search_execute"`` lists two meta tools per connector instead, a
 how many accounts are linked, which is what keeps it inside a model's context.
 """
 
+SUBMIT_FEEDBACK_TOOL_NAME: str = "stackone_submit_feedback"
+"""The one global tool the MCP endpoint serves in every mode when feedback is enabled.
+
+It is not a connector action, so the SDK calls it over MCP ``tools/call`` — where it
+was listed — rather than ``/actions/rpc``, whatever the toolset's mode.
+"""
+
 
 class StackOneError(Exception):
     """Base exception for StackOne errors"""

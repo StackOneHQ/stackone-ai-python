@@ -6,7 +6,8 @@ import os
 import socket
 import subprocess
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -38,23 +39,9 @@ def _wait_for_server(host: str, port: int, timeout: float = 10.0) -> bool:
     return False
 
 
-@pytest.fixture(scope="session")
-def mcp_mock_server() -> Generator[str, None, None]:
-    """
-    Start the Node MCP mock server for integration tests.
-
-    This fixture starts the Hono-based MCP mock server using tsx.
-
-    Requires: pnpm install (provides tsx and the Hono dependencies).
-
-    Usage:
-        def test_mcp_integration(mcp_mock_server):
-            toolset = StackOneToolSet(
-                api_key="test-key",
-                base_url=mcp_mock_server,
-            )
-            tools = toolset.fetch_tools()
-    """
+@contextmanager
+def _run_mcp_mock_server(extra_env: dict[str, str] | None = None) -> Iterator[str]:
+    """Start the Node MCP mock server, yield its base URL, and stop it afterwards."""
     project_root = Path(__file__).parent.parent
     serve_script = project_root / "tests" / "mocks" / "serve.ts"
 
@@ -75,6 +62,7 @@ def mcp_mock_server() -> Generator[str, None, None]:
     # Start the server from project root
     env = os.environ.copy()
     env["PORT"] = str(port)
+    env.update(extra_env or {})
 
     process = subprocess.Popen(
         [str(serve_script)],
@@ -107,3 +95,32 @@ def mcp_mock_server() -> Generator[str, None, None]:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+@pytest.fixture(scope="session")
+def mcp_mock_server() -> Generator[str, None, None]:
+    """
+    Start the Node MCP mock server for integration tests.
+
+    This fixture starts the Hono-based MCP mock server using tsx. It serves the
+    global feedback tool, as a project with feedback enabled does.
+
+    Requires: pnpm install (provides tsx and the Hono dependencies).
+
+    Usage:
+        def test_mcp_integration(mcp_mock_server):
+            toolset = StackOneToolSet(
+                api_key="test-key",
+                base_url=mcp_mock_server,
+            )
+            tools = toolset.fetch_tools()
+    """
+    with _run_mcp_mock_server() as base_url:
+        yield base_url
+
+
+@pytest.fixture(scope="session")
+def mcp_mock_server_without_feedback() -> Generator[str, None, None]:
+    """The same mock, serving a project with feedback disabled: the tool is absent."""
+    with _run_mcp_mock_server({"MOCK_SUBMIT_FEEDBACK": "off"}) as base_url:
+        yield base_url

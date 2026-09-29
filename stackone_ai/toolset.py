@@ -25,6 +25,7 @@ from stackone_ai.tools import (
 )
 from stackone_ai.types import (
     DEFAULT_BASE_URL,
+    SUBMIT_FEEDBACK_TOOL_NAME,
     ExecuteToolsConfig,
     Headers,
     JsonDict,
@@ -201,7 +202,7 @@ class StackOneToolSet:
 
             all_tools = [
                 self._create_tool(tool_def, account, endpoint, headers, mode)
-                for tool_def, account, endpoint, headers in cached
+                for tool_def, account, endpoint, headers in self._dedupe_global_tools(cached)
             ]
 
             if providers:
@@ -275,6 +276,27 @@ class StackOneToolSet:
         with self._cache_lock:
             if generation == self._cache_generation:
                 self._catalog_cache[self._cache_key(account_scope, mode)] = listings
+
+    @staticmethod
+    def _dedupe_global_tools(
+        listings: list[tuple[McpToolDefinition, str | None, str, Headers]],
+    ) -> list[tuple[McpToolDefinition, str | None, str, Headers]]:
+        """Keep only the first listing of the feedback tool.
+
+        It is global rather than account-scoped, so every account's listing carries an
+        identical copy. Left in, N accounts meant N same-named tools and a duplicate-name
+        warning about a clash that cannot misroute anything — noise that teaches callers
+        to ignore the warning that does matter.
+        """
+        seen_feedback = False
+        kept: list[tuple[McpToolDefinition, str | None, str, Headers]] = []
+        for listing in listings:
+            if listing[0].name == SUBMIT_FEEDBACK_TOOL_NAME:
+                if seen_feedback:
+                    continue
+                seen_feedback = True
+            kept.append(listing)
+        return kept
 
     def _cache_key(self, account_scope: list[str | None], mode: ToolMode | None) -> tuple[Any, ...]:
         return (
@@ -573,7 +595,10 @@ class StackOneToolSet:
 
         In ``search_execute`` mode the served tools are MCP meta tools with no
         action behind them on ``/actions/rpc``, so they are executed over
-        ``tools/call`` instead.
+        ``tools/call`` instead. The feedback tool goes over ``tools/call`` in every mode
+        too. The server would also accept it on ``/actions/rpc``, but it is served over
+        MCP and is not a connector action, so it is called where it was listed rather
+        than having its transport depend on a tool-mode setting unrelated to it.
         """
         schema = tool_def.input_schema or {}
         # Pop keys we explicitly override to avoid "multiple values for keyword argument"
@@ -587,7 +612,7 @@ class StackOneToolSet:
             type=schema_type,
             properties=schema_properties,
         )
-        if mode == "search_execute":
+        if mode == "search_execute" or tool_def.name == SUBMIT_FEEDBACK_TOOL_NAME:
             return StackOneMcpTool(
                 name=tool_def.name,
                 description=tool_def.description or "",
