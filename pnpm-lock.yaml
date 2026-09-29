@@ -10,13 +10,13 @@ importers:
     devDependencies:
       '@hono/mcp':
         specifier: 0.1.5
-        version: 0.1.5(@modelcontextprotocol/sdk@1.24.3(zod@4.1.13))(hono@4.10.7)
+        version: 0.1.5(@modelcontextprotocol/sdk@1.24.3(zod@4.6.5))(hono@4.10.7)
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.17(hono@4.10.7)
       '@modelcontextprotocol/sdk':
         specifier: 1.24.3
-        version: 1.24.3(zod@4.1.13)
+        version: 1.24.3(zod@4.6.5)
       hono:
         specifier: 4.10.7
         version: 4.10.7
@@ -24,8 +24,8 @@ importers:
         specifier: ^4.19.2
         version: 4.23.13
       zod:
-        specifier: 4.1.13
-        version: 4.1.13
+        specifier: 4.6.5
+        version: 4.6.5
 
 packages:
 
@@ -566,8 +566,8 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
-  zod@4.1.13:
-    resolution: {integrity: sha512-AvvthqfqrAhNH9dnfmrfKzX5upOdjUVJYFqNSlkmGf64gRaTzlPwz99IHYnVs28qYAybvAlBV+H7pn0saFY4Ig==}
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
 
@@ -649,16 +649,16 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@hono/mcp@0.1.5(@modelcontextprotocol/sdk@1.24.3(zod@4.1.13))(hono@4.10.7)':
+  '@hono/mcp@0.1.5(@modelcontextprotocol/sdk@1.24.3(zod@4.6.5))(hono@4.10.7)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.24.3(zod@4.1.13)
+      '@modelcontextprotocol/sdk': 1.24.3(zod@4.6.5)
       hono: 4.10.7
 
   '@hono/node-server@1.19.17(hono@4.10.7)':
     dependencies:
       hono: 4.10.7
 
-  '@modelcontextprotocol/sdk@1.24.3(zod@4.1.13)':
+  '@modelcontextprotocol/sdk@1.24.3(zod@4.6.5)':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
@@ -672,8 +672,8 @@ snapshots:
       jose: 6.2.12
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.1.13
-      zod-to-json-schema: 3.25.2(zod@4.1.13)
+      zod: 4.6.5
+      zod-to-json-schema: 3.25.2(zod@4.6.5)
     transitivePeerDependencies:
       - supports-color
 
@@ -1074,8 +1074,8 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  zod-to-json-schema@3.25.2(zod@4.1.13):
+  zod-to-json-schema@3.25.2(zod@4.6.5):
     dependencies:
-      zod: 4.1.13
+      zod: 4.6.5
 
-  zod@4.1.13: {}
+  zod@4.6.5: {}
