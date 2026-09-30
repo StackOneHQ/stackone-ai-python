@@ -380,7 +380,7 @@ class StackOneTool(BaseModel):
     description: str = Field(description="Tool description")
     parameters: ToolParameters = Field(description="Tool parameters")
     _execute_config: ExecuteConfig = PrivateAttr()
-    _api_key: str = PrivateAttr()
+    _api_key: str | None = PrivateAttr(default=None)
     _account_id: str | None = PrivateAttr(default=None)
 
     def __init__(
@@ -388,7 +388,9 @@ class StackOneTool(BaseModel):
         description: str,
         parameters: ToolParameters,
         _execute_config: ExecuteConfig,
-        _api_key: str,
+        # Optional: the base class cannot execute, so it has nothing to authenticate. Kept
+        # as a parameter so existing hand-built tools and overrides that read it still work.
+        _api_key: str | None = None,
         _account_id: str | None = None,
     ) -> None:
         super().__init__(
@@ -399,24 +401,6 @@ class StackOneTool(BaseModel):
         self._execute_config = _execute_config
         self._api_key = _api_key
         self._account_id = _account_id
-
-    def _prepare_headers(self) -> Headers:
-        """The request headers: the configured extras first, then the SDK's own.
-
-        Authorization, x-account-id and User-Agent are set last, and any case variant of
-        them among the extras is dropped first, so neither can replace the credential or
-        retarget the call at another account.
-        """
-        headers: Headers = {
-            name: value
-            for name, value in self._execute_config.headers.items()
-            if name.strip().casefold() not in _SDK_OWNED_HEADERS
-        }
-        headers["User-Agent"] = USER_AGENT
-        headers["Authorization"] = build_auth_header(self._api_key)
-        if self._account_id:
-            headers["x-account-id"] = self._account_id
-        return headers
 
     def _parse_arguments(self, arguments: str | JsonDict | None) -> JsonDict:
         """Arguments as a dict, from a dict, a JSON string, or nothing.
@@ -746,6 +730,27 @@ class StackOneMcpTool(StackOneTool):
             _account_id=account_id,
         )
         self._endpoint = endpoint
+
+    def _prepare_headers(self) -> Headers:
+        """The request headers: the configured extras first, then the SDK's own.
+
+        Authorization, x-account-id and User-Agent are set last, and any case variant of
+        them among the extras is dropped first, so neither can replace the credential or
+        retarget the call at another account.
+        """
+        headers: Headers = {
+            name: value
+            for name, value in self._execute_config.headers.items()
+            if name.strip().casefold() not in _SDK_OWNED_HEADERS
+        }
+        # The constructor requires the key; only code that clears it afterwards gets here.
+        if not self._api_key:
+            raise StackOneError(f'Tool "{self.name}" has no API key to authenticate with.')
+        headers["User-Agent"] = USER_AGENT
+        headers["Authorization"] = build_auth_header(self._api_key)
+        if self._account_id:
+            headers["x-account-id"] = self._account_id
+        return headers
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
         """Call the tool over MCP ``tools/call``.

@@ -135,11 +135,11 @@ class TestBaseToolHasNoExecutor:
 
     @pytest.fixture
     def base_tool(self):
+        """No API key: the base class cannot execute, so it has nothing to authenticate."""
         return StackOneTool(
             description="Hand-built",
             parameters=ToolParameters(type="object", properties={}),
             _execute_config=ExecuteConfig(name="hand_built"),
-            _api_key="k",
         )
 
     def test_execute_raises_a_stackone_error_naming_the_fix(self, base_tool):
@@ -162,6 +162,8 @@ class TestBaseToolHasNoExecutor:
             _api_key="k",
         )
         assert tool.call(a=1) == {"echo": {"a": 1}}
+        # Still accepted and kept, for overrides that authenticate with it.
+        assert tool._api_key == "k"
 
 
 class TestMcpToolHeaderGuard:
