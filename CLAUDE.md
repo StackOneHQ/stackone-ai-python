@@ -229,6 +229,7 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
   invented client-side — when the server omits it, `submit_feedback()` raises.
   `submit_feedback()` lists one account in `search_execute` mode and makes one
   `tools/call`, through the first account (as given, else in `GET /accounts` order).
+- `Tools.get_tool()` returns the first tool listed under a name, as Node's `getTool()`.
 - `session_id` is copied onto each `search()` hit and forwarded by `execute()` /
   `submit_feedback()` only when given. Optional wire keys are omitted, never null.
 

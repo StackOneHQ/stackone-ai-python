@@ -101,9 +101,15 @@ class TestFeedbackToolIsListedOnce:
         )
         toolset = StackOneToolSet(api_key="test-key")
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            tools = toolset.fetch_tools(account_ids=["acc1", "acc2"])
+            tools = toolset.fetch_tools(account_ids=["acc2", "acc1"])
         assert len(tools) == 2
-        assert "more than one account" in caplog.text
+        assert "more than one account (linear_list_issues)" in caplog.text
+        assert "get_tool() will return the first one listed" in caplog.text
+
+        # The first listed, as Node's getTool() does. Listings merge in sorted account order.
+        assert [t.get_account_id() for t in tools] == ["acc1", "acc2"]
+        tool = tools.get_tool("linear_list_issues")
+        assert tool is tools[0]
 
 
 class TestFeedbackToolAbsent:
