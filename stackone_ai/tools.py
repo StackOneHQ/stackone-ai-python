@@ -60,10 +60,6 @@ _SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
 _FLAT_HEADER_PREFIX = "headers_"
 
 
-# Added per property by the toolset when normalising a served schema; it records
-# whether the field was absent from the schema's `required` list. It is an internal
-# marker, not part of the served schema, so it is stripped before a schema is
-# handed to a model.
 @dataclass
 class McpToolDefinition:
     """A tool exactly as the MCP server listed it."""

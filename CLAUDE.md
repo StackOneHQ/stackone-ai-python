@@ -49,10 +49,10 @@ a wrong key returns a normal-looking success with your filter ignored.
 
 Results follow one rule for every tool (`parse_tool_result`): text parts win, else
 `structuredContent`; `isError` raises `StackOneAPIError` with the payload's status.
-UCA's success wrapper `{"isError": false, "result": ...}` (optionally with
-`defenderMetadata` / `policyMetadata`) is unwrapped to `{**result, **metadata}`, or
-`{"result": value, **metadata}` for a non-object. Anything else, search results
-included, is returned as parsed. Keep the result shape identical to the Node SDK's.
+A success is returned exactly as the server wrote it, never unwrapped: for an action
+tool, `*_execute_action` and feedback that is UCA's `{"isError": false, "result": ...}`
+(optionally with `defenderMetadata` / `policyMetadata`); search results are bare JSON.
+Keep the result shape identical to the Node SDK's.
 
 ## Commands
 
@@ -255,7 +255,7 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ### Modifying Tool Behaviour
 
 - Execution: `StackOneMcpTool.execute()` and `call_mcp_tool()` in `tools.py`
-- Result parsing and the UCA unwrap: `parse_tool_result()` / `_unwrap_success()`
+- Result parsing: `parse_tool_result()`
 - search/execute routing: `StackOneToolSet.execute()`
 - Tool construction and the feedback-tool dedupe: `StackOneToolSet._create_tool` and
   `_dedupe_global_tools`
