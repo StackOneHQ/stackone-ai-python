@@ -283,6 +283,45 @@ class TestSubmitFeedback:
         calls = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
         assert [c["accountId"] for c in calls] == ["acc1"]
 
+    @pytest.mark.parametrize("mode", [None, "individual"])
+    def test_lists_only_the_first_given_account_in_search_execute_mode(self, mcp_mock_server: str, mode):
+        """The first account as given, not as sorted; and the small listing whatever the mode."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ["acc1_tool_1"], account_ids=["acc2", "acc1"])
+
+        listings = [r for r in _requests(mcp_mock_server) if r.get("method") == "tools/list"]
+        assert [(r["accountId"], r["search"]) for r in listings] == [("acc2", "?tool-mode=search_execute")]
+        calls = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert [c["accountId"] for c in calls] == ["acc2"]
+
+    def test_defaults_to_the_first_discovered_account_in_accounts_order(self, monkeypatch):
+        monkeypatch.setattr(
+            StackOneToolSet,
+            "fetch_accounts",
+            lambda self: [
+                {"id": "zeta", "status": "active"},
+                {"id": "dead", "status": "inactive"},
+                {"id": "alpha", "status": "active"},
+            ],
+        )
+        listed: list[tuple[str, str]] = []
+
+        def fake_fetch(endpoint: str, headers: dict[str, str], **_k: object) -> list[McpToolDefinition]:
+            listed.append((headers["x-account-id"], endpoint))
+            return [McpToolDefinition(name=SUBMIT_FEEDBACK_TOOL_NAME, description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+        called: list[str | None] = []
+        monkeypatch.setattr(
+            StackOneMcpTool, "execute", lambda self, _args: called.append(self.get_account_id()) or {}
+        )
+
+        StackOneToolSet(api_key="test-key").submit_feedback("positive", ["x"])
+
+        assert listed == [("zeta", "https://api.stackone.com/mcp?tool-mode=search_execute")]
+        assert called == ["zeta"]
+
     def test_rejects_a_bare_string_of_tool_names(self):
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         with pytest.raises(ToolsetConfigError, match="Did you mean"):

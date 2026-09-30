@@ -175,20 +175,10 @@ class StackOneToolSet:
             If your organization has many accounts, pass explicit `account_ids` to avoid
             excessive round trips and blowing model context limits.
         """
-        if isinstance(account_ids, str):
-            raise ToolsetConfigError(
-                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
-            )
         try:
             mode = self._tool_mode if mode is _UNSET else mode
-            effective_account_ids = account_ids or self._account_ids
-            if not effective_account_ids and self.account_id:
-                effective_account_ids = [self.account_id]
-            if not effective_account_ids:
-                effective_account_ids = self._discover_account_ids()
-
             account_scope: list[str | None] = sorted(
-                dict.fromkeys(effective_account_ids), key=lambda a: (a is None, a)
+                dict.fromkeys(self._resolve_account_ids(account_ids)), key=lambda a: (a is None, a)
             )
 
             # Keyed on what was fetched, not on how it is filtered: providers and
@@ -220,6 +210,23 @@ class StackOneToolSet:
             raise
         except Exception as exc:  # pragma: no cover - unexpected runtime errors
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
+
+    def _resolve_account_ids(self, account_ids: list[str] | None) -> list[str]:
+        """The accounts a call is scoped to, in the order they were given or discovered.
+
+        The argument, then ``set_accounts()``, then the constructor's ``account_id``, then
+        every active account ``GET /accounts`` lists.
+        """
+        if isinstance(account_ids, str):
+            raise ToolsetConfigError(
+                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
+            )
+        resolved = account_ids or self._account_ids
+        if not resolved and self.account_id:
+            resolved = [self.account_id]
+        if not resolved:
+            resolved = self._discover_account_ids()
+        return list(resolved)
 
     def _list_catalog(self, account_scope: list[str | None], mode: ToolMode | None) -> list[_Listing]:
         """List every scoped account's catalog, tolerating accounts that fail."""
@@ -477,8 +484,10 @@ class StackOneToolSet:
     ) -> JsonDict:
         """Record a verdict on how well the tools served this session.
 
-        Calls the server's ``stackone_submit_feedback`` tool. Pass the ``session_id``
-        from a :meth:`search` hit to attach the feedback to that session.
+        Calls the server's ``stackone_submit_feedback`` tool once, through the first account:
+        the first of ``account_ids``, or else the first the toolset is scoped to, in
+        ``GET /accounts`` order when discovered. Pass the ``session_id`` from a
+        :meth:`search` hit to attach the feedback to that session.
 
         Args:
             rating: ``"positive"``, ``"negative"`` or ``"neutral"``.
@@ -487,7 +496,8 @@ class StackOneToolSet:
             category: What the feedback is about, e.g. ``"search"`` or ``"execute"``.
             session_id: The session to link this feedback to.
             source: Who produced the feedback.
-            account_ids: Accounts to list the tool through. Defaults to all active ones.
+            account_ids: Accounts to choose from; only the first is used. Defaults to the
+                toolset's own.
 
         Raises:
             ToolsetLoadError: If feedback is not enabled for this project.
@@ -499,8 +509,13 @@ class StackOneToolSet:
 
         # Found in the served catalog, never built here: the server only serves the tool
         # when the org flag and the project setting are both on, and a client-side stand-in
-        # would report success for feedback that went nowhere.
-        tool = self.fetch_tools(account_ids=account_ids).get_tool(SUBMIT_FEEDBACK_TOOL_NAME)
+        # would report success for feedback that went nowhere. It is global and served in
+        # every mode, so one account's search_execute listing — two tools per connector,
+        # not one per action — is enough to find it.
+        first_account = self._resolve_account_ids(account_ids)[0]
+        tool = self.fetch_tools(account_ids=[first_account], mode="search_execute").get_tool(
+            SUBMIT_FEEDBACK_TOOL_NAME
+        )
         if tool is None:
             raise ToolsetLoadError(
                 f"The server did not serve {SUBMIT_FEEDBACK_TOOL_NAME}: feedback is not enabled "

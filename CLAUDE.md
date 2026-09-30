@@ -227,6 +227,8 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
   account's catalog, in both modes, when feedback is enabled. It is always a
   `StackOneMcpTool`, like every tool, is deduped to one across accounts, and is never
   invented client-side — when the server omits it, `submit_feedback()` raises.
+  `submit_feedback()` lists one account in `search_execute` mode and makes one
+  `tools/call`, through the first account (as given, else in `GET /accounts` order).
 - `session_id` is copied onto each `search()` hit and forwarded by `execute()` /
   `submit_feedback()` only when given. Optional wire keys are omitted, never null.
 
