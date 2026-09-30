@@ -413,7 +413,7 @@ class TestPerActionToolsExecuteOverToolsCall:
             pytest.param({"fields": "a,b"}, id="flat"),
             pytest.param({"path_id": "1", "query_limit": 5, "body_name": "x"}, id="prefix-lookalikes"),
             pytest.param({"path": {"id": "1"}, "query": {"limit": 5}, "body": {"n": [1, None]}}, id="nested"),
-            pytest.param({"query": "not-an-object", "headers_x": "y", "unicode": "é😀"}, id="odd-shapes"),
+            pytest.param({"query": "not-an-object", "header_x": "y", "unicode": "é😀"}, id="odd-shapes"),
             pytest.param({}, id="empty"),
         ],
     )
@@ -1165,6 +1165,30 @@ class TestSearchAndExecuteApi:
 
         result = toolset.execute(action["action_id"], action["example_request"])
         assert result["result"]["echoed_query"] == {"page_size": 25}
+
+    def test_execute_forwards_host_headers_but_cannot_switch_tenant(self, mcp_mock_server: str):
+        """The served `headers` object is open, so a host header reaches the action — but
+        neither form of header argument can carry the SDK's own headers onto the wire."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+
+        toolset.execute(
+            "mock_list_items",
+            {
+                "query": {"page_size": 25},
+                "headers": {"x-custom": "kept", "x-account-id": "victim", "Authorization": "Basic stolen"},
+                "headers_x-account-id": "victim",
+            },
+            account_ids=["default"],
+        )
+
+        [call] = _tool_calls(mcp_mock_server, "mock_default_execute_action")
+        assert call["accountId"] == "default"
+        assert call["arguments"] == {
+            "query": {"page_size": 25},
+            "headers": {"x-custom": "kept"},
+            "action_id": "mock_list_items",
+        }
 
     def test_unknown_action_raises_rather_than_returning_an_error_body(self, mcp_mock_server: str):
         from stackone_ai.types import StackOneAPIError

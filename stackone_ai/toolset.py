@@ -410,6 +410,10 @@ class StackOneToolSet:
         routing by whether an id happened to be in the catalog would make the
         argument shape depend on something the caller cannot see.
 
+        ``arguments["headers"]`` is forwarded to the action: ``*_execute_action`` serves an
+        open ``headers`` object, so any header name is accepted except Authorization,
+        x-account-id and User-Agent, which the SDK sets itself and which are dropped.
+
         ``session_id`` is the value a :meth:`search` hit carries. Passing it links
         this call to that search server-side.
 

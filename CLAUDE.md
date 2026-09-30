@@ -239,10 +239,13 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 - **File downloads**: a file action returns a download link
   (`{download_url, expires_at, file}`), unchanged; the SDK does not follow it. When no
   link can be issued the server answers `isError` with status 501, which raises.
-- **Headers**: a nested `headers` argument is an **allowlist** driven by the served
-  schema — only a header declared as a `headers_*` property or under a nested
-  `headers` object passes, and `Authorization` / `x-account-id` / `User-Agent` never
-  do. The SDK sets those three itself, after any configured headers. Match header grammar with
+- **Headers**: header arguments — entries of a nested `headers` object, and top-level
+  `headers_<name>` arguments — are an **allowlist** driven by the served schema. A nested
+  entry passes if `headers.properties` declares it, or if `headers` is an object with no
+  `properties` (open, as `*_execute_action` serves it); a flat one passes if the
+  `headers_<name>` property is declared. `Authorization` / `x-account-id` / `User-Agent`
+  never do. Every other argument is sent unchanged. The SDK sets those three itself,
+  after any configured headers. Match header grammar with
   `fullmatch`, never `match`: `$` also matches before a trailing newline, so `match`
   lets `"value\n"` through.
 

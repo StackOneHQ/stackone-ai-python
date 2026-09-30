@@ -55,6 +55,10 @@ _HEADER_VALUE_PATTERN = re.compile(r"[\x20-\x7e\t\x80-\xff]*")
 # selector and the client identity.
 _SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
 
+# A top-level argument with this prefix is a header argument, as is an entry of a nested
+# `headers` object argument.
+_FLAT_HEADER_PREFIX = "headers_"
+
 
 # Added per property by the toolset when normalising a served schema; it records
 # whether the field was absent from the schema's `required` list. It is an internal
@@ -437,21 +441,53 @@ class StackOneTool(BaseModel):
             raise ValueError("Tool arguments must be a JSON object")
         return dict(parsed)
 
-    def _declared_headers(self) -> set[str]:
+    def _declared_headers(self) -> tuple[set[str] | None, set[str]]:
         """The header names this tool's served schema declares, casefolded.
 
-        The schema itself is the allowlist, in whichever param-style the server served it:
-        a flat ``headers_<name>`` property, or a ``<name>`` under a nested ``headers`` object.
+        Returns ``(nested, flat)``: the names under a nested ``headers`` object, and the
+        ``<name>`` of each flat ``headers_<name>`` property. ``nested`` is ``None`` when the
+        ``headers`` object is open — an object schema with no ``properties``, as
+        ``*_execute_action`` serves it — which declares every name.
         """
         properties = self.parameters.properties or {}
-        allowed = {prop[len("headers_") :].casefold() for prop in properties if prop.startswith("headers_")}
-        nested = properties.get("headers")
-        if isinstance(nested, dict) and isinstance(nested.get("properties"), dict):
-            allowed.update(str(name).casefold() for name in nested["properties"])
-        return allowed
+        flat = {
+            prop[len(_FLAT_HEADER_PREFIX) :].casefold()
+            for prop in properties
+            if prop.startswith(_FLAT_HEADER_PREFIX)
+        }
+        nested: set[str] | None = set()
+        schema = properties.get("headers")
+        if isinstance(schema, dict):
+            if "properties" not in schema:
+                nested = None
+            elif isinstance(schema["properties"], dict):
+                nested = {str(name).casefold() for name in schema["properties"]}
+        return nested, flat
+
+    @staticmethod
+    def _header_refusal(name: str, declared: set[str] | None) -> str | None:
+        """Why a header argument may not be forwarded, or ``None`` if it may.
+
+        ``declared`` is ``None`` for an open ``headers`` object, which declares every name.
+        """
+        # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to any
+        # server, and casefold() closes the non-ASCII folding holes lower() leaves.
+        folded = name.strip().casefold()
+        if folded in _SDK_OWNED_HEADERS:
+            return "it is set by the SDK"
+        if declared is not None and folded not in declared:
+            return "it is not declared by the schema"
+        return None
+
+    @staticmethod
+    def _is_well_formed_header(name: str, value: Any) -> bool:
+        # Defence in depth on a declared header's model-supplied value. fullmatch, not
+        # match: `$` also matches just before a trailing newline, so `match` let "value\n"
+        # — the one character class this rejects — straight through.
+        return bool(_HEADER_NAME_PATTERN.fullmatch(name) and _HEADER_VALUE_PATTERN.fullmatch(str(value)))
 
     def _sanitise_headers(self, supplied: dict[str, Any] | None) -> dict[str, str]:
-        """Keep only headers the served schema declared; drop everything else.
+        """Keep only the entries of a nested ``headers`` argument the served schema declares.
 
         An allowlist, not a denylist. Tool arguments are model-controlled, so a
         prompt-injected call reaches this dict directly — and a denylist has to
@@ -459,31 +495,54 @@ class StackOneTool(BaseModel):
         provider's vocabulary (Proxy-Authorization, x-stackone-account-id, Cookie,
         X-Api-Key, ...) and is wrong the moment one is missed.
 
-        The allowlist is the served schema itself, so this needs no maintenance. The
-        meta tools declare no header names, so for them every model-supplied header is
-        dropped. Authorization, x-account-id and User-Agent are refused even when
-        declared: the SDK sets them itself.
+        The allowlist is the served schema itself, so this needs no maintenance. An open
+        ``headers`` object declares every name. Authorization, x-account-id and User-Agent
+        are refused even when declared: the SDK sets them itself.
         """
-        allowed = self._declared_headers()
+        declared, _ = self._declared_headers()
 
         clean: dict[str, str] = {}
         for key, value in (supplied or {}).items():
             if value is None or not isinstance(key, str):
                 continue
-            # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to
-            # any server, and casefold() closes the non-ASCII folding holes lower() leaves.
             name = key.strip()
-            folded = name.casefold()
-            if folded not in allowed or folded in _SDK_OWNED_HEADERS:
-                logger.warning("Dropping header %r from a tool call: no served schema declares it", name)
+            reason = self._header_refusal(name, declared)
+            if reason:
+                logger.warning("Dropping header %r from a tool call: %s", name, reason)
                 continue
-            # Defence in depth on a declared header's model-supplied value. fullmatch,
-            # not match: `$` also matches just before a trailing newline, so `match` let
-            # "value\n" — the one character class this rejects — straight through.
-            if not _HEADER_NAME_PATTERN.fullmatch(name) or not _HEADER_VALUE_PATTERN.fullmatch(str(value)):
+            if not self._is_well_formed_header(name, value):
                 logger.warning("Dropping malformed header %r from a tool call", name)
                 continue
             clean[name] = str(value)
+        return clean
+
+    def _sanitise_header_arguments(self, arguments: JsonDict) -> JsonDict:
+        """Filter the header arguments in a call; every other argument is kept unchanged.
+
+        A header argument is an entry of a nested ``headers`` object, or a top-level
+        ``headers_<name>``. Each is forwarded only if the served schema declares it in the
+        same form, and never if it is one the SDK sets itself.
+        """
+        _, declared_flat = self._declared_headers()
+        clean: JsonDict = {}
+        for key, value in arguments.items():
+            if key == "headers" and isinstance(value, dict):
+                clean[key] = self._sanitise_headers(value)
+                continue
+            if not key.startswith(_FLAT_HEADER_PREFIX):
+                clean[key] = value
+                continue
+            name = key[len(_FLAT_HEADER_PREFIX) :]
+            reason = self._header_refusal(name, declared_flat)
+            if reason:
+                logger.warning("Dropping header argument %r from a tool call: %s", key, reason)
+                continue
+            if value is None:
+                continue
+            if not self._is_well_formed_header(name, value):
+                logger.warning("Dropping malformed header argument %r from a tool call", key)
+                continue
+            clean[key] = str(value)
         return clean
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
@@ -695,9 +754,10 @@ class StackOneMcpTool(StackOneTool):
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
         """Call the tool over MCP ``tools/call``.
 
-        Arguments are sent as given; the server maps them onto the action. A ``headers``
-        object among them is filtered to the headers this tool's own schema declares, since
-        these arguments are model-controlled.
+        Arguments are sent as given; the server maps them onto the action. Header arguments
+        — the entries of a ``headers`` object and any ``headers_<name>`` — are the exception:
+        these arguments are model-controlled, so each is kept only if this tool's own schema
+        declares it, and never if it is Authorization, x-account-id or User-Agent.
 
         Returns:
             The tool's result as the server wrote it (see :func:`parse_tool_result`): for an
@@ -712,10 +772,8 @@ class StackOneMcpTool(StackOneTool):
         parsed = self._parse_arguments(arguments)
 
         # Without this a prompt-injected call could put its own Authorization or
-        # x-account-id in the `headers` object the server unpacks.
-        supplied_headers = parsed.get("headers")
-        if isinstance(supplied_headers, dict):
-            parsed = {**parsed, "headers": self._sanitise_headers(supplied_headers)}
+        # x-account-id in a header argument the server unpacks.
+        parsed = self._sanitise_header_arguments(parsed)
 
         try:
             json.dumps(parsed, ensure_ascii=False).encode("utf-8")

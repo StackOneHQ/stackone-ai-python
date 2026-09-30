@@ -1,5 +1,6 @@
 """Tests for tool calling functionality"""
 
+import logging
 from typing import Any
 
 import pytest
@@ -199,18 +200,33 @@ class TestMcpToolHeaderGuard:
         _mcp_tool().execute({"action_id": "a", "headers": {"X-Probe": value}})
         assert seen["arguments"]["headers"] == {}
 
-    def test_a_flat_declared_header_survives(self, seen):
+    def test_a_nested_declared_header_survives(self, seen):
         """The allowlist is the schema itself, so a future action needing a header
         works with no SDK release."""
-        tool = _mcp_tool({"headers_x-trace": {"type": "string"}})
-        tool.execute({"action_id": "a", "headers": {"X-Trace": "abc", "X-Other": "no"}})
-        assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
-
-    def test_a_nested_declared_header_survives(self, seen):
-        """With no param-style pin the server may serve headers nested under `headers`."""
         tool = _mcp_tool({"headers": {"type": "object", "properties": {"x-trace": {"type": "string"}}}})
         tool.execute({"headers": {"X-Trace": "abc", "X-Other": "no"}})
         assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
+
+    def test_a_flat_declaration_does_not_declare_a_nested_header(self, seen):
+        """Each form is declared on its own: `headers_x-trace` allows only the flat argument."""
+        tool = _mcp_tool({"headers_x-trace": {"type": "string"}})
+        tool.execute({"action_id": "a", "headers": {"X-Trace": "abc"}})
+        assert seen["arguments"] == {"action_id": "a", "headers": {}}
+
+    def test_an_open_headers_object_forwards_any_header_but_the_sdks(self, seen):
+        """`*_execute_action` serves `headers` with no `properties`, which declares every name."""
+        tool = _mcp_tool({"headers": {"type": "object"}})
+        tool.execute(
+            {
+                "headers": {
+                    "x-custom": "kept",
+                    "Authorization": "Bearer stolen",
+                    " X-Account-Id ": "victim-account",
+                    "user-agent": "spoofed",
+                }
+            }
+        )
+        assert seen["arguments"]["headers"] == {"x-custom": "kept"}
 
     @pytest.mark.parametrize("name", ["Authorization", "x-account-id", "User-Agent"])
     def test_sdk_owned_headers_are_refused_even_when_declared(self, seen, name):
@@ -219,7 +235,14 @@ class TestMcpToolHeaderGuard:
         assert seen["arguments"]["headers"] == {}
 
     def test_none_values_are_skipped(self, seen):
-        tool = _mcp_tool({"headers_x-present": {"type": "string"}, "headers_x-absent": {"type": "string"}})
+        tool = _mcp_tool(
+            {
+                "headers": {
+                    "type": "object",
+                    "properties": {"x-present": {"type": "string"}, "x-absent": {"type": "string"}},
+                }
+            }
+        )
         tool.execute({"headers": {"X-Present": "value", "X-Absent": None}})
         assert seen["arguments"]["headers"] == {"X-Present": "value"}
 
@@ -229,13 +252,54 @@ class TestMcpToolHeaderGuard:
         assert seen["arguments"] == {"headers": "not-an-object"}
 
     def test_the_request_is_scoped_to_the_tools_account(self, seen):
-        _mcp_tool().execute({"headers": {"x-account-id": "victim-account"}})
+        tool = _mcp_tool({"headers": {"type": "object"}, "headers_x-account-id": {"type": "string"}})
+        tool.execute({"headers": {"x-account-id": "victim"}, "headers_x-account-id": "victim"})
         assert seen["headers"]["x-account-id"] == "real-account"
+        assert seen["arguments"] == {"headers": {}}
 
     def test_no_account_sends_no_account_header(self, seen):
         """A tool built with no account scopes nothing; the server refuses such a call."""
         _mcp_tool(account_id=None).execute({})
         assert "x-account-id" not in seen["headers"]
+
+
+class TestFlatHeaderArguments:
+    """A top-level `headers_<name>` is a header argument too, and gets the same guard."""
+
+    @pytest.mark.parametrize("name", ["headers_x-account-id", "headers_Authorization", "headers_ user-agent"])
+    def test_sdk_owned_headers_are_refused_even_when_declared(self, seen, name, caplog):
+        tool = _mcp_tool({name: {"type": "string"}})
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tool.execute({name: "stolen", "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert "it is set by the SDK" in caplog.text
+
+    def test_an_undeclared_one_is_dropped(self, seen, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool({"headers": {"type": "object"}}).execute({"headers_foo": "bar", "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert "'headers_foo' from a tool call: it is not declared by the schema" in caplog.text
+
+    def test_a_declared_one_is_forwarded(self, seen):
+        _mcp_tool({"headers_Foo": {"type": "string"}}).execute({"headers_foo": "bar", "q": 1})
+        assert seen["arguments"] == {"headers_foo": "bar", "q": 1}
+
+    def test_a_declared_one_with_a_malformed_value_is_dropped(self, seen):
+        _mcp_tool({"headers_foo": {"type": "string"}}).execute({"headers_foo": "a\r\nInjected: 1"})
+        assert seen["arguments"] == {}
+
+    def test_non_header_arguments_are_untouched(self, seen):
+        """Only `headers` and `headers_<name>` are header arguments; bare lookalikes are not."""
+        arguments = {
+            "x-account-id": "not-a-header",
+            "authorization": "not-a-header",
+            "header_foo": 1,
+            "Headers_foo": 2,
+            "path": {"headers_x": "y"},
+            "query": {"limit": 5},
+        }
+        _mcp_tool().execute(arguments)
+        assert seen["arguments"] == arguments
 
 
 class TestDeclaredHeaderValuesAreStillValidated:
@@ -244,7 +308,9 @@ class TestDeclaredHeaderValuesAreStillValidated:
 
     @pytest.fixture
     def tool(self):
-        return _mcp_tool({"headers_x-trace": {"type": "string"}}, account_id="acct")
+        return _mcp_tool(
+            {"headers": {"type": "object", "properties": {"x-trace": {"type": "string"}}}}, account_id="acct"
+        )
 
     @pytest.mark.parametrize("value", ["trailing\n", "a\r\nInjected: 1", "bad\rvalue"])
     def test_crlf_in_a_declared_header_is_dropped(self, tool, value):
@@ -253,6 +319,12 @@ class TestDeclaredHeaderValuesAreStillValidated:
 
     def test_a_clean_declared_header_survives(self, tool):
         assert tool._sanitise_headers({"X-Trace": "abc-123"}) == {"X-Trace": "abc-123"}
+
+    def test_the_warning_says_why_a_header_was_dropped(self, tool, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tool._sanitise_headers({"X-Other": "a", "Authorization": "b"})
+        assert "'X-Other' from a tool call: it is not declared by the schema" in caplog.text
+        assert "'Authorization' from a tool call: it is set by the SDK" in caplog.text
 
 
 @pytest.mark.parametrize("value", ["half an emoji \ud83d", {"a", "set"}, b"bytes"])
