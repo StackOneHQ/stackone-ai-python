@@ -218,9 +218,12 @@ class TestExecuteSessionId:
         )
 
         [call] = _execute_calls(mcp_mock_server)
-        assert call["arguments"]["action_id"] == "mock_list_items"
-        assert call["arguments"]["headers"] == {}
-        assert call["arguments"]["session_id"] == MOCK_SESSION_ID
+        # Exact items, in order: the pinned keys replace the model's and move to the end.
+        assert list(call["arguments"].items()) == [
+            ("headers", {}),
+            ("session_id", MOCK_SESSION_ID),
+            ("action_id", "mock_list_items"),
+        ]
 
     @pytest.mark.parametrize("bad", ["", 42])
     def test_rejects_a_non_string_or_empty_session_id(self, bad):

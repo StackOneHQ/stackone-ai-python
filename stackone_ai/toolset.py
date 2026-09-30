@@ -457,12 +457,15 @@ class StackOneToolSet:
                     finalists[0].name,
                 )
             tool = finalists[0]
-            # action_id LAST. Spreading arguments over it let a model-supplied
-            # "action_id" silently replace the action the caller pinned — the exact
-            # thing a host app pins it for. session_id only when given: the served schema
-            # makes it an optional string, so an absent key is valid and a null is not.
+            # action_id LAST, removed first so it is last in key order too, as in Node.
+            # Spreading arguments over it let a model-supplied "action_id" silently replace
+            # the action the caller pinned — the exact thing a host app pins it for.
+            # session_id only when given: the served schema makes it an optional string, so
+            # an absent key is valid and a null is not.
             call_arguments: JsonDict = dict(arguments or {})
+            call_arguments.pop("action_id", None)
             if session_id is not None:
+                call_arguments.pop("session_id", None)
                 call_arguments["session_id"] = session_id
             call_arguments["action_id"] = action_id
             # Returned as the server wrote it, the same shape tool.execute() returns.
