@@ -33,7 +33,7 @@ packages = ["stackone_ai"]
 # The sdist carried the whole dev tree — uv.lock, pnpm-lock.yaml, CLAUDE.md, .github/
 # and the TypeScript mocks. A consumer building from source needs none of it.
 [tool.hatch.build.targets.sdist]
-include = ["stackone_ai", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
+include = ["stackone_ai", "README.md", "LICENSE", "CHANGELOG.md", "MIGRATION.md", "pyproject.toml"]
 
 # Per-framework adapters. Each is imported lazily inside the method that needs
 # it, so installing the SDK does not drag in a framework you do not use.

@@ -9,6 +9,9 @@
 
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
+> **Upgrading from 2.x?** 3.0 has breaking changes. See the
+> [migration guide](https://github.com/StackOneHQ/stackone-ai-python/blob/main/MIGRATION.md).
+
 ## Features
 
 - **Search and execute**: find an action in natural language and run it, so a
