@@ -282,9 +282,17 @@ class TestFlatHeaderArguments:
         assert seen["arguments"] == {"q": 1}
         assert "'headers_foo' from a tool call: it is not declared by the schema" in caplog.text
 
-    def test_a_declared_one_is_forwarded(self, seen):
+    def test_a_declared_one_is_forwarded_as_given(self, seen):
+        """A declared flat header is an ordinary top-level argument: its value is not stringified."""
+        _mcp_tool({"headers_foo": {"type": "string"}, "headers_n": {"type": "integer"}}).execute(
+            {"headers_foo": "bar", "headers_n": 7, "q": 1}
+        )
+        assert seen["arguments"] == {"headers_foo": "bar", "headers_n": 7, "q": 1}
+
+    def test_it_is_declared_only_under_its_exact_key(self, seen):
+        """Matched as the schema property it is, as in Node: `headers_Foo` does not declare `headers_foo`."""
         _mcp_tool({"headers_Foo": {"type": "string"}}).execute({"headers_foo": "bar", "q": 1})
-        assert seen["arguments"] == {"headers_foo": "bar", "q": 1}
+        assert seen["arguments"] == {"q": 1}
 
     def test_a_declared_one_with_a_malformed_value_is_dropped(self, seen):
         _mcp_tool({"headers_foo": {"type": "string"}}).execute({"headers_foo": "a\r\nInjected: 1"})

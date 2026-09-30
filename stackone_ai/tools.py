@@ -436,17 +436,14 @@ class StackOneTool(BaseModel):
     def _declared_headers(self) -> tuple[set[str] | None, set[str]]:
         """The header names this tool's served schema declares, casefolded.
 
-        Returns ``(nested, flat)``: the names under a nested ``headers`` object, and the
-        ``<name>`` of each flat ``headers_<name>`` property. ``nested`` is ``None`` when the
-        ``headers`` object is open — an object schema with no ``properties``, as
-        ``*_execute_action`` serves it — which declares every name.
+        Returns ``(nested, flat)``: the names under a nested ``headers`` object, casefolded,
+        and each flat ``headers_<name>`` property exactly as served — a flat header is a
+        top-level argument, so it is declared only under its own key, as in Node.
+        ``nested`` is ``None`` when the ``headers`` object is open — an object schema with
+        no ``properties``, as ``*_execute_action`` serves it — which declares every name.
         """
         properties = self.parameters.properties or {}
-        flat = {
-            prop[len(_FLAT_HEADER_PREFIX) :].casefold()
-            for prop in properties
-            if prop.startswith(_FLAT_HEADER_PREFIX)
-        }
+        flat = {prop for prop in properties if prop.startswith(_FLAT_HEADER_PREFIX)}
         nested: set[str] | None = set()
         schema = properties.get("headers")
         if isinstance(schema, dict):
@@ -457,17 +454,13 @@ class StackOneTool(BaseModel):
         return nested, flat
 
     @staticmethod
-    def _header_refusal(name: str, declared: set[str] | None) -> str | None:
-        """Why a header argument may not be forwarded, or ``None`` if it may.
-
-        ``declared`` is ``None`` for an open ``headers`` object, which declares every name.
-        """
+    def _header_refusal(name: str, declared: bool) -> str | None:
+        """Why a header argument may not be forwarded, or ``None`` if it may."""
         # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to any
         # server, and casefold() closes the non-ASCII folding holes lower() leaves.
-        folded = name.strip().casefold()
-        if folded in _SDK_OWNED_HEADERS:
+        if name.strip().casefold() in _SDK_OWNED_HEADERS:
             return "it is set by the SDK"
-        if declared is not None and folded not in declared:
+        if not declared:
             return "it is not declared by the schema"
         return None
 
@@ -498,7 +491,7 @@ class StackOneTool(BaseModel):
             if value is None or not isinstance(key, str):
                 continue
             name = key.strip()
-            reason = self._header_refusal(name, declared)
+            reason = self._header_refusal(name, declared is None or name.casefold() in declared)
             if reason:
                 logger.warning("Dropping header %r from a tool call: %s", name, reason)
                 continue
@@ -513,7 +506,9 @@ class StackOneTool(BaseModel):
 
         A header argument is an entry of a nested ``headers`` object, or a top-level
         ``headers_<name>``. Each is forwarded only if the served schema declares it in the
-        same form, and never if it is one the SDK sets itself.
+        same form, and never if it is one the SDK sets itself. A declared ``headers_<name>``
+        keeps its value as given, as every other top-level argument does; nested entries
+        are stringified.
         """
         _, declared_flat = self._declared_headers()
         clean: JsonDict = {}
@@ -525,7 +520,7 @@ class StackOneTool(BaseModel):
                 clean[key] = value
                 continue
             name = key[len(_FLAT_HEADER_PREFIX) :]
-            reason = self._header_refusal(name, declared_flat)
+            reason = self._header_refusal(name, key in declared_flat)
             if reason:
                 logger.warning("Dropping header argument %r from a tool call: %s", key, reason)
                 continue
@@ -534,7 +529,7 @@ class StackOneTool(BaseModel):
             if not self._is_well_formed_header(name, value):
                 logger.warning("Dropping malformed header argument %r from a tool call", key)
                 continue
-            clean[key] = str(value)
+            clean[key] = value
         return clean
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
