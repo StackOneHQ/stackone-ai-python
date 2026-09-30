@@ -1,10 +1,13 @@
 """StackOne AI SDK"""
 
-from stackone_ai.tools import StackOneTool, Tools
+from stackone_ai.tools import StackOneMcpTool, StackOneTool, Tools
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import (
     ExecuteConfig,
     ExecuteToolsConfig,
+    FeedbackCategory,
+    FeedbackRating,
+    FeedbackSource,
     StackOneAPIError,
     StackOneError,
     ToolMode,
@@ -17,11 +20,15 @@ from stackone_ai.types import (
 __all__ = [
     "StackOneToolSet",
     "StackOneTool",
+    "StackOneMcpTool",
     "Tools",
     "ToolMode",
     "ToolParameters",
     "ExecuteConfig",
     "ExecuteToolsConfig",
+    "FeedbackRating",
+    "FeedbackCategory",
+    "FeedbackSource",
     "StackOneError",
     "StackOneAPIError",
     "ToolsetError",

@@ -328,6 +328,21 @@ class TestSubmitFeedback:
         assert listed == [("zeta", "https://api.stackone.com/mcp?tool-mode=search_execute")]
         assert called == ["zeta"]
 
+    def test_accepts_any_sequence_of_tool_names(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ("a", "b"))
+
+        [call] = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert call["arguments"]["tool_names"] == ["a", "b"]
+
+    def test_the_feedback_types_are_exported(self):
+        import stackone_ai
+
+        for name in ("FeedbackRating", "FeedbackCategory", "FeedbackSource", "StackOneMcpTool"):
+            assert name in stackone_ai.__all__
+            assert hasattr(stackone_ai, name)
+
     def test_rejects_a_bare_string_of_tool_names(self):
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         with pytest.raises(ToolsetConfigError, match="Did you mean"):

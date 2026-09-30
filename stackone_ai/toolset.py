@@ -8,6 +8,7 @@ import fnmatch
 import logging
 import os
 import threading
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -474,7 +475,7 @@ class StackOneToolSet:
     def submit_feedback(
         self,
         rating: FeedbackRating,
-        tool_names: list[str],
+        tool_names: Sequence[str],
         *,
         feedback: str | None = None,
         category: FeedbackCategory | None = None,
