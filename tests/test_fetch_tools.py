@@ -568,20 +568,31 @@ class TestFetchMcpToolsInternal:
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
         # Create mock streamable client
+        seen_clients: list[httpx.AsyncClient] = []
+
         @asynccontextmanager
-        async def mock_streamable_client(endpoint, headers, **_kwargs: object):
+        async def mock_streamable_client(endpoint, *, http_client, **_kwargs: object):
+            seen_clients.append(http_client)
             yield (MagicMock(), MagicMock(), MagicMock())
 
         # Patch at the module where imports happen
         with (
             patch(
-                "mcp.client.streamable_http.streamablehttp_client",
+                "mcp.client.streamable_http.streamable_http_client",
                 side_effect=mock_streamable_client,
             ),
             patch("mcp.client.session.ClientSession", return_value=mock_session),
             patch("mcp.types.Implementation", MagicMock()),
         ):
-            result = fetch_mcp_tools("https://api.example.com/mcp", {"Authorization": "Basic test"})
+            result = fetch_mcp_tools(
+                "https://api.example.com/mcp", {"Authorization": "Basic test"}, timeout=7
+            )
+
+            # The caller's headers and timeout reach the HTTP client, on every leg.
+            [client] = seen_clients
+            assert client.headers["Authorization"] == "Basic test"
+            assert client.timeout == httpx.Timeout(7)
+            assert client.follow_redirects is True
 
             assert len(result) == 1
             assert result[0].name == "test_tool"
@@ -618,12 +629,12 @@ class TestFetchMcpToolsInternal:
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
         @asynccontextmanager
-        async def mock_streamable_client(endpoint, headers, **_kwargs: object):
+        async def mock_streamable_client(endpoint, **_kwargs: object):
             yield (MagicMock(), MagicMock(), MagicMock())
 
         with (
             patch(
-                "mcp.client.streamable_http.streamablehttp_client",
+                "mcp.client.streamable_http.streamable_http_client",
                 side_effect=mock_streamable_client,
             ),
             patch("mcp.client.session.ClientSession", return_value=mock_session),

@@ -15,7 +15,8 @@ import logging
 import re
 import threading
 from collections import Counter
-from collections.abc import Coroutine, Iterable, Sequence
+from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, TypeVar
@@ -101,15 +102,28 @@ def build_auth_header(api_key: str) -> str:
     return f"Basic {token}"
 
 
-def _mcp_transport(client: Any, endpoint: str, headers: dict[str, str], timeout: float) -> Any:
+@asynccontextmanager
+async def _mcp_transport(
+    endpoint: str, headers: dict[str, str], timeout: float
+) -> AsyncIterator[tuple[Any, Any, Any]]:
     """Open the streamable-HTTP transport with the caller's timeout on every leg.
 
     The client's own defaults are a 30s connect and a 300s SSE read, and neither was
     overridden — so ``StackOneToolSet(timeout=2)`` against a host that accepts and never
     answers hung for five minutes. The execution path honoured ``timeout``; the MCP
     path, which search() and execute() and every listing use, did not.
+
+    The HTTP client is built here with the settings the ``mcp`` package's own factory
+    uses (redirects followed), because ``streamable_http_client`` takes a client rather
+    than headers and timeouts.
     """
-    return client(endpoint, headers=headers, timeout=timeout, sse_read_timeout=timeout)
+    from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
+
+    async with httpx.AsyncClient(
+        headers=headers, timeout=httpx.Timeout(timeout), follow_redirects=True
+    ) as client:
+        async with streamable_http_client(endpoint, http_client=client) as streams:
+            yield streams
 
 
 def fetch_mcp_tools(
@@ -122,7 +136,6 @@ def fetch_mcp_tools(
     try:
         from mcp import types as mcp_types  # ty: ignore[unresolved-import]
         from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
-        from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ToolsetConfigError(
             "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
@@ -133,7 +146,7 @@ def fetch_mcp_tools(
             return await _list_within_deadline()
 
     async def _list_within_deadline() -> list[McpToolDefinition]:
-        async with _mcp_transport(streamablehttp_client, endpoint, headers, timeout) as (
+        async with _mcp_transport(endpoint, headers, timeout) as (
             read_stream,
             write_stream,
             _,
@@ -312,14 +325,13 @@ def call_mcp_tool(
     """
     from mcp import types as mcp_types  # ty: ignore[unresolved-import]
     from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
-    from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
 
     async def _call() -> JsonDict:
         with anyio.fail_after(timeout):
             return await _call_within_deadline()
 
     async def _call_within_deadline() -> JsonDict:
-        async with _mcp_transport(streamablehttp_client, endpoint, headers, timeout) as (
+        async with _mcp_transport(endpoint, headers, timeout) as (
             read_stream,
             write_stream,
             _,
