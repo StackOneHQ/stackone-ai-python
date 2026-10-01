@@ -211,10 +211,9 @@ via release-please after a merge to main, never from a developer machine.
 toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
 
 hits = toolset.search("list recent comments", top_k=3)
-toolset.execute(
-    "linear_list_comments", {"body": {"variables": {"first": 25}}}, session_id=hits[0].get("session_id")
-)
-toolset.submit_feedback("positive", ["linear_list_comments"], session_id=hits[0].get("session_id"))
+session_id = hits[0].get("session_id") if hits else None
+toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}}, session_id=session_id)
+toolset.submit_feedback("positive", ["linear_list_comments"], session_id=session_id)
 
 tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ```
@@ -224,8 +223,8 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
   character, so `["*", "!*_delete_*"]` matches every tool.
 - `top_k` is per connector, and must be 1..50.
 - `stackone_submit_feedback` is one global tool the server lists with every
-  account's catalog, in both modes, when feedback is enabled. It is always a
-  `StackOneMcpTool`, like every tool, is deduped to one across accounts, and is never
+  account's catalog, in both modes, when feedback is enabled. Like every tool it is a
+  `StackOneMcpTool`; unlike the others it is deduped to one across accounts. It is never
   invented client-side — when the server omits it, `submit_feedback()` raises.
   `submit_feedback()` lists one account in `search_execute` mode and makes one
   `tools/call`, through the first account (as given, else in `GET /accounts` order).

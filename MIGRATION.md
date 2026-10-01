@@ -64,7 +64,7 @@ These names have been removed and have no direct replacement:
 | `stackone_ai.integrations` | LangGraph's own APIs. See [LangGraph helpers](#langgraph-helpers) |
 | `ToolDefinition` | `StackOneTool` fields: `name`, `description`, `parameters` |
 | `ParameterLocation`, `validate_method` | Nothing. `ExecuteConfig` no longer has a method or parameter locations |
-| `StackOneTool.connector`, `Tools.get_connectors()` | `tool.name.split("_")[0]` |
+| `StackOneTool.connector`, `Tools.get_connectors()` | `fetch_tools(providers=[...])` to filter by provider. A provider name can contain `_` (`browser_linkedin`), so do not split the tool name |
 
 Some names were public on `main` for a while before 3.0 but never in a release:
 `StackOneRpcTool`, `MCP_PARAM_STYLE`, `is_json_content_type` and
@@ -99,8 +99,11 @@ result = toolset.execute(
 `toolset.execute()` has a new signature. It used to take a meta tool name, such as
 `"tool_execute"`, with arguments as a JSON string or a dict. It now takes
 `(action_id, arguments=None, *, account_ids=None, session_id=None)`, and `arguments`
-must be a dict. It raises instead of returning `{"error": ...}`: `ToolsetLoadError` when
-no linked connector matches the action, and `ToolsetConfigError` for bad arguments.
+must be a dict. It raises instead of returning `{"error": ...}`: `ToolsetConfigError`
+before any request when `action_id`, `arguments` or `session_id` is malformed,
+`ValueError` when the arguments cannot be encoded as JSON, `ToolsetLoadError` when no
+linked connector matches the action, and `StackOneAPIError` when the action fails,
+including when the server rejects the arguments.
 
 To give a model the search and execute tools, set the tool mode on the toolset.
 `openai()`, `langchain()` and `pydantic_ai()` no longer take `mode=`.

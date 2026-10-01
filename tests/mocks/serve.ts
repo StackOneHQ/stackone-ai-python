@@ -37,9 +37,8 @@ interface RecordedRequest {
   arguments?: unknown;
 }
 
-// What actually reached the wire. A handler only sees arguments after zod has parsed
-// them, which strips unknown keys and hides whether a key was sent as null — the very
-// things a test of the SDK's wire shape needs to see.
+// What actually reached the wire: each JSON-RPC payload exactly as the SDK serialised it,
+// so a test of the SDK's wire shape sees nulls and key order as sent.
 const recorded: RecordedRequest[] = [];
 
 // Create the MCP app with all test tool configurations

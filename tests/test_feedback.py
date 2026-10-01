@@ -1,8 +1,7 @@
 """The feedback tool and session_id linking, against the MCP mock server.
 
-Assertions about the wire read the mock's request log rather than a handler's view of
-the call: the handler only sees arguments after zod has parsed them, which strips
-unknown keys and hides a key sent as null.
+Assertions about the wire read the mock's request log, which records the JSON-RPC
+payload exactly as the SDK serialised it, so a key sent as null or out of order shows.
 """
 
 from __future__ import annotations

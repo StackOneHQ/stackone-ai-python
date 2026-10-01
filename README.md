@@ -69,7 +69,8 @@ toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("sess
 `similarity_score`, so a catalog of hundreds of tools never has to fit in a
 model's context. This is the recommended way to use the SDK.
 
-Each hit carries the `session_id` of the search that found it. Passing it to
+Each hit carries the `session_id` of the search that found it, when the server
+issued one, so read it with `hit.get("session_id")`. Passing it to
 `execute()` and `submit_feedback()` links the calls server-side; leaving it out
 is fine. `submit_feedback()` raises `ToolsetLoadError` when feedback is not
 enabled for your project. When it is, `fetch_tools()` also returns a single
@@ -226,8 +227,10 @@ tools = toolset.fetch_tools(providers=["linear"])
 
 The SDK exposes the same actions through two surfaces. Both execute over MCP
 `tools/call`, on the endpoint and with the account that listed the tool, and send
-your arguments exactly as given. They take **different argument shapes**, because
-each mirrors the schema the server served for it. Both return the server's result exactly
+your arguments as given, except header arguments: each is forwarded only if the tool's
+schema declares it, and `Authorization`, `x-account-id` and `User-Agent` never are (see
+[the migration guide](MIGRATION.md#tool-arguments-and-headers)). They take **different
+argument shapes**, because each mirrors the schema the server served for it. Both return the server's result exactly
 as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.
 
 | | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
