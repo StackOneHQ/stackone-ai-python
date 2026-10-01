@@ -65,7 +65,9 @@ _SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
 _FLAT_HEADER_PREFIX = "headers_"
 
 # How a 429 is retried, on every request the SDK makes: up to three more attempts, each
-# after the server's Retry-After (capped) or else an exponential backoff with jitter.
+# after the server's Retry-After (capped) or else an exponential backoff with jitter. A
+# wait that would not end before the request's deadline is not started: the 429 is
+# returned at once instead.
 RATE_LIMIT_MAX_RETRIES = 3
 RATE_LIMIT_BACKOFF_SECONDS = (1.0, 2.0, 4.0)
 RATE_LIMIT_JITTER = (0.5, 1.0)
@@ -74,6 +76,8 @@ RATE_LIMIT_MAX_DELAY_SECONDS = 30.0
 # Looked up at call time, so tests can replace them and not actually wait.
 _sleep = time.sleep
 _async_sleep = anyio.sleep
+_clock = time.monotonic
+_async_clock = anyio.current_time
 
 
 @dataclass
@@ -177,6 +181,28 @@ def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) ->
     )
 
 
+def _outlasts_deadline(request: httpx.Request, attempt: int, delay: float, remaining: float) -> bool:
+    """Whether waiting ``delay`` would not end before the deadline, logging when so.
+
+    Such a wait is not started. Sleeping into the deadline would turn the 429 into a
+    timeout, which a multi-account call skips like any per-account failure, and hand back
+    a partial catalog that looks complete. The 429 itself ends the call.
+    """
+    if delay < remaining:
+        return False
+    logger.warning(
+        "%s %s was rate limited (429) on attempt %d of %d; not retrying, because waiting "
+        "%.2fs would outlast the request's deadline (%.2fs left)",
+        request.method,
+        request.url,
+        attempt,
+        RATE_LIMIT_MAX_RETRIES + 1,
+        delay,
+        max(remaining, 0.0),
+    )
+    return True
+
+
 class RateLimitRetryingClient(httpx.Client):
     """An ``httpx.Client`` that retries a 429 before the caller ever sees it.
 
@@ -184,13 +210,23 @@ class RateLimitRetryingClient(httpx.Client):
     makes httpx ignore the proxy environment variables, which would quietly break the SDK
     behind a corporate proxy. The last 429 is returned as it came, so the caller reports
     the server's body.
+
+    ``retry_within`` is the deadline in seconds, measured from the first attempt: a retry
+    whose wait would not end before it is not made, and the 429 is returned instead.
     """
 
+    def __init__(self, *args: Any, retry_within: float | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._retry_within = retry_within
+
     def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        deadline = _clock() + self._retry_within if self._retry_within is not None else None
         attempt = 1
         response = super().send(request, **kwargs)
         while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
             delay = _rate_limit_delay(response, attempt)
+            if deadline is not None and _outlasts_deadline(request, attempt, delay, deadline - _clock()):
+                break
             # Read before closing, so the connection goes back to the pool.
             response.read()
             response.close()
@@ -206,6 +242,9 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
 
     The MCP client streams its responses; a discarded 429 is read and closed here, and
     the final one still passes through the response hooks, so its body is buffered.
+
+    The deadline is the enclosing cancel scope's: the ``anyio.fail_after(timeout)`` that
+    bounds the whole MCP exchange. A retry whose wait would not end before it is not made.
     """
 
     async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
@@ -213,6 +252,9 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
         response = await super().send(request, **kwargs)
         while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
             delay = _rate_limit_delay(response, attempt)
+            remaining = anyio.current_effective_deadline() - _async_clock()
+            if _outlasts_deadline(request, attempt, delay, remaining):
+                break
             await response.aread()
             await response.aclose()
             _log_rate_limit_retry(request, attempt, delay)

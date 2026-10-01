@@ -248,20 +248,20 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 				400,
 			);
 		}
-		// `ratelimit-<all|list|call>-<n|always>-<tag>` answers 429 (`Retry-After: 0`) to the
-		// first n requests for that exact id, or every one, and then serves the default catalog.
-		// `all` counts every request, `list` only tools/list and `call` only tools/call; the tag
-		// keeps tests' counters apart.
-		const rateLimit = /^ratelimit-(all|list|call)-(\d+|always)-/.exec(accountId);
+		// `ratelimit-<all|list|call>-<n|always>-[after<s>-]<tag>` answers 429 (`Retry-After: 0`,
+		// or `<s>`) to the first n requests for that exact id, or every one, and then serves the
+		// default catalog. `all` counts every request, `list` only tools/list and `call` only
+		// tools/call; the tag keeps tests' counters apart.
+		const rateLimit = /^ratelimit-(all|list|call)-(\d+|always)-(?:after(\d+)-)?/.exec(accountId);
 		if (rateLimit) {
-			const [, scope, times] = rateLimit;
+			const [, scope, times, retryAfter = '0'] = rateLimit;
 			const method = { list: 'tools/list', call: 'tools/call' }[scope];
 			if (!method || (await hasMethod(c.req.raw, method))) {
 				const seen = (rateLimitCounts.get(accountId) ?? 0) + 1;
 				rateLimitCounts.set(accountId, seen);
 				if (times === 'always' || seen <= Number(times)) {
 					return c.json({ statusCode: 429, message: 'Too many requests' }, 429, {
-						'Retry-After': '0',
+						'Retry-After': retryAfter,
 					});
 				}
 			}

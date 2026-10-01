@@ -32,14 +32,24 @@ URL = "https://api.example.com/mcp"
 
 @pytest.fixture
 def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Record every retry delay, sync or async, instead of waiting it out."""
+    """Record every retry delay, sync or async, instead of waiting it out.
+
+    Each recorded delay still moves the retry clocks on, so a deadline sees the time a
+    real wait would have taken.
+    """
     recorded: list[float] = []
+    real_clock, real_async_clock = tools_module._clock, tools_module._async_clock
+
+    def fake_sleep(delay: float) -> None:
+        recorded.append(delay)
 
     async def fake_async_sleep(delay: float) -> None:
         recorded.append(delay)
 
-    monkeypatch.setattr(tools_module, "_sleep", recorded.append)
+    monkeypatch.setattr(tools_module, "_sleep", fake_sleep)
     monkeypatch.setattr(tools_module, "_async_sleep", fake_async_sleep)
+    monkeypatch.setattr(tools_module, "_clock", lambda: real_clock() + sum(recorded))
+    monkeypatch.setattr(tools_module, "_async_clock", lambda: real_async_clock() + sum(recorded))
     return recorded
 
 
@@ -230,6 +240,24 @@ class TestFetchAccounts:
         assert len(seen) == 1
         assert sleeps == []
 
+    def test_a_wait_longer_than_the_timeout_is_not_started(self, sleeps: list[float], accounts_api: Any):
+        """Retry-After 3 against timeout=1 raises the 429 at once, rather than after 9s."""
+        seen = accounts_api(_429("3"))
+        with pytest.raises(StackOneAPIError) as excinfo:
+            StackOneToolSet(api_key="k", timeout=1).fetch_accounts()
+        assert excinfo.value.status_code == 429
+        assert len(seen) == 1
+        assert sleeps == []
+
+    def test_the_timeout_counts_from_the_first_attempt(self, sleeps: list[float], accounts_api: Any):
+        # 2s fits in 5s; a second 2s would end at 4s and fits; a third would end at 6s.
+        seen = accounts_api(_429("2"))
+        with pytest.raises(StackOneAPIError) as excinfo:
+            StackOneToolSet(api_key="k", timeout=5).fetch_accounts()
+        assert excinfo.value.status_code == 429
+        assert len(seen) == 3
+        assert sleeps == [2.0, 2.0]
+
 
 class TestMcpAgainstMockServer:
     """The mock answers 429 for `ratelimit-<all|call>-<n|always>-<tag>` account ids."""
@@ -311,6 +339,32 @@ class TestMcpAgainstMockServer:
         with pytest.raises(StackOneAPIError) as excinfo:
             toolset.fetch_tools()
         assert excinfo.value.status_code == 429
+
+    def test_a_wait_past_the_deadline_raises_the_429(self, mcp_mock_server: str, sleeps: list[float]):
+        """Retry-After 2 against timeout=3: one wait fits, a second would not.
+
+        Sleeping into the deadline turned the 429 into a timeout, which was skipped like
+        any per-account failure, and the call returned acc1's tools alone.
+        """
+        account = "ratelimit-all-always-after2-deadline"
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, timeout=3)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.fetch_tools(account_ids=["acc1", account])
+        assert excinfo.value.status_code == 429
+        assert sleeps == [2.0]
+
+    def test_a_wait_longer_than_the_timeout_is_not_started(self, mcp_mock_server: str, sleeps: list[float]):
+        account = "ratelimit-call-always-after5-deadline"
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, timeout=3)
+        tool = toolset.fetch_tools(account_ids=[account]).get_tool("default_tool_1")
+        assert tool is not None
+
+        with pytest.raises(StackOneAPIError) as excinfo:
+            tool.execute({"fields": "id"})
+
+        assert excinfo.value.status_code == 429
+        assert len(_recorded(mcp_mock_server, account, "tools/call")) == 1
+        assert sleeps == []
 
     def test_a_rate_limited_connector_aborts_search(self, mcp_mock_server: str, sleeps: list[float]):
         # Listing succeeds for both; only the rate-limited account's search_actions call 429s.

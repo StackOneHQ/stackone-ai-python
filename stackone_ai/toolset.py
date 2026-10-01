@@ -202,7 +202,8 @@ class StackOneToolSet:
                 per-account failures skip that account with a warning.
 
         A 429 is retried up to three times, after the server's ``Retry-After`` (capped at
-        30 seconds) or else a 1s, 2s, 4s backoff with jitter.
+        30 seconds) or else a 1s, 2s, 4s backoff with jitter. A wait that would not end
+        within ``timeout`` is not started, and the 429 is raised instead.
 
         Examples:
             tools = toolset.fetch_tools(account_ids=['123', '456'])
@@ -654,7 +655,7 @@ class StackOneToolSet:
         """
         url = f"{self.base_url.rstrip('/')}/accounts"
         try:
-            with RateLimitRetryingClient(timeout=self._timeout) as client:
+            with RateLimitRetryingClient(timeout=self._timeout, retry_within=self._timeout) as client:
                 response = client.get(
                     url,
                     headers={

@@ -264,9 +264,12 @@ Every request the SDK makes (`GET /accounts` and each MCP request, `tools/call`
 included) retries an HTTP 429 up to three times. It waits for the response's
 `Retry-After`, in seconds or as an HTTP date and capped at 30 seconds, or without one
 for 1s, 2s and 4s, each scaled by a random factor between 0.5 and 1. Each retry logs a
-warning. No other status is retried.
+warning. No other status is retried. A wait that would not end before the request's
+`timeout` is not started: an MCP request's deadline is its whole exchange, and
+`GET /accounts`'s is measured from its first attempt.
 
-A 429 that is still there after the fourth attempt raises `StackOneAPIError` with
+A 429 that is still there after the fourth attempt, or that there is no time left to
+wait out, raises `StackOneAPIError` with
 `status_code` 429 and the server's body. That ends the whole call: when `fetch_tools()`
 or `search()` spans several accounts, one rate-limited account raises rather than being
 skipped, so you never get a partial catalog that looks complete. Other per-account
