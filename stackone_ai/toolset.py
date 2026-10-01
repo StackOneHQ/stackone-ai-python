@@ -85,8 +85,13 @@ class StackOneToolSet:
                 keeping the catalog small enough for a model's context.
 
         Raises:
-            ToolsetConfigError: If no API key is provided or found in environment
+            ToolsetConfigError: If no API key is provided or found in environment, or
+                ``account_id`` is an empty string
         """
+        # An empty account_id is usually an unset variable, and treating it as unset would
+        # silently widen every call to all active accounts.
+        if account_id == "":
+            raise ToolsetConfigError("account_id must not be an empty string")
         api_key_value = api_key or os.getenv("STACKONE_API_KEY")
         if not api_key_value:
             raise ToolsetConfigError(

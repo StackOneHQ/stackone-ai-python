@@ -305,6 +305,12 @@ def test_an_empty_account_id_is_rejected(use):
         use()
 
 
+def test_an_empty_constructor_account_id_is_rejected():
+    """Treated as unset, it would silently widen every call to all active accounts."""
+    with pytest.raises(ToolsetConfigError, match="account_id must not be an empty string"):
+        StackOneToolSet(api_key="k", account_id="")
+
+
 def test_filter_by_provider():
     """Test provider filtering"""
     toolset = StackOneToolSet(api_key="test_key")
