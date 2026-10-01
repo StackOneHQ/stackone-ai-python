@@ -209,6 +209,40 @@ def test_to_langchain_multiple_tools(mock_tool):
     assert set(langchain_tools[1].args_schema["properties"]) == set(second_tool.parameters.properties.keys())
 
 
+class TestToolParametersRequired:
+    """`required` is a declared field, so a hand-built tool's `required=[...]` type-checks."""
+
+    def test_it_defaults_to_none_and_is_left_out_of_a_dump(self):
+        parameters = ToolParameters(type="object", properties={})
+        assert parameters.required is None
+        assert "required" not in parameters.model_dump()
+
+    @pytest.mark.parametrize("served", [["b", "a"], None, "id", [1]])
+    def test_a_served_value_is_kept_verbatim_even_when_malformed(self, served):
+        parameters = ToolParameters(type="object", properties={}, required=served)
+        assert parameters.required == served
+        assert parameters.model_dump()["required"] == served
+
+    def test_the_migration_recipe_runs(self):
+        class GetEmployee(StackOneTool):
+            def __init__(self) -> None:
+                super().__init__(
+                    description="Get an employee",
+                    parameters=ToolParameters(
+                        type="object", properties={"id": {"type": "string"}}, required=["id"]
+                    ),
+                    _execute_config=ExecuteConfig(name="get_employee"),
+                )
+
+            def execute(self, arguments=None):
+                return {"id": dict(arguments or {})["id"]}
+
+        tool = GetEmployee()
+        assert tool.name == "get_employee"
+        assert tool.execute({"id": "e1"}) == {"id": "e1"}
+        assert tool.to_openai_function()["function"]["parameters"]["required"] == ["id"]
+
+
 class TestExecuteConfig:
     """ExecuteConfig carries only what an MCP call uses."""
 

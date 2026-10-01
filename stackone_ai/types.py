@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypeAlias, TypedDict
+from typing import Annotated, Any, Literal, TypeAlias, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    SerializerFunctionWrapHandler,
+    SkipValidation,
+    model_serializer,
+)
 
 JsonDict: TypeAlias = dict[str, Any]
 Headers: TypeAlias = dict[str, str]
@@ -133,3 +141,18 @@ class ToolParameters(BaseModel):
 
     type: str = Field(description="JSON Schema type")
     properties: JsonDict = Field(description="JSON Schema properties")
+    # Typed for callers building a tool by hand, but neither validated nor converted: a
+    # served `required` is kept exactly as sent, even when malformed, and the adapters
+    # drop what is not a list of names.
+    required: Annotated[SkipValidation[list[str] | None], PlainSerializer(lambda value: value)] = Field(
+        default=None, description="The names of the required properties, as served"
+    )
+
+    @model_serializer(mode="wrap")
+    def _dump_as_served(self, handler: SerializerFunctionWrapHandler) -> JsonDict:
+        # Omitted when it was never given, so a schema served without `required` dumps
+        # without one, as it did when `required` was only an extra field.
+        dumped = handler(self)
+        if "required" not in self.model_fields_set:
+            dumped.pop("required", None)
+        return dumped

@@ -296,16 +296,23 @@ tool = StackOneTool(
 
 # 3.0
 class GetEmployee(StackOneTool):
+    def __init__(self) -> None:
+        super().__init__(
+            description="Get an employee",
+            parameters=ToolParameters(type="object", properties={"id": {"type": "string"}}, required=["id"]),
+            _execute_config=ExecuteConfig(name="get_employee"),
+        )
+
     def execute(self, arguments=None):
         args = json.loads(arguments) if isinstance(arguments, str) else dict(arguments or {})
         return httpx.get(f"https://api.example.com/employees/{args['id']}").json()
 
-tool = GetEmployee(
-    description="Get an employee",
-    parameters=ToolParameters(type="object", properties={"id": {"type": "string"}}, required=["id"]),
-    _execute_config=ExecuteConfig(name="get_employee"),
-)
+tool = GetEmployee()
 ```
+
+Define `__init__` on the subclass, as above. `StackOneTool` is a pydantic model, so a
+type checker gives a subclass without its own `__init__` one built from the model's
+fields, which rejects `_execute_config` even though the call works at runtime.
 
 **`ExecuteConfig` keeps only `name`, `headers` and `timeout`**, and rejects any other
 field. Passing `method`, `url`, `body_type` or `parameter_locations` raises a pydantic
