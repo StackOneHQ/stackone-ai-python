@@ -254,16 +254,18 @@ class StackOneToolSet:
 
     @staticmethod
     def _validate_account_ids(account_ids: list[str]) -> list[str]:
-        """A copy of the account ids, refusing a bare string or an empty id.
+        """A copy of the account ids, refusing a bare string, a non-string id or an empty id.
 
-        An empty id would be sent with no ``x-account-id``, so it is rejected rather than
-        letting the server answer for an account nobody chose, as in Node.
+        An empty or ``None`` id would be sent with no ``x-account-id``, so it is rejected
+        rather than letting the server answer for an account nobody chose, as in Node.
         """
         if isinstance(account_ids, str):
             raise ToolsetConfigError(
                 f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
             )
         ids = list(account_ids)
+        if not all(isinstance(account_id, str) for account_id in ids):
+            raise ToolsetConfigError(f"account_ids must be a list of account id strings, got {ids!r}")
         if "" in ids:
             raise ToolsetConfigError("account_ids must not contain an empty account id")
         return ids

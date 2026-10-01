@@ -305,6 +305,23 @@ def test_an_empty_account_id_is_rejected(use):
         use()
 
 
+@pytest.mark.parametrize("bad", [None, 123, ["acc1"]])
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda bad: StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", bad]}),
+        lambda bad: StackOneToolSet(api_key="k").set_accounts([bad]),
+        lambda bad: StackOneToolSet(api_key="k").fetch_tools(account_ids=["acc1", bad]),
+        lambda bad: StackOneToolSet(api_key="k").submit_feedback("positive", ["t"], account_ids=[bad]),
+    ],
+    ids=["constructor", "set_accounts", "fetch_tools", "submit_feedback"],
+)
+def test_a_non_string_account_id_is_rejected(use, bad):
+    """None was accepted and sent no x-account-id at all, as in Node it is refused."""
+    with pytest.raises(ToolsetConfigError, match="account_ids must be a list of account id strings"):
+        use(bad)
+
+
 def test_an_empty_constructor_account_id_is_rejected():
     """Treated as unset, it would silently widen every call to all active accounts."""
     with pytest.raises(ToolsetConfigError, match="account_id must not be an empty string"):
