@@ -218,6 +218,10 @@ class StackOneToolSet:
         """
         try:
             mode = self._tool_mode if mode is _UNSET else mode
+            # Captured before account resolution, which may discover accounts: a
+            # clear_catalog_cache() landing mid-discovery must stop the catalog it
+            # resolves to from being cached too, not just the discovered list itself.
+            generation = self._cache_generation
             account_scope: list[str | None] = sorted(
                 dict.fromkeys(self._resolve_account_ids(account_ids)), key=lambda a: (a is None, a)
             )
@@ -230,7 +234,7 @@ class StackOneToolSet:
             with self._cache_lock:
                 cached = self._catalog_cache.get(cache_key)
             if cached is None:
-                cached = self._list_catalog(account_scope, mode)
+                cached = self._list_catalog(account_scope, mode, generation)
 
             all_tools = [
                 self._create_tool(tool_def, account, endpoint)
@@ -285,12 +289,17 @@ class StackOneToolSet:
             resolved = self._discover_account_ids()
         return list(resolved)
 
-    def _list_catalog(self, account_scope: list[str | None], mode: ToolMode | None) -> list[_Listing]:
+    def _list_catalog(
+        self, account_scope: list[str | None], mode: ToolMode | None, generation: int
+    ) -> list[_Listing]:
         """List every scoped account's catalog, tolerating accounts that fail.
 
         Except for a rate limit: a 429 that outlasts its retries is raised, not skipped.
+
+        ``generation`` is the cache generation as of the start of the call that resolved
+        ``account_scope``: a clear_catalog_cache() during account discovery must stop the
+        catalog this scope resolves to from being cached, same as the discovered list.
         """
-        generation = self._cache_generation
         # No param-style pin: arguments are sent verbatim and the server maps them with its
         # own reverse map, so the model sees whatever style the server serves.
         endpoint = f"{self.base_url.rstrip('/')}/mcp"

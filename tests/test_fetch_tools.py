@@ -931,6 +931,38 @@ class TestAccountDiscovery:
         assert toolset._discover_account_ids() == ["after"]
         assert toolset._discover_account_ids() == ["after"]
 
+    def test_a_catalog_resolved_before_a_mid_discovery_clear_is_not_cached(self, monkeypatch):
+        """The catalog for the pre-clear discovered account must not be cached under the new generation."""
+        toolset = StackOneToolSet(api_key="test-key")
+        account_responses = iter([["before"], ["after"]])
+
+        def fetch_accounts() -> list[dict[str, Any]]:
+            listed = next(account_responses)
+            if listed == ["before"]:
+                # The clear lands while this GET /accounts is still in flight.
+                toolset.clear_catalog_cache()
+            return [{"id": account, "provider": "p", "status": "active"} for account in listed]
+
+        monkeypatch.setattr(toolset, "fetch_accounts", fetch_accounts)
+
+        calls: list[str | None] = []
+
+        def fake_fetch(_endpoint: str, headers: dict[str, str], **_kwargs: object) -> list[McpToolDefinition]:
+            calls.append(headers.get("x-account-id"))
+            return []
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+
+        toolset.fetch_tools()  # discovers "before", races the clear
+        toolset.fetch_tools()  # discovers "after", caches it cleanly
+
+        calls.clear()
+        toolset.fetch_tools(account_ids=["before"])
+
+        # Must refetch: the catalog for "before" was resolved against a generation
+        # the clear had already moved past, so it must not have been cached.
+        assert calls == ["before"]
+
     def test_missing_account_header_is_rejected_by_the_server(self, mcp_mock_server: str):
         """Guards the mock itself: if it stops enforcing this, these tests go hollow."""
         import httpx
