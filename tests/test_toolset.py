@@ -199,6 +199,37 @@ class TestStackOneToolSetInit:
         toolset = StackOneToolSet(api_key="test_key", base_url="https://custom.api.com")
         assert toolset.base_url == "https://custom.api.com"
 
+    def test_base_url_argument_takes_precedence_over_env(self):
+        """The base_url argument wins over STACKONE_BASE_URL."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://env.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key", base_url="https://arg.api.com")
+            assert toolset.base_url == "https://arg.api.com"
+
+    def test_base_url_falls_back_to_env_var(self):
+        """STACKONE_BASE_URL is used when no base_url argument is given."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://env.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == "https://env.api.com"
+
+    def test_base_url_defaults_when_no_argument_or_env(self):
+        """Falls back to the default when neither is given."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("STACKONE_BASE_URL", None)
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == DEFAULT_BASE_URL
+
+    def test_base_url_empty_env_var_treated_as_unset(self):
+        """An empty STACKONE_BASE_URL falls back to the default, not a literal empty host."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": ""}):
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == DEFAULT_BASE_URL
+
+    def test_base_url_empty_argument_falls_back_to_env(self):
+        """An empty base_url argument is treated as unset, so the env var is used."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://env.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key", base_url="")
+            assert toolset.base_url == "https://env.api.com"
+
 
 class TestStackOneToolSetNormalizeSchemaProperties:
     """Test _normalize_schema_properties method."""

@@ -13,6 +13,7 @@ replacement.
 - [Search and execute](#search-and-execute)
 - [Results](#results)
 - [Tool arguments and headers](#tool-arguments-and-headers)
+- [Base URL](#base-url)
 - [Accounts](#accounts)
 - [Feedback](#feedback)
 - [Schemas given to a model](#schemas-given-to-a-model)
@@ -212,6 +213,13 @@ own headers on to the action, with the exception of those three:
 ```python
 toolset.execute("linear_list_comments", {"headers": {"x-request-id": "abc"}})
 ```
+
+## Base URL
+
+**`STACKONE_BASE_URL` is now read.** `base_url` still takes precedence when given;
+otherwise the SDK now falls back to `STACKONE_BASE_URL` before the default,
+`https://api.stackone.com`. An empty `base_url` argument or an empty
+`STACKONE_BASE_URL` is treated as not set, not as a literal empty host.
 
 ## Accounts
 

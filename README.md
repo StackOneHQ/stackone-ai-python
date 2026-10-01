@@ -275,6 +275,16 @@ or `search()` spans several accounts, one rate-limited account raises rather tha
 skipped, so you never get a partial catalog that looks complete. Other per-account
 failures are still logged and skipped.
 
+## Custom base URL
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet(base_url="https://api.example-dev.com")
+```
+
+Falls back to the `STACKONE_BASE_URL` environment variable, then to
+`https://api.stackone.com`, if `base_url` is not given.
 
 ## Examples
 

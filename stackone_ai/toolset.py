@@ -103,7 +103,10 @@ class StackOneToolSet:
         Args:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
-            base_url: Optional base URL override for API requests
+            base_url: Optional base URL override for API requests. Falls back to
+                STACKONE_BASE_URL, then to the default, https://api.stackone.com. An
+                empty string, whether passed here or read from the environment, is
+                treated as not set rather than as a literal empty host.
             execute: Execution configuration. Controls default account scoping
                 for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
                 tools to specific accounts.
@@ -130,7 +133,7 @@ class StackOneToolSet:
             )
         self.api_key: str = api_key_value
         self.account_id = account_id
-        self.base_url = base_url or DEFAULT_BASE_URL
+        self.base_url = base_url or os.getenv("STACKONE_BASE_URL") or DEFAULT_BASE_URL
         self._account_ids: list[str] = (
             self._validate_account_ids(execute.get("account_ids", [])) if execute else []
         )
