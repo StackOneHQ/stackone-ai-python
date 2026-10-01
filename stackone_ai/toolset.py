@@ -8,8 +8,8 @@ import fnmatch
 import logging
 import os
 import threading
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 import httpx
 
@@ -22,6 +22,7 @@ from stackone_ai.tools import (
     Tools,
     build_auth_header,
     fetch_mcp_tools,
+    is_rate_limited,
 )
 from stackone_ai.types import (
     DEFAULT_BASE_URL,
@@ -50,6 +51,34 @@ _Listing = tuple[McpToolDefinition, str | None, str]
 
 # The search_actions meta tool's served schema caps top_k at 50.
 _MAX_TOP_K = 50
+
+_Item = TypeVar("_Item")
+_Result = TypeVar("_Result")
+
+
+def _fan_out(
+    fn: Callable[[_Item], _Result], items: Sequence[_Item]
+) -> list[tuple[_Item, _Result | Exception]]:
+    """Run ``fn`` over ``items`` concurrently; each item's result or failure, in item order.
+
+    A 429 that outlasted its retries is raised at once instead of being returned: the
+    caller would skip it like any other failure and hand back a partial result. Work not
+    yet started is cancelled; calls already running finish in the background, unread.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=min(len(items), 10))
+    try:
+        futures = {pool.submit(fn, item): index for index, item in enumerate(items)}
+        outcomes: dict[int, _Result | Exception] = {}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                outcomes[futures[future]] = future.result()
+            except Exception as exc:
+                if is_rate_limited(exc):
+                    raise
+                outcomes[futures[future]] = exc
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return [(item, outcomes[index]) for index, item in enumerate(items)]
 
 
 class StackOneToolSet:
@@ -168,6 +197,9 @@ class StackOneToolSet:
 
         Raises:
             ToolsetLoadError: If there is an error loading the tools
+            StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
+                after retries, even when only one of several accounts is. Other
+                per-account failures skip that account with a warning.
 
         A 429 is retried up to three times, after the server's ``Retry-After`` (capped at
         30 seconds) or else a 1s, 2s, 4s backoff with jitter.
@@ -251,7 +283,10 @@ class StackOneToolSet:
         return list(resolved)
 
     def _list_catalog(self, account_scope: list[str | None], mode: ToolMode | None) -> list[_Listing]:
-        """List every scoped account's catalog, tolerating accounts that fail."""
+        """List every scoped account's catalog, tolerating accounts that fail.
+
+        Except for a rate limit: a 429 that outlasts its retries is raised, not skipped.
+        """
         generation = self._cache_generation
         # No param-style pin: arguments are sent verbatim and the server maps them with its
         # own reverse map, so the model sees whatever style the server serves.
@@ -273,15 +308,13 @@ class StackOneToolSet:
             return listings
 
         failures: list[str] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(account_scope), 10)) as pool:
-            futures = {pool.submit(_fetch_for_account, acc): acc for acc in account_scope}
-            for future, account in futures.items():
-                try:
-                    listings.extend(future.result())
-                except Exception as exc:
-                    # One unusable account must not cost the caller every other
-                    # account's tools; report which one, keep the rest.
-                    failures.append(f"{account}: {exc}")
+        for account, outcome in _fan_out(_fetch_for_account, account_scope):
+            if isinstance(outcome, Exception):
+                # One unusable account must not cost the caller every other
+                # account's tools; report which one, keep the rest.
+                failures.append(f"{account}: {outcome}")
+            else:
+                listings.extend(outcome)
         if failures and not listings:
             raise ToolsetLoadError("No account returned tools. " + " | ".join(failures))
         for failure in failures:
@@ -366,6 +399,12 @@ class StackOneToolSet:
             Action dicts carrying at least ``action_id`` and ``description``, plus the
             ``session_id`` of the search that found them when the server issued one.
             Pass it to :meth:`execute` and :meth:`submit_feedback` to link the calls.
+
+        Raises:
+            StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
+                after retries, for any account or connector. A 429 is retried as in
+                :meth:`fetch_tools`; other per-connector failures are skipped with a
+                warning.
         """
         # The server rejects anything outside 1..50, but only after a round trip per
         # connector — and reports it as a load failure, which reads like an outage
@@ -392,17 +431,15 @@ class StackOneToolSet:
         failures: list[str] = []
         # Fan out the way fetch_tools() does. Serially, a customer with a dozen
         # connectors pays the sum of every connector's latency on the headline call.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tools), 10)) as pool:
-            futures = {pool.submit(_search_one, tool): tool for tool in tools}
-            for future, tool in futures.items():
-                try:
-                    results.extend(future.result())
-                except Exception as exc:
-                    # Catch everything, as fetch_tools() does. Catching only StackOneError
-                    # let a transport failure — which _describe_mcp_failure reports as a
-                    # ToolsetLoadError — abort the whole search, which is precisely the
-                    # flakiness this guard exists to absorb.
-                    failures.append(f"{tool.name}: {exc}")
+        for tool, outcome in _fan_out(_search_one, tools):
+            if isinstance(outcome, Exception):
+                # Skip everything but a rate limit, as fetch_tools() does. Catching only
+                # StackOneError let a transport failure — which _describe_mcp_failure
+                # reports as a ToolsetLoadError — abort the whole search, which is
+                # precisely the flakiness this guard exists to absorb.
+                failures.append(f"{tool.name}: {outcome}")
+            else:
+                results.extend(outcome)
 
         if failures and not results:
             raise ToolsetLoadError("No connector returned results. " + " | ".join(failures))

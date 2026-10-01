@@ -214,6 +214,15 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
         return response
 
 
+def is_rate_limited(exc: BaseException) -> bool:
+    """Whether a failure is a 429 that outlasted every retry.
+
+    Such a failure ends the whole call: skipping the account and carrying on would hand
+    back a partial catalog that looks complete.
+    """
+    return isinstance(exc, StackOneAPIError) and exc.status_code == 429
+
+
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float

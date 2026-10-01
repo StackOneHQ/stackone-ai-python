@@ -1,4 +1,5 @@
-"""429 handling: every request the SDK makes retries a rate limit."""
+"""429 handling: every request the SDK makes retries a rate limit, and one that outlasts
+its retries ends the whole call rather than being skipped like a per-account failure."""
 
 from __future__ import annotations
 
@@ -261,3 +262,42 @@ class TestMcpAgainstMockServer:
         assert excinfo.value.status_code == 429
         assert "Too many requests" in excinfo.value.response_body
         assert sleeps == [0.0, 0.0, 0.0]
+
+    def test_a_rate_limited_account_aborts_a_multi_account_listing(
+        self, mcp_mock_server: str, sleeps: list[float], caplog: pytest.LogCaptureFixture
+    ):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            with pytest.raises(StackOneAPIError) as excinfo:
+                toolset.fetch_tools(account_ids=["acc1", "legacy-account", "ratelimit-all-always-multi"])
+        assert excinfo.value.status_code == 429
+        assert not any("Skipping account" in r.getMessage() for r in caplog.records)
+        # Nothing was cached: the next call lists again rather than serving a partial catalog.
+        assert toolset._catalog_cache == {}
+
+    def test_other_failures_are_still_skipped(self, mcp_mock_server: str, caplog: pytest.LogCaptureFixture):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tools = toolset.fetch_tools(account_ids=["acc1", "legacy-account"])
+        assert tools.get_tool("acc1_tool_1") is not None
+        assert any("Skipping account" in r.getMessage() for r in caplog.records)
+
+    def test_a_rate_limited_account_aborts_discovery(
+        self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch
+    ):
+        discovered = [
+            {"id": "acc1", "provider": "p", "status": "active"},
+            {"id": "ratelimit-all-always-discovery", "provider": "p", "status": "active"},
+        ]
+        monkeypatch.setattr(StackOneToolSet, "fetch_accounts", lambda _self: discovered)
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.fetch_tools()
+        assert excinfo.value.status_code == 429
+
+    def test_a_rate_limited_connector_aborts_search(self, mcp_mock_server: str, sleeps: list[float]):
+        # Listing succeeds for both; only the rate-limited account's search_actions call 429s.
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.search("anything", account_ids=["acc1", "ratelimit-call-always-search"])
+        assert excinfo.value.status_code == 429
