@@ -356,9 +356,14 @@ class TestDeclaredHeaderValuesAreStillValidated:
         assert "'Authorization' from a tool call: it is set by the SDK" in caplog.text
 
 
-@pytest.mark.parametrize("value", ["half an emoji \ud83d", {"a", "set"}, b"bytes"])
+@pytest.mark.parametrize(
+    "value", ["half an emoji \ud83d", {"a", "set"}, b"bytes", float("nan"), float("inf"), float("-inf")]
+)
 def test_unencodable_arguments_raise_value_error(value, seen):
-    """These would otherwise fail inside the MCP client and surface as a transport error."""
+    """These would otherwise fail inside the MCP client and surface as a transport error.
+
+    NaN and Infinity are not JSON: the MCP client would send them as null.
+    """
     with pytest.raises(ValueError, match="could not be encoded"):
         _mcp_tool().execute({"q": value})
     assert seen == {}

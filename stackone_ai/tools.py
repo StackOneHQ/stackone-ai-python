@@ -787,11 +787,12 @@ class StackOneMcpTool(StackOneTool):
         parsed = self._sanitise_header_arguments(parsed)
 
         try:
-            json.dumps(parsed, ensure_ascii=False).encode("utf-8")
+            json.dumps(parsed, ensure_ascii=False, allow_nan=False).encode("utf-8")
         except (UnicodeEncodeError, TypeError, ValueError) as exc:
             # A lone surrogate — what a model emits when a token boundary splits an emoji —
             # or a value JSON cannot encode (a set, bytes) would otherwise fail deep inside
             # the MCP client and surface as a transport error. It is an argument problem.
+            # NaN and Infinity are not JSON either; the MCP client would send them as null.
             raise ValueError(f"Arguments for {self.name!r} could not be encoded as JSON: {exc}") from exc
 
         return call_mcp_tool(
