@@ -1540,9 +1540,9 @@ def test_every_sdk_error_is_a_stackone_error():
     The toolset errors used to be unrelated siblings, so the obvious catch-all missed
     the two errors a user is most likely to hit first.
     """
-    from stackone_ai.types import StackOneError
+    from stackone_ai.types import StackOneError, ToolArgumentsError
 
-    for error in (StackOneAPIError, ToolsetError, ToolsetConfigError, ToolsetLoadError):
+    for error in (StackOneAPIError, ToolArgumentsError, ToolsetError, ToolsetConfigError, ToolsetLoadError):
         assert issubclass(error, StackOneError), error
 
     with pytest.raises(StackOneError):

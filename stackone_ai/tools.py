@@ -37,6 +37,7 @@ from stackone_ai.types import (
     JsonDict,
     StackOneAPIError,
     StackOneError,
+    ToolArgumentsError,
     ToolParameters,
     ToolsetConfigError,
     ToolsetError,
@@ -716,7 +717,7 @@ class StackOneTool(BaseModel):
         """Arguments as a dict, from a dict, a JSON string, or nothing.
 
         Raises:
-            ValueError: If the string is not JSON, or the value is not a JSON object.
+            ToolArgumentsError: If the string is not JSON, or the value is not a JSON object.
         """
         if arguments is None:
             return {}
@@ -724,11 +725,11 @@ class StackOneTool(BaseModel):
             try:
                 parsed = json.loads(arguments)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
+                raise ToolArgumentsError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
         else:
             parsed = arguments
         if not isinstance(parsed, dict):
-            raise ValueError("Tool arguments must be a JSON object")
+            raise ToolArgumentsError("Tool arguments must be a JSON object")
         return dict(parsed)
 
     def _declared_headers(self) -> tuple[set[str] | None, set[str]]:
@@ -859,11 +860,11 @@ class StackOneTool(BaseModel):
             >>> tool.call(name="John", email="john@example.com")
         """
         if args and kwargs:
-            raise ValueError("Cannot provide both positional and keyword arguments")
+            raise ToolArgumentsError("Cannot provide both positional and keyword arguments")
 
         if args:
             if len(args) > 1:
-                raise ValueError("Only one positional argument is allowed")
+                raise ToolArgumentsError("Only one positional argument is allowed")
             return self.execute(args[0])
 
         return self.execute(kwargs if kwargs else None)
@@ -1081,7 +1082,8 @@ class StackOneMcpTool(StackOneTool):
         Raises:
             StackOneAPIError: If the result carries ``isError``, with the status from its
                 payload, or the endpoint answers with an HTTP error.
-            ValueError: If the arguments are not a JSON object or cannot be encoded.
+            ToolArgumentsError: If the arguments are not a JSON object or cannot be encoded.
+                A subclass of both StackOneError and ValueError.
         """
         parsed = self._parse_arguments(arguments)
 
@@ -1095,7 +1097,9 @@ class StackOneMcpTool(StackOneTool):
             # or a value JSON cannot encode (a set, bytes) would otherwise fail deep inside
             # the MCP client and surface as a transport error. It is an argument problem.
             # NaN and Infinity are not JSON either; the MCP client would send them as null.
-            raise ValueError(f"Arguments for {self.name!r} could not be encoded as JSON: {exc}") from exc
+            raise ToolArgumentsError(
+                f"Arguments for {self.name!r} could not be encoded as JSON: {exc}"
+            ) from exc
 
         return call_mcp_tool(
             self._endpoint, self._prepare_headers(), self.name, parsed, timeout=self._execute_config.timeout

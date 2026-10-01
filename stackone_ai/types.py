@@ -50,6 +50,17 @@ class StackOneAPIError(StackOneError):
         self.response_body = response_body
 
 
+class ToolArgumentsError(StackOneError, ValueError):
+    """Raised when a tool's arguments are unusable: not JSON, not an object, or not encodable.
+
+    Raised before any request is made. A subclass of both StackOneError, so
+    ``except StackOneError`` catches it, and ValueError, which is what these errors were
+    before, so existing ``except ValueError`` clauses still do.
+    """
+
+    pass
+
+
 class ToolsetError(StackOneError):
     """Base exception for toolset errors.
 

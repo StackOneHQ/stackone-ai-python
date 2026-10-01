@@ -55,6 +55,11 @@ from stackone_ai import ExecuteConfig, StackOneTool, ToolParameters, Tools, Tool
 so `except StackOneError` catches everything the SDK raises. Existing
 `except ToolsetError` clauses behave as before.
 
+Unusable tool arguments (not JSON, not an object, or not encodable as JSON) raise the new
+`ToolArgumentsError`, before any request. It subclasses both `StackOneError` and
+`ValueError`, which is what 2.x raised, so existing `except ValueError` clauses still
+catch it.
+
 These names have been removed and have no direct replacement:
 
 | Removed | Use instead |
@@ -101,8 +106,8 @@ result = toolset.execute(
 `(action_id, arguments=None, *, account_ids=None, session_id=None)`, and `arguments`
 must be a dict. It raises instead of returning `{"error": ...}`: `ToolsetConfigError`
 before any request when `action_id`, `arguments` or `session_id` is malformed,
-`ValueError` when the arguments cannot be encoded as JSON, `ToolsetLoadError` when no
-linked connector matches the action, and `StackOneAPIError` when the action fails,
+`ToolArgumentsError` when the arguments cannot be encoded as JSON, `ToolsetLoadError` when
+no linked connector matches the action, and `StackOneAPIError` when the action fails,
 including when the server rejects the arguments.
 
 To give a model the search and execute tools, set the tool mode on the toolset.

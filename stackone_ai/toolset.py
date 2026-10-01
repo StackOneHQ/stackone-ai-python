@@ -487,7 +487,11 @@ class StackOneToolSet:
         this call to that search server-side.
 
         Raises:
+            ToolsetConfigError: If ``action_id``, ``arguments`` or ``session_id`` is malformed.
+            ToolArgumentsError: If the arguments cannot be encoded as JSON.
             ToolsetLoadError: If no connector matches.
+            StackOneAPIError: If the action fails, including when the server rejects the
+                arguments.
         """
         if not isinstance(action_id, str) or not action_id:
             raise ToolsetConfigError(f"action_id must be a non-empty string, got {action_id!r}")

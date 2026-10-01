@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from stackone_ai import StackOneError, StackOneTool
+from stackone_ai import StackOneError, StackOneTool, ToolArgumentsError
 from stackone_ai.tools import StackOneMcpTool, _header_text
 from stackone_ai.types import ExecuteConfig, ToolParameters
 
@@ -435,4 +435,24 @@ def test_unencodable_arguments_raise_value_error(value, seen):
     """
     with pytest.raises(ValueError, match="could not be encoded"):
         _mcp_tool().execute({"q": value})
+    assert seen == {}
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda tool: tool.execute({"q": float("nan")}), id="unencodable"),
+        pytest.param(lambda tool: tool.execute({"headers": {"x": {"a", "set"}}}), id="unencodable-header"),
+        pytest.param(lambda tool: tool.execute("not json"), id="invalid-json"),
+        pytest.param(lambda tool: tool.execute("[1, 2]"), id="not-an-object"),
+        pytest.param(lambda tool: tool.call({"q": 1}, q=2), id="args-and-kwargs"),
+        pytest.param(lambda tool: tool.call({}, {}), id="two-positional"),
+    ],
+)
+def test_an_argument_error_is_a_stackone_error_and_a_value_error(call, seen):
+    """`except StackOneError` catches everything the SDK raises; `except ValueError` still works."""
+    with pytest.raises(ToolArgumentsError) as excinfo:
+        call(_mcp_tool({"headers": {"type": "object"}}))
+    assert isinstance(excinfo.value, StackOneError)
+    assert isinstance(excinfo.value, ValueError)
     assert seen == {}
