@@ -732,12 +732,15 @@ class StackOneTool(BaseModel):
             raise ToolArgumentsError("Tool arguments must be a JSON object")
         return dict(parsed)
 
-    def _declared_headers(self) -> tuple[set[str] | None, set[str]]:
+    def _declared_headers(self) -> tuple[set[str] | None, set[str], bool]:
         """The header names this tool's served schema declares, casefolded.
 
-        Returns ``(nested, flat)``: the names under a nested ``headers`` object, casefolded,
-        and each flat ``headers_<name>`` property exactly as served — a flat header is a
-        top-level argument, so it is declared only under its own key, as in Node.
+        Returns ``(nested, flat, ordinary_headers_field)``: the names under a nested
+        ``headers`` object, casefolded, each flat ``headers_<name>`` property exactly as
+        served — a flat header is a top-level argument, so it is declared only under its
+        own key, as in Node — and whether the schema declares a top-level ``headers``
+        property as something other than an object, an ordinary field that happens to be
+        named ``headers`` rather than a header container.
         ``nested`` is ``None`` when the ``headers`` object is open — ``type: "object"`` with
         no ``properties`` and ``additionalProperties`` not ``false``, as ``*_execute_action``
         serves it — which declares every name. Any other schema with no ``properties``
@@ -747,13 +750,16 @@ class StackOneTool(BaseModel):
         flat = {prop for prop in properties if prop.startswith(_FLAT_HEADER_PREFIX)}
         nested: set[str] | None = set()
         schema = properties.get("headers")
+        ordinary_headers_field = (
+            isinstance(schema, dict) and isinstance(schema.get("type"), str) and schema["type"] != "object"
+        )
         if isinstance(schema, dict):
             if "properties" not in schema:
                 if schema.get("type") == "object" and schema.get("additionalProperties") is not False:
                     nested = None
             elif isinstance(schema["properties"], dict):
                 nested = {str(name).casefold() for name in schema["properties"]}
-        return nested, flat
+        return nested, flat, ordinary_headers_field
 
     @staticmethod
     def _header_refusal(name: str, declared: bool) -> str | None:
@@ -786,7 +792,7 @@ class StackOneTool(BaseModel):
         ``headers`` object declares every name. Authorization, x-account-id and User-Agent
         are refused even when declared: the SDK sets them itself.
         """
-        declared, _ = self._declared_headers()
+        declared, _, _ = self._declared_headers()
 
         clean: dict[str, str] = {}
         for key, value in (supplied or {}).items():
@@ -813,17 +819,33 @@ class StackOneTool(BaseModel):
         keeps its value as given, as every other top-level argument does; nested entries
         are written as text, as Node writes them.
 
+        A top-level ``headers`` argument that isn't a plain object is forwarded unchanged
+        when the schema declares ``headers`` as something other than an object (it's an
+        ordinary field that happens to be named ``headers``), and dropped otherwise. A flat
+        ``headers_<name>`` whose value is a list or dict is dropped too — only a string,
+        number or boolean can be a header value.
+
         Raises:
             TypeError: If a header value holds something JSON cannot represent.
         """
-        _, declared_flat = self._declared_headers()
+        _, declared_flat, ordinary_headers_field = self._declared_headers()
         clean: JsonDict = {}
         for key, value in arguments.items():
-            if key == "headers" and isinstance(value, dict):
-                clean[key] = self._sanitise_headers(value)
+            if key == "headers":
+                if isinstance(value, dict):
+                    clean[key] = self._sanitise_headers(value)
+                elif ordinary_headers_field:
+                    clean[key] = value
+                else:
+                    logger.warning("Dropping header argument 'headers' from a tool call: not an object")
                 continue
             if not key.startswith(_FLAT_HEADER_PREFIX):
                 clean[key] = value
+                continue
+            if isinstance(value, dict | list):
+                logger.warning(
+                    "Dropping header argument %r from a tool call: not a string, number or boolean", key
+                )
                 continue
             text = _header_text(value)
             if text is None:

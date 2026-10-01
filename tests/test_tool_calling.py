@@ -311,9 +311,22 @@ class TestMcpToolHeaderGuard:
             _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-set": [{"a"}]}})
         assert seen == {}
 
-    def test_a_non_object_headers_argument_is_sent_as_given(self, seen):
-        """Only a nested headers object is sanitised; any other value is the model's argument."""
-        _mcp_tool().execute({"headers": "not-an-object"})
+    def test_a_non_object_headers_argument_is_dropped(self, seen, caplog):
+        """A string headers argument isn't a header container and isn't an ordinary field either."""
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool().execute({"headers": "not-an-object", "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert "Dropping header argument 'headers' from a tool call: not an object" in caplog.text
+
+    def test_a_list_headers_argument_is_dropped(self, seen, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool().execute({"headers": ["a"], "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert "Dropping header argument 'headers' from a tool call: not an object" in caplog.text
+
+    def test_a_non_object_headers_argument_is_sent_as_given_when_declared_as_a_string(self, seen):
+        """A schema that declares `headers` itself as a string makes it an ordinary argument."""
+        _mcp_tool({"headers": {"type": "string"}}).execute({"headers": "not-an-object"})
         assert seen["arguments"] == {"headers": "not-an-object"}
 
     def test_the_request_is_scoped_to_the_tools_account(self, seen):
@@ -385,6 +398,24 @@ class TestFlatHeaderArguments:
     def test_a_declared_one_with_a_malformed_value_is_dropped(self, seen):
         _mcp_tool({"headers_foo": {"type": "string"}}).execute({"headers_foo": "a\r\nInjected: 1"})
         assert seen["arguments"] == {}
+
+    def test_a_declared_one_with_a_number_value_is_sent_as_given(self, seen):
+        _mcp_tool({"headers_n": {"type": "integer"}}).execute({"headers_n": 7})
+        assert seen["arguments"] == {"headers_n": 7}
+
+    def test_a_declared_one_with_a_list_value_is_dropped(self, seen, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool({"headers_foo": {"type": "array"}}).execute(
+                {"headers_foo": ["a\r\nx-account-id: B"], "q": 1}
+            )
+        assert seen["arguments"] == {"q": 1}
+        assert "'headers_foo' from a tool call: not a string, number or boolean" in caplog.text
+
+    def test_a_declared_one_with_a_dict_value_is_dropped(self, seen, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool({"headers_foo": {"type": "object"}}).execute({"headers_foo": {"a": "b"}, "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert "'headers_foo' from a tool call: not a string, number or boolean" in caplog.text
 
     def test_non_header_arguments_are_untouched(self, seen):
         """Only `headers` and `headers_<name>` are header arguments; bare lookalikes are not."""

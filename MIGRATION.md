@@ -194,8 +194,16 @@ tool.execute({"body": {"variables": {"first": 25}}})
 object argument, or a top-level `headers_<name>` argument. Each one is forwarded only
 if the tool's schema declares it in the same form: under `headers.properties`, or as a
 `headers_<name>` property. An open `headers` object, `"type": "object"` with no
-`properties` and `additionalProperties` not `false`, declares every name. `Authorization`, `x-account-id` and `User-Agent` are never forwarded, even when
-declared, because the SDK sets them itself. Anything dropped is logged as a warning.
+`properties` and `additionalProperties` not `false`, declares every name; without
+`"type": "object"`, or with `additionalProperties: false` and no `properties`, it
+declares none. `Authorization`, `x-account-id` and `User-Agent` are never forwarded,
+even when declared, because the SDK sets them itself. Anything dropped is logged as a
+warning. Every other argument is sent unchanged.
+
+A top-level `headers` argument that isn't a plain object is dropped with a warning,
+unless the schema declares `headers` itself as a non-object field, in which case it's
+an ordinary argument that happens to be named `headers` and is sent as given. A
+`headers_<name>` argument is dropped with a warning when its value is a list or dict.
 
 `*_execute_action` serves an open `headers` object, so `toolset.execute()` passes your
 own headers on to the action, with the exception of those three:
