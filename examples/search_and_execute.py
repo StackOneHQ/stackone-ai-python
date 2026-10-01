@@ -9,7 +9,8 @@ uv run examples/search_and_execute.py
 Prerequisites: STACKONE_API_KEY in .env and at least one active linked account.
 
 Expected output: the ranked actions matching the query, the JSON Schema for the
-best one, the result of executing it, and whether feedback was recorded.
+best one, the arguments taken from its example_request, the result of executing it,
+and whether feedback was recorded.
 
 This is the recommended way to use the SDK: search() asks every linked connector
 and returns ranked actions, so a catalog of hundreds of tools never has to fit in
@@ -32,6 +33,15 @@ from stackone_ai import StackOneToolSet
 from stackone_ai.types import StackOneError, ToolsetError, ToolsetLoadError
 
 
+def _score(action: dict) -> float:
+    """A hit's similarity_score as a number: 0 when absent, NaN when not numeric."""
+    score = action.get("similarity_score")
+    try:
+        return float(0 if score is None else score)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def search_and_execute() -> None:
     toolset = StackOneToolSet()
 
@@ -44,20 +54,26 @@ def search_and_execute() -> None:
 
     print("\nRanked matches:")
     for action in actions:
-        print(f"  {action.get('similarity_score', 0.0):.3f}  {action['action_id']}")
+        print(f"  {_score(action):.3f}  {action['action_id']}")
 
     best = actions[0]
 
-    # input_schema is how you find out what an action accepts. Build the call from
-    # it: arguments that do not match are dropped by the server without an error,
-    # so a guessed parameter looks like it worked.
+    # input_schema is how you find out what an action accepts. Build the call from it
+    # and from example_request: arguments that do not match are dropped by the server
+    # without an error, so a guessed parameter looks like it worked.
     print(f"\ninput_schema for {best['action_id']}:")
     print(json.dumps(best.get("input_schema", {}), indent=2)[:600])
+
+    # example_request is a call the server accepts for this action, in the nested form
+    # execute() takes. Start from it rather than guessing; execute() sets action_id itself.
+    arguments = dict(best.get("example_request") or {})
+    arguments.pop("action_id", None)
+    print(f"\narguments: {json.dumps(arguments)}")
 
     # session_id links this call, and the feedback below, to the search that found
     # the action. It is optional: leave it out and each call stands alone.
     session_id = best.get("session_id")
-    result = toolset.execute(best["action_id"], {"body": {"variables": {"first": 2}}}, session_id=session_id)
+    result = toolset.execute(best["action_id"], arguments, session_id=session_id)
     print(f"\nresult: {json.dumps(result, default=str)[:300]}...")
 
     try:
