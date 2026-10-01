@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from stackone_ai import StackOneError, StackOneTool
-from stackone_ai.tools import StackOneMcpTool
+from stackone_ai.tools import StackOneMcpTool, _header_text
 from stackone_ai.types import ExecuteConfig, ToolParameters
 
 
@@ -267,6 +267,33 @@ class TestMcpToolHeaderGuard:
         tool.execute({"headers": {"X-Present": "value", "X-Absent": None}})
         assert seen["arguments"]["headers"] == {"X-Present": "value"}
 
+    def test_values_are_written_as_node_writes_them(self, seen):
+        """str() sent Python's spelling: "True", "['a', 'b']", "{'k': 1}", "1.0"."""
+        _mcp_tool({"headers": {"type": "object"}}).execute(
+            {
+                "headers": {
+                    "x-bool": True,
+                    "x-list": ["a", "b"],
+                    "x-obj": {"k": 1},
+                    "x-float": 1.0,
+                    "x-num": 1.5,
+                    "x-null": None,
+                }
+            }
+        )
+        assert seen["arguments"]["headers"] == {
+            "x-bool": "true",
+            "x-list": '["a","b"]',
+            "x-obj": '{"k":1}',
+            "x-float": "1",
+            "x-num": "1.5",
+        }
+
+    def test_a_value_json_cannot_hold_is_an_argument_error(self, seen):
+        with pytest.raises(ValueError, match="could not be encoded"):
+            _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-set": [{"a"}]}})
+        assert seen == {}
+
     def test_a_non_object_headers_argument_is_sent_as_given(self, seen):
         """Only a nested headers object is sanitised; any other value is the model's argument."""
         _mcp_tool().execute({"headers": "not-an-object"})
@@ -282,6 +309,31 @@ class TestMcpToolHeaderGuard:
         """A tool built with no account scopes nothing; the server refuses such a call."""
         _mcp_tool(account_id=None).execute({})
         assert "x-account-id" not in seen["headers"]
+
+
+@pytest.mark.parametrize(
+    ("value", "text"),
+    [
+        ("as is", "as is"),
+        (False, "false"),
+        (7, "7"),
+        (-0.0, "0"),
+        (0.1, "0.1"),
+        (1e-7, "1e-7"),
+        (1.5e-7, "1.5e-7"),
+        (0.000001, "0.000001"),
+        (1e20, "100000000000000000000"),
+        (1e21, "1e+21"),
+        (1.5e300, "1.5e+300"),
+        (float("nan"), "NaN"),
+        (float("-inf"), "-Infinity"),
+        ({"k": [1.0, 2.5e-7, None, "é\n"]}, '{"k":[1,2.5e-7,null,"é\\n"]}'),
+        ({"k": float("nan")}, '{"k":null}'),
+    ],
+)
+def test_header_text_matches_node(value, text):
+    """Expected values are what Node's headerText returns for the same input."""
+    assert _header_text(value) == text
 
 
 class TestFlatHeaderArguments:

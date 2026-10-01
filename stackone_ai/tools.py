@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import random
 import re
 import threading
@@ -21,6 +22,7 @@ from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from importlib import metadata
 from typing import Any, TypeVar
@@ -120,6 +122,79 @@ def run_async(awaitable: Coroutine[Any, Any, T]) -> T:
         raise error["error"]
 
     return result["value"]
+
+
+def _js_number(value: float) -> str:
+    """A float as JavaScript's ``String(number)`` writes it: ``1.0`` is "1", ``1e-7`` is "1e-7".
+
+    Both languages print the shortest digits that round-trip, so only the layout differs:
+    the cut-offs for exponent notation, and the exponent's sign and padding.
+    """
+    if math.isnan(value):
+        return "NaN"
+    if math.isinf(value):
+        return "Infinity" if value > 0 else "-Infinity"
+    if value == 0:
+        return "0"
+    sign = "-" if value < 0 else ""
+    parsed = Decimal(repr(abs(value))).normalize().as_tuple()
+    digits = "".join(map(str, parsed.digits))
+    k = len(digits)
+    n = int(parsed.exponent) + k
+    if k <= n <= 21:
+        return sign + digits + "0" * (n - k)
+    if 0 < n <= 21:
+        return sign + digits[:n] + "." + digits[n:]
+    if -6 < n <= 0:
+        return sign + "0." + "0" * -n + digits
+    mantissa = digits if k == 1 else f"{digits[0]}.{digits[1:]}"
+    return f"{sign}{mantissa}e{'+' if n > 0 else '-'}{abs(n - 1)}"
+
+
+def _js_json(value: Any) -> str:
+    """``value`` as JavaScript's ``JSON.stringify`` writes it: compact, numbers as JS prints them.
+
+    Raises:
+        TypeError: If ``value`` holds something JSON cannot represent, such as a set.
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _js_number(value) if math.isfinite(value) else "null"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, dict):
+        entries = (
+            f"{json.dumps(key if isinstance(key, str) else _header_text(key) or 'null', ensure_ascii=False)}:"
+            f"{_js_json(item)}"
+            for key, item in value.items()
+        )
+        return "{" + ",".join(entries) + "}"
+    if isinstance(value, list | tuple):
+        return "[" + ",".join(_js_json(item) for item in value) + "]"
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _header_text(value: Any) -> str | None:
+    """A header argument's value as text, as Node's ``headerText`` writes it; ``None`` if null.
+
+    Strings as they are, booleans as ``true``/``false``, numbers as JavaScript prints them
+    and anything else as compact JSON. ``str()`` sent Python's spelling instead: ``True``,
+    ``1.0``, ``['a', 'b']``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool | int):
+        return _js_json(value)
+    if isinstance(value, float):
+        return _js_number(value)
+    return _js_json(value)
 
 
 def build_auth_header(api_key: str) -> str:
@@ -677,11 +752,11 @@ class StackOneTool(BaseModel):
         return None
 
     @staticmethod
-    def _is_well_formed_header(name: str, value: Any) -> bool:
+    def _is_well_formed_header(name: str, text: str) -> bool:
         # Defence in depth on a declared header's model-supplied value. fullmatch, not
         # match: `$` also matches just before a trailing newline, so `match` let "value\n"
         # — the one character class this rejects — straight through.
-        return bool(_HEADER_NAME_PATTERN.fullmatch(name) and _HEADER_VALUE_PATTERN.fullmatch(str(value)))
+        return bool(_HEADER_NAME_PATTERN.fullmatch(name) and _HEADER_VALUE_PATTERN.fullmatch(text))
 
     def _sanitise_headers(self, supplied: dict[str, Any] | None) -> dict[str, str]:
         """Keep only the entries of a nested ``headers`` argument the served schema declares.
@@ -700,17 +775,18 @@ class StackOneTool(BaseModel):
 
         clean: dict[str, str] = {}
         for key, value in (supplied or {}).items():
-            if value is None or not isinstance(key, str):
+            text = _header_text(value)
+            if text is None or not isinstance(key, str):
                 continue
             name = key.strip()
             reason = self._header_refusal(name, declared is None or name.casefold() in declared)
             if reason:
                 logger.warning("Dropping header %r from a tool call: %s", name, reason)
                 continue
-            if not self._is_well_formed_header(name, value):
+            if not self._is_well_formed_header(name, text):
                 logger.warning("Dropping malformed header %r from a tool call", name)
                 continue
-            clean[name] = str(value)
+            clean[name] = text
         return clean
 
     def _sanitise_header_arguments(self, arguments: JsonDict) -> JsonDict:
@@ -720,7 +796,10 @@ class StackOneTool(BaseModel):
         ``headers_<name>``. Each is forwarded only if the served schema declares it in the
         same form, and never if it is one the SDK sets itself. A declared ``headers_<name>``
         keeps its value as given, as every other top-level argument does; nested entries
-        are stringified.
+        are written as text, as Node writes them.
+
+        Raises:
+            TypeError: If a header value holds something JSON cannot represent.
         """
         _, declared_flat = self._declared_headers()
         clean: JsonDict = {}
@@ -731,14 +810,15 @@ class StackOneTool(BaseModel):
             if not key.startswith(_FLAT_HEADER_PREFIX):
                 clean[key] = value
                 continue
+            text = _header_text(value)
+            if text is None:
+                continue
             name = key[len(_FLAT_HEADER_PREFIX) :]
             reason = self._header_refusal(name, key in declared_flat)
             if reason:
                 logger.warning("Dropping header argument %r from a tool call: %s", key, reason)
                 continue
-            if value is None:
-                continue
-            if not self._is_well_formed_header(name, value):
+            if not self._is_well_formed_header(name, text):
                 logger.warning("Dropping malformed header argument %r from a tool call", key)
                 continue
             clean[key] = value
@@ -991,11 +1071,10 @@ class StackOneMcpTool(StackOneTool):
         """
         parsed = self._parse_arguments(arguments)
 
-        # Without this a prompt-injected call could put its own Authorization or
-        # x-account-id in a header argument the server unpacks.
-        parsed = self._sanitise_header_arguments(parsed)
-
         try:
+            # Without this a prompt-injected call could put its own Authorization or
+            # x-account-id in a header argument the server unpacks.
+            parsed = self._sanitise_header_arguments(parsed)
             json.dumps(parsed, ensure_ascii=False, allow_nan=False).encode("utf-8")
         except (UnicodeEncodeError, TypeError, ValueError) as exc:
             # A lone surrogate — what a model emits when a token boundary splits an emoji —
