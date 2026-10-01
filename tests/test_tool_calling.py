@@ -196,6 +196,23 @@ class TestMcpToolHeaderGuard:
         _mcp_tool().execute({"action_id": "a", "headers": {name: "stolen"}})
         assert seen["arguments"]["headers"] == {}
 
+    @pytest.mark.parametrize("name", ["x-custom\x1f", "\x1cx-custom", "x-custom\x85"])
+    def test_names_are_trimmed_as_javascript_trims_them(self, seen, name, caplog):
+        """str.strip() also strips \\x1c-\\x1f and \\x85, which Node keeps and refuses as malformed."""
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {name: "v"}})
+        assert seen["arguments"]["headers"] == {}
+        assert "Dropping malformed header" in caplog.text
+
+    @pytest.mark.parametrize("name", ["\ufeffx-custom", "x-custom\u3000", "\u00a0x-custom\u2028"])
+    def test_javascript_whitespace_is_trimmed(self, seen, name):
+        _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {name: "v"}})
+        assert seen["arguments"]["headers"] == {"x-custom": "v"}
+
+    def test_a_byte_order_mark_does_not_hide_an_sdk_header(self, seen):
+        _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"\ufeffAuthorization": "stolen"}})
+        assert seen["arguments"]["headers"] == {}
+
     @pytest.mark.parametrize("value", ["a\r\nEvil: 1", "trailing\n", "bad\rvalue"])
     def test_crlf_injection_is_rejected(self, seen, value):
         """`$` also matches before a trailing newline, so this needs fullmatch."""

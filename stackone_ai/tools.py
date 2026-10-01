@@ -57,6 +57,20 @@ USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
 _HEADER_NAME_PATTERN = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+")
 _HEADER_VALUE_PATTERN = re.compile(r"[\x20-\x7e\t\x80-\xff]*")
 
+# What JavaScript's String.prototype.trim() strips: its WhiteSpace and LineTerminator
+# characters. str.strip() also strips \x1c-\x1f and \x85, which made "x-custom\x1f" a
+# valid name here when Node refuses it as malformed, and misses the byte order mark.
+_JS_WHITESPACE = (
+    "\t\n\v\f\r \xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
+
+
+def _trim_header_name(name: str) -> str:
+    """A header name trimmed as Node trims it."""
+    return name.strip(_JS_WHITESPACE)
+
+
 # Header names the SDK sets itself, after every other header. A tool call may not supply
 # them even when a served schema declares them: they are the credential, the tenant
 # selector and the client identity.
@@ -745,7 +759,7 @@ class StackOneTool(BaseModel):
         """Why a header argument may not be forwarded, or ``None`` if it may."""
         # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to any
         # server, and casefold() closes the non-ASCII folding holes lower() leaves.
-        if name.strip().casefold() in _SDK_OWNED_HEADERS:
+        if _trim_header_name(name).casefold() in _SDK_OWNED_HEADERS:
             return "it is set by the SDK"
         if not declared:
             return "it is not declared by the schema"
@@ -778,7 +792,7 @@ class StackOneTool(BaseModel):
             text = _header_text(value)
             if text is None or not isinstance(key, str):
                 continue
-            name = key.strip()
+            name = _trim_header_name(key)
             reason = self._header_refusal(name, declared is None or name.casefold() in declared)
             if reason:
                 logger.warning("Dropping header %r from a tool call: %s", name, reason)
@@ -1040,7 +1054,7 @@ class StackOneMcpTool(StackOneTool):
         headers: Headers = {
             name: value
             for name, value in self._execute_config.headers.items()
-            if name.strip().casefold() not in _SDK_OWNED_HEADERS
+            if _trim_header_name(name).casefold() not in _SDK_OWNED_HEADERS
         }
         # The constructor requires the key; only code that clears it afterwards gets here.
         if not self._api_key:
