@@ -59,11 +59,18 @@ class StackOneAPIError(StackOneError):
 
 
 class ToolArgumentsError(StackOneError, ValueError):
-    """Raised when a tool's arguments are unusable: not JSON, not an object, or not encodable.
+    """Raised when a tool's arguments are unusable, before any request is made:
 
-    Raised before any request is made. A subclass of both StackOneError, so
-    ``except StackOneError`` catches it, and ValueError, which is what these errors were
-    before, so existing ``except ValueError`` clauses still do.
+    - a JSON string argument that does not parse, or parses to something other than
+      an object
+    - an argument that cannot be encoded as JSON (a set, bytes, NaN/Infinity, a lone
+      surrogate, or a value that refers to itself, directly or through a cycle)
+    - ``call()`` given both positional and keyword arguments, or more than one
+      positional argument
+
+    A subclass of both StackOneError, so ``except StackOneError`` catches it, and
+    ValueError, which is what these errors were before, so existing
+    ``except ValueError`` clauses still do.
     """
 
     pass

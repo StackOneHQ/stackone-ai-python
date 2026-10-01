@@ -56,10 +56,12 @@ from stackone_ai import ExecuteConfig, StackOneTool, ToolParameters, Tools, Tool
 so `except StackOneError` catches everything the SDK raises. Existing
 `except ToolsetError` clauses behave as before.
 
-Unusable tool arguments (not JSON, not an object, or not encodable as JSON) raise the new
-`ToolArgumentsError`, before any request. It subclasses both `StackOneError` and
-`ValueError`, which is what 2.x raised, so existing `except ValueError` clauses still
-catch it.
+Unusable tool arguments raise the new `ToolArgumentsError`, before any request: a JSON
+string that does not parse or does not parse to an object, an argument that cannot be
+encoded as JSON, or `tool.call()` given both positional and keyword arguments, or more
+than one positional argument. Raised by `tool.execute()`, `tool.call()` and
+`toolset.execute()` alike. It subclasses both `StackOneError` and `ValueError`, which is
+what 2.x raised, so existing `except ValueError` clauses still catch it.
 
 These names have been removed and have no direct replacement:
 
