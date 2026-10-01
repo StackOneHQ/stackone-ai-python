@@ -212,6 +212,23 @@ toolset.execute("linear_list_comments", {"headers": {"x-request-id": "abc"}})
 accounts, pass `account_id=`, `account_ids=` or call `set_accounts()` so the SDK does
 not fetch every catalog.
 
+**An empty account id raises.** `StackOneToolSet(account_id="")` raises
+`ToolsetConfigError`, where it used to be treated as no account at all. An account id
+read from an environment variable that is set but empty now raises too, rather than
+quietly reaching every active account:
+
+```python
+# Raises when STACKONE_ACCOUNT_ID is set to ""
+toolset = StackOneToolSet(account_id=os.getenv("STACKONE_ACCOUNT_ID"))
+
+# Falls back to discovery only when the variable is unset or empty, deliberately
+toolset = StackOneToolSet(account_id=os.getenv("STACKONE_ACCOUNT_ID") or None)
+```
+
+An empty or non-string entry in `account_ids`, `set_accounts()` or
+`execute={"account_ids": [...]}` raises `ToolsetConfigError` as well, where it used to be
+sent with no `x-account-id`.
+
 **`get_tool()` returns the first of any duplicates.** When two accounts serve the same
 tool name, `Tools.get_tool()` now returns the first one listed, where 2.x returned the
 last. Listings are merged in sorted account order, and a warning names the clashing
