@@ -22,6 +22,7 @@ from stackone_ai.tools import (
     _rate_limit_delay,
     _retry_after_seconds,
     fetch_mcp_tools,
+    is_rate_limited,
 )
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import StackOneAPIError
@@ -76,7 +77,7 @@ class TestRetryDelay:
     def test_a_past_http_date_means_now(self):
         assert _retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
 
-    @pytest.mark.parametrize("value", [None, "", "soon", "-1", "1.5e3"])
+    @pytest.mark.parametrize("value", [None, "", "soon", "-1", "1.5e3", "1.5", "\u00b2", "2026-10-01"])
     def test_an_absent_or_unreadable_header_falls_back(self, value: str | None):
         assert _retry_after_seconds(value) is None
 
@@ -301,3 +302,17 @@ class TestMcpAgainstMockServer:
         with pytest.raises(StackOneAPIError) as excinfo:
             toolset.search("anything", account_ids=["acc1", "ratelimit-call-always-search"])
         assert excinfo.value.status_code == 429
+
+
+class TestOnlyAnHttp429IsFatal:
+    """A 429 in a tool result's payload was never retried, so it does not end the call."""
+
+    def test_an_http_429_inside_a_task_group_is_fatal(self):
+        request = httpx.Request("POST", "https://api.example.com/mcp")
+        http = httpx.HTTPStatusError("429", request=request, response=httpx.Response(429, request=request))
+        error = StackOneAPIError("rate limited", 429, None)
+        error.__cause__ = ExceptionGroup("unhandled errors in a TaskGroup", [http])
+        assert is_rate_limited(error)
+
+    def test_a_payload_429_is_not(self):
+        assert not is_rate_limited(StackOneAPIError("Tool failed", 429, {"isError": True}))

@@ -139,8 +139,12 @@ def _retry_after_seconds(value: str | None) -> float | None:
     if value is None:
         return None
     value = value.strip()
-    if value.isdigit():
+    # ASCII digits only: str.isdigit() also accepts "²", which float() then refuses.
+    if re.fullmatch(r"[0-9]+", value):
         return float(value)
+    # An HTTP-date always starts with a day name; anything else is unreadable, as in Node.
+    if not value[:1].isascii() or not value[:1].isalpha():
+        return None
     try:
         when = parsedate_to_datetime(value)
     except (TypeError, ValueError, IndexError):
@@ -218,9 +222,24 @@ def is_rate_limited(exc: BaseException) -> bool:
     """Whether a failure is a 429 that outlasted every retry.
 
     Such a failure ends the whole call: skipping the account and carrying on would hand
-    back a partial catalog that looks complete.
+    back a partial catalog that looks complete. Only an HTTP 429 counts, as in Node: a
+    tool result whose payload says 429 was never retried, so it is that connector's
+    failure, skipped like any other.
     """
-    return isinstance(exc, StackOneAPIError) and exc.status_code == 429
+    if not (isinstance(exc, StackOneAPIError) and exc.status_code == 429):
+        return False
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, httpx.HTTPStatusError) and current.response.status_code == 429:
+            return True
+        stack.extend(getattr(current, "exceptions", None) or [])
+        stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
+    return False
 
 
 @asynccontextmanager
