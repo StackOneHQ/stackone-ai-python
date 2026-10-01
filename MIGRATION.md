@@ -185,8 +185,8 @@ tool.execute({"body": {"variables": {"first": 25}}})
 **Header arguments are allowlisted.** A header argument is an entry of a `headers`
 object argument, or a top-level `headers_<name>` argument. Each one is forwarded only
 if the tool's schema declares it in the same form: under `headers.properties`, or as a
-`headers_<name>` property. An open `headers` object, with no `properties`, declares every
-name. `Authorization`, `x-account-id` and `User-Agent` are never forwarded, even when
+`headers_<name>` property. An open `headers` object, `"type": "object"` with no
+`properties` and `additionalProperties` not `false`, declares every name. `Authorization`, `x-account-id` and `User-Agent` are never forwarded, even when
 declared, because the SDK sets them itself. Anything dropped is logged as a warning.
 
 `*_execute_action` serves an open `headers` object, so `toolset.execute()` passes your

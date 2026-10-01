@@ -439,8 +439,10 @@ class StackOneTool(BaseModel):
         Returns ``(nested, flat)``: the names under a nested ``headers`` object, casefolded,
         and each flat ``headers_<name>`` property exactly as served — a flat header is a
         top-level argument, so it is declared only under its own key, as in Node.
-        ``nested`` is ``None`` when the ``headers`` object is open — an object schema with
-        no ``properties``, as ``*_execute_action`` serves it — which declares every name.
+        ``nested`` is ``None`` when the ``headers`` object is open — ``type: "object"`` with
+        no ``properties`` and ``additionalProperties`` not ``false``, as ``*_execute_action``
+        serves it — which declares every name. Any other schema with no ``properties``
+        declares none.
         """
         properties = self.parameters.properties or {}
         flat = {prop for prop in properties if prop.startswith(_FLAT_HEADER_PREFIX)}
@@ -448,7 +450,8 @@ class StackOneTool(BaseModel):
         schema = properties.get("headers")
         if isinstance(schema, dict):
             if "properties" not in schema:
-                nested = None
+                if schema.get("type") == "object" and schema.get("additionalProperties") is not False:
+                    nested = None
             elif isinstance(schema["properties"], dict):
                 nested = {str(name).casefold() for name in schema["properties"]}
         return nested, flat

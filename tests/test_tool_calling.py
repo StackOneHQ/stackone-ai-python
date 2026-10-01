@@ -230,6 +230,25 @@ class TestMcpToolHeaderGuard:
         )
         assert seen["arguments"]["headers"] == {"x-custom": "kept"}
 
+    def test_an_object_with_additional_properties_allowed_is_open(self, seen):
+        tool = _mcp_tool({"headers": {"type": "object", "additionalProperties": {"type": "string"}}})
+        tool.execute({"headers": {"x-custom": "kept"}})
+        assert seen["arguments"]["headers"] == {"x-custom": "kept"}
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            pytest.param({"type": "object", "additionalProperties": False}, id="closed-object"),
+            pytest.param({}, id="no-type"),
+            pytest.param({"additionalProperties": True}, id="no-type-additional-allowed"),
+            pytest.param({"type": "string"}, id="not-an-object"),
+        ],
+    )
+    def test_any_other_schema_without_properties_declares_no_header(self, seen, schema):
+        """Only `type: "object"` not closed by `additionalProperties: false` is open, as in Node."""
+        _mcp_tool({"headers": schema}).execute({"headers": {"x-custom": "dropped"}})
+        assert seen["arguments"]["headers"] == {}
+
     @pytest.mark.parametrize("name", ["Authorization", "x-account-id", "User-Agent"])
     def test_sdk_owned_headers_are_refused_even_when_declared(self, seen, name):
         tool = _mcp_tool({"headers": {"type": "object", "properties": {name.lower(): {"type": "string"}}}})
