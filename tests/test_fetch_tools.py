@@ -910,6 +910,24 @@ class TestAccountDiscovery:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         assert toolset._discover_account_ids() == ["default"]
 
+    def test_a_discovery_in_flight_during_a_clear_is_not_cached(self, monkeypatch):
+        """An account list fetched before clear_catalog_cache() must not outlive it."""
+        toolset = StackOneToolSet(api_key="test-key")
+        responses = iter([["before"], ["after"]])
+
+        def fetch_accounts() -> list[dict[str, Any]]:
+            listed = next(responses)
+            if listed == ["before"]:
+                # The clear lands while this GET /accounts is still in flight.
+                toolset.clear_catalog_cache()
+            return [{"id": account, "provider": "p", "status": "active"} for account in listed]
+
+        monkeypatch.setattr(toolset, "fetch_accounts", fetch_accounts)
+
+        assert toolset._discover_account_ids() == ["before"]
+        assert toolset._discover_account_ids() == ["after"]
+        assert toolset._discover_account_ids() == ["after"]
+
     def test_missing_account_header_is_rejected_by_the_server(self, mcp_mock_server: str):
         """Guards the mock itself: if it stops enforcing this, these tests go hollow."""
         import httpx

@@ -709,6 +709,7 @@ class StackOneToolSet:
         if self._discovered_account_ids is not None:
             return self._discovered_account_ids
 
+        generation = self._cache_generation
         accounts = self.fetch_accounts()
 
         active = [a["id"] for a in accounts if a.get("status") == "active" and a.get("id")]
@@ -724,7 +725,11 @@ class StackOneToolSet:
                 "Re-link them in the StackOne dashboard, or pass account_id explicitly."
             )
 
-        self._discovered_account_ids = active
+        # Not kept if clear_catalog_cache() ran while the list was in flight: it may name
+        # accounts the clear was meant to forget.
+        with self._cache_lock:
+            if generation == self._cache_generation:
+                self._discovered_account_ids = active
         return active
 
     def _build_mcp_headers(self, account_id: str | None) -> dict[str, str]:
