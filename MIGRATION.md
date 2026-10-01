@@ -197,8 +197,9 @@ if the tool's schema declares it in the same form: under `headers.properties`, o
 `properties` and `additionalProperties` not `false`, declares every name; without
 `"type": "object"`, or with `additionalProperties: false` and no `properties`, it
 declares none. `Authorization`, `x-account-id` and `User-Agent` are never forwarded,
-even when declared, because the SDK sets them itself. Anything dropped is logged as a
-warning. Every other argument is sent unchanged.
+even when declared, because the SDK sets them itself. A dropped header argument is
+logged as a warning, except a null value, which is omitted silently. Every other
+argument is sent unchanged.
 
 A top-level `headers` argument that isn't a plain object is dropped with a warning,
 unless the schema declares `headers` itself as a non-object field, in which case it's
@@ -234,8 +235,9 @@ toolset = StackOneToolSet(account_id=os.getenv("STACKONE_ACCOUNT_ID") or None)
 ```
 
 An empty or non-string entry in `account_ids`, `set_accounts()` or
-`execute={"account_ids": [...]}` raises `ToolsetConfigError` as well, where it used to be
-sent with no `x-account-id`.
+`execute={"account_ids": [...]}` raises `ToolsetConfigError` as well. A falsy entry
+(`None`, `0`, `""`) used to produce an unscoped request with no `x-account-id`; a
+truthy non-string entry used to be sent as the header's value.
 
 **`get_tool()` returns the first of any duplicates.** When two accounts serve the same
 tool name, `Tools.get_tool()` now returns the first one listed, where 2.x returned the
