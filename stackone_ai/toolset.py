@@ -96,7 +96,9 @@ class StackOneToolSet:
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url or DEFAULT_BASE_URL
-        self._account_ids: list[str] = list(execute.get("account_ids", [])) if execute else []
+        self._account_ids: list[str] = (
+            self._validate_account_ids(execute.get("account_ids", [])) if execute else []
+        )
         self._execute_config: ExecuteToolsConfig | None = execute
         execute_timeout = execute.get("timeout") if execute else None
         self._timeout: float = (
@@ -122,11 +124,7 @@ class StackOneToolSet:
         Returns:
             This toolset instance for chaining
         """
-        if isinstance(account_ids, str):
-            raise ToolsetConfigError(
-                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
-            )
-        self._account_ids = list(account_ids)
+        self._account_ids = self._validate_account_ids(account_ids)
         self.clear_catalog_cache()
         return self
 
@@ -212,16 +210,30 @@ class StackOneToolSet:
         except Exception as exc:  # pragma: no cover - unexpected runtime errors
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
 
+    @staticmethod
+    def _validate_account_ids(account_ids: list[str]) -> list[str]:
+        """A copy of the account ids, refusing a bare string or an empty id.
+
+        An empty id would be sent with no ``x-account-id``, so it is rejected rather than
+        letting the server answer for an account nobody chose, as in Node.
+        """
+        if isinstance(account_ids, str):
+            raise ToolsetConfigError(
+                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
+            )
+        ids = list(account_ids)
+        if "" in ids:
+            raise ToolsetConfigError("account_ids must not contain an empty account id")
+        return ids
+
     def _resolve_account_ids(self, account_ids: list[str] | None) -> list[str]:
         """The accounts a call is scoped to, in the order they were given or discovered.
 
         The argument, then ``set_accounts()``, then the constructor's ``account_id``, then
         every active account ``GET /accounts`` lists.
         """
-        if isinstance(account_ids, str):
-            raise ToolsetConfigError(
-                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
-            )
+        if account_ids is not None:
+            account_ids = self._validate_account_ids(account_ids)
         resolved = account_ids or self._account_ids
         if not resolved and self.account_id:
             resolved = [self.account_id]

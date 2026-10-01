@@ -288,6 +288,23 @@ def test_set_accounts():
     assert toolset._account_ids == ["acc1", "acc2"]
 
 
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda: StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", ""]}),
+        lambda: StackOneToolSet(api_key="k").set_accounts([""]),
+        lambda: StackOneToolSet(api_key="k").fetch_tools(account_ids=["acc1", ""]),
+        lambda: StackOneToolSet(api_key="k").submit_feedback("positive", ["t"], account_ids=[""]),
+    ],
+    ids=["constructor", "set_accounts", "fetch_tools", "submit_feedback"],
+)
+def test_an_empty_account_id_is_rejected(use):
+    """An empty id would be sent with no x-account-id; it fails before any request,
+    so no request error can stand in for it."""
+    with pytest.raises(ToolsetConfigError, match="empty account id"):
+        use()
+
+
 def test_filter_by_provider():
     """Test provider filtering"""
     toolset = StackOneToolSet(api_key="test_key")
