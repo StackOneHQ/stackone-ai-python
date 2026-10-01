@@ -207,7 +207,8 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 
 - **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
   your active accounts. An empty list means "no filter", not "no accounts". A
-  single failing account is logged and skipped, not fatal.
+  single failing account is logged and skipped, not fatal — unless it is rate
+  limited (see [Rate limits](#rate-limits)).
 - **`providers`** — matched **case-insensitively** as a full prefix, so
   `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
   contains an underscore must be spelled in full (`["browser_linkedin"]`, not
@@ -256,6 +257,20 @@ A file action's `result` is a download link, `{"download_url", "expires_at", "fi
 not follow it, and `file.name` is chosen by the provider, so reduce it to a safe
 basename before writing to disk. When no link can be issued the call raises `StackOneAPIError` with
 `status_code` 501.
+
+## Rate limits
+
+Every request the SDK makes (`GET /accounts` and each MCP request, `tools/call`
+included) retries an HTTP 429 up to three times. It waits for the response's
+`Retry-After`, in seconds or as an HTTP date and capped at 30 seconds, or without one
+for 1s, 2s and 4s, each scaled by a random factor between 0.5 and 1. Each retry logs a
+warning. No other status is retried.
+
+A 429 that is still there after the fourth attempt raises `StackOneAPIError` with
+`status_code` 429 and the server's body. That ends the whole call: when `fetch_tools()`
+or `search()` spans several accounts, one rate-limited account raises rather than being
+skipped, so you never get a partial catalog that looks complete. Other per-account
+failures are still logged and skipped.
 
 
 ## Examples
