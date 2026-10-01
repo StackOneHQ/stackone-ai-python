@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -962,6 +963,130 @@ class TestAccountDiscovery:
         # Must refetch: the catalog for "before" was resolved against a generation
         # the clear had already moved past, so it must not have been cached.
         assert calls == ["before"]
+
+    def test_concurrent_discovery_shares_one_in_flight_request(self, monkeypatch):
+        """Two threads discovering accounts at once make one GET /accounts between them."""
+        toolset = StackOneToolSet(api_key="test-key")
+        call_count = 0
+        started = threading.Event()
+        proceed = threading.Event()
+
+        def fetch_accounts() -> list[dict[str, Any]]:
+            nonlocal call_count
+            call_count += 1
+            started.set()
+            assert proceed.wait(timeout=5)
+            return [{"id": "acc", "provider": "p", "status": "active"}]
+
+        monkeypatch.setattr(toolset, "fetch_accounts", fetch_accounts)
+
+        results: list[list[str]] = []
+
+        def worker() -> None:
+            results.append(toolset._discover_account_ids())
+
+        t1 = threading.Thread(target=worker)
+        t1.start()
+        assert started.wait(timeout=5)
+
+        t2 = threading.Thread(target=worker)
+        t2.start()
+        # t1 cannot finish before proceed is set, so this just gives the scheduler a
+        # chance to get t2 into its wait on the shared future before we release t1.
+        time.sleep(0.05)
+        proceed.set()
+
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        assert call_count == 1
+        assert results == [["acc"], ["acc"]]
+
+    def test_concurrent_discovery_failure_reaches_both_waiters_and_is_not_cached(self, monkeypatch):
+        toolset = StackOneToolSet(api_key="test-key")
+        call_count = 0
+        started = threading.Event()
+        proceed = threading.Event()
+
+        def failing_fetch_accounts() -> list[dict[str, Any]]:
+            nonlocal call_count
+            call_count += 1
+            started.set()
+            assert proceed.wait(timeout=5)
+            raise StackOneAPIError("boom", 500, "boom")
+
+        monkeypatch.setattr(toolset, "fetch_accounts", failing_fetch_accounts)
+
+        errors: list[StackOneAPIError] = []
+
+        def worker() -> None:
+            try:
+                toolset._discover_account_ids()
+            except StackOneAPIError as exc:
+                errors.append(exc)
+
+        t1 = threading.Thread(target=worker)
+        t1.start()
+        assert started.wait(timeout=5)
+
+        t2 = threading.Thread(target=worker)
+        t2.start()
+        time.sleep(0.05)
+        proceed.set()
+
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        assert call_count == 1
+        assert len(errors) == 2
+        assert toolset._discovered_account_ids is None
+
+        # A later call retries rather than reusing the failure.
+        monkeypatch.setattr(
+            toolset, "fetch_accounts", lambda: [{"id": "acc", "provider": "p", "status": "active"}]
+        )
+        assert toolset._discover_account_ids() == ["acc"]
+
+    def test_clear_during_a_shared_discovery_discards_the_result(self, monkeypatch):
+        """A clear_catalog_cache() while a shared discovery is in flight is not undone
+        by that discovery writing its result back after the clear."""
+        toolset = StackOneToolSet(api_key="test-key")
+        call_count = 0
+        started = threading.Event()
+        proceed = threading.Event()
+
+        def fetch_accounts() -> list[dict[str, Any]]:
+            nonlocal call_count
+            call_count += 1
+            started.set()
+            assert proceed.wait(timeout=5)
+            return [{"id": "acc", "provider": "p", "status": "active"}]
+
+        monkeypatch.setattr(toolset, "fetch_accounts", fetch_accounts)
+
+        result_holder: dict[str, list[str]] = {}
+
+        def worker() -> None:
+            result_holder["result"] = toolset._discover_account_ids()
+
+        t = threading.Thread(target=worker)
+        t.start()
+        assert started.wait(timeout=5)
+
+        toolset.clear_catalog_cache()
+        proceed.set()
+        t.join(timeout=5)
+
+        # The in-flight call still resolves for whoever was waiting on it...
+        assert result_holder["result"] == ["acc"]
+        assert call_count == 1
+        # ...but its result is discarded rather than cached past the clear.
+        assert toolset._discovered_account_ids is None
+
+        monkeypatch.setattr(
+            toolset, "fetch_accounts", lambda: [{"id": "acc2", "provider": "p", "status": "active"}]
+        )
+        assert toolset._discover_account_ids() == ["acc2"]
 
     def test_missing_account_header_is_rejected_by_the_server(self, mcp_mock_server: str):
         """Guards the mock itself: if it stops enforcing this, these tests go hollow."""

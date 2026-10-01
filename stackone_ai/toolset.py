@@ -147,6 +147,9 @@ class StackOneToolSet:
         # cache hit let one caller silently rescope every later caller's tools.
         self._catalog_cache: dict[tuple[Any, ...], list[_Listing]] = {}
         self._discovered_account_ids: list[str] | None = None
+        # Shared while in flight, so concurrent fetch_tools() and search() calls on a
+        # fresh toolset make one GET /accounts between them rather than one each.
+        self._discovering: concurrent.futures.Future[list[str]] | None = None
         # Bumped by clear_catalog_cache(). A listing already in flight when the cache is
         # cleared captured the generation it started under, and refuses to write back if
         # it has moved — otherwise the stale catalog lands *after* the clear and is
@@ -176,6 +179,7 @@ class StackOneToolSet:
             self._cache_generation += 1
             self._catalog_cache.clear()
             self._discovered_account_ids = None
+            self._discovering = None
 
     def fetch_tools(
         self,
@@ -727,6 +731,35 @@ class StackOneToolSet:
         if self._discovered_account_ids is not None:
             return self._discovered_account_ids
 
+        with self._cache_lock:
+            if self._discovered_account_ids is not None:
+                return self._discovered_account_ids
+            future = self._discovering
+            owner = future is None
+            if owner:
+                future = self._discovering = concurrent.futures.Future()
+
+        assert future is not None
+        if not owner:
+            # A discovery already in flight: wait for it rather than issue a second
+            # GET /accounts. Its result, or its exception, is shared with every waiter.
+            return future.result()
+
+        try:
+            active = self._fetch_active_account_ids()
+        except BaseException as exc:
+            with self._cache_lock:
+                if self._discovering is future:
+                    self._discovering = None
+            future.set_exception(exc)
+            raise
+        with self._cache_lock:
+            if self._discovering is future:
+                self._discovering = None
+        future.set_result(active)
+        return active
+
+    def _fetch_active_account_ids(self) -> list[str]:
         generation = self._cache_generation
         accounts = self.fetch_accounts()
 
