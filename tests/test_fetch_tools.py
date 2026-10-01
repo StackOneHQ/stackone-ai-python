@@ -496,6 +496,17 @@ class TestPerActionToolsExecuteOverToolsCall:
 
         assert tool.execute() == {"isError": False, "result": 3}
 
+    def test_an_action_named_like_a_meta_tool_runs_as_an_action(self, mcp_mock_server: str):
+        """Outside search_execute mode, a name ending in `_execute_action` is just an action."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        tool = toolset.fetch_tools(account_ids=["lookalike"]).get_tool("lookalike_execute_action")
+        assert tool is not None
+
+        assert tool.execute({"action_id": "other"}) == {
+            "isError": False,
+            "result": {"data": {"action": "lookalike_execute_action", "received": {"action_id": "other"}}},
+        }
+
 
 class TestAccountIdFallback:
     """Test account ID fallback to instance account_id."""

@@ -17,6 +17,7 @@ import {
   defaultMcpTools,
   exampleBamboohrTools,
   fileTools,
+  metaLookalikeTools,
   mixedProviderTools,
 } from "./mcp-server";
 
@@ -51,6 +52,7 @@ const mcpApp = createMcpApp({
     "test-account": accountMcpTools["test-account"],
     mixed: mixedProviderTools,
     files: fileTools,
+    lookalike: metaLookalikeTools,
     "your-bamboohr-account-id": exampleBamboohrTools,
     "your-stackone-account-id": exampleBamboohrTools,
   },

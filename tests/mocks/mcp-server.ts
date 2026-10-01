@@ -258,7 +258,9 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 					session_id: args.session_id ?? null,
 				});
 			}
-			return callMetaTool(name, args) ?? callActionTool(name, args);
+			// Only search_execute serves meta tools: in individual mode a per-action tool whose
+			// name ends in `_execute_action` is still an action.
+			return (searchExecute ? callMetaTool(name, args) : undefined) ?? callActionTool(name, args);
 		});
 
 		const transport = new StreamableHTTPTransport();
@@ -434,6 +436,15 @@ export const fileTools = [
 		name: 'files_count',
 		description: 'Count files: a result that is not an object',
 		inputSchema: { type: 'object', properties: {} },
+	},
+] as const satisfies McpToolDefinition[];
+
+/** A per-action tool whose name ends like a meta tool's, served in individual mode. */
+export const metaLookalikeTools = [
+	{
+		name: 'lookalike_execute_action',
+		description: 'An action named like a meta tool',
+		inputSchema: { type: 'object', properties: { action_id: { type: 'string' } } },
 	},
 ] as const satisfies McpToolDefinition[];
 
