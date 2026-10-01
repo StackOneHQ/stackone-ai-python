@@ -102,6 +102,19 @@ def build_auth_header(api_key: str) -> str:
     return f"Basic {token}"
 
 
+async def _buffer_error_body(response: httpx.Response) -> None:
+    """Read an error response's body while its stream is still open.
+
+    The ``mcp`` client raises on the status after the streamed response is closed, so
+    reading the body afterwards got nothing and every failure said only "400 Bad
+    Request". The body is where the server explains itself: "Legacy accounts cannot be
+    used with MCP", or a 412 asking for the account to be re-linked. Node already
+    carries it.
+    """
+    if response.is_error:
+        await response.aread()
+
+
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float
@@ -120,7 +133,10 @@ async def _mcp_transport(
     from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
 
     async with httpx.AsyncClient(
-        headers=headers, timeout=httpx.Timeout(timeout), follow_redirects=True
+        headers=headers,
+        timeout=httpx.Timeout(timeout),
+        follow_redirects=True,
+        event_hooks={"response": [_buffer_error_body]},
     ) as client:
         async with streamable_http_client(endpoint, http_client=client) as streams:
             yield streams

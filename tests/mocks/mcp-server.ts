@@ -220,6 +220,20 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 		// that does not exist is the same permissiveness that hid the missing-header bug
 		// one line further up: any bug that sends a wrong, stale or mangled account id
 		// would be invisible. The real API refuses.
+		// What the real endpoint answers for an account linked before MCP existed, verbatim.
+		if (accountId === 'legacy-account') {
+			return c.json(
+				{
+					jsonrpc: '2.0',
+					error: {
+						code: -32600,
+						message: 'Legacy accounts cannot be used with MCP. Account provider: mock, version: 2',
+					},
+					id: null,
+				},
+				400,
+			);
+		}
 		if (!Object.hasOwn(accountTools, accountId)) {
 			return c.json({ statusCode: 404, message: `Unknown account ${accountId}` }, 404);
 		}

@@ -945,6 +945,20 @@ class TestListingFailuresAreDiagnosable:
         assert "TaskGroup" not in str(err)
         assert getattr(err, "status_code", None) == 412
 
+    def test_a_real_error_response_carries_the_servers_explanation(self, mcp_mock_server: str):
+        """Through the real transport, whose stream is closed by the time the error surfaces.
+
+        The test above hands in an already-read response, so it passed while every live
+        failure said only "400 Bad Request" and dropped why, e.g. "Legacy accounts cannot
+        be used with MCP".
+        """
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.fetch_tools(account_ids=["legacy-account"])
+        assert excinfo.value.status_code == 400
+        assert "Legacy accounts cannot be used with MCP" in str(excinfo.value)
+        assert "Legacy accounts cannot be used with MCP" in excinfo.value.response_body
+
     def test_non_http_error_reports_the_leaf_not_the_group(self):
         from stackone_ai.tools import _describe_mcp_failure
 
