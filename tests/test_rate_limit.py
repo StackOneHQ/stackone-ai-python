@@ -100,6 +100,7 @@ class TestRetryDelay:
             "2026-10-01",
             "March 1, 2027",
             "X, 21 Oct 2015 07:28:00 GMT",
+            "Sun, 01 Jan 99999999999999999999 00:00:00 GMT",
         ],
     )
     def test_an_absent_or_unreadable_header_falls_back(self, value: str | None):

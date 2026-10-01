@@ -155,7 +155,8 @@ def _retry_after_seconds(value: str | None) -> float | None:
         return None
     try:
         when = parsedate_to_datetime(value)
-    except (TypeError, ValueError, IndexError):
+    except (TypeError, ValueError, IndexError, OverflowError):
+        # OverflowError: a year too large for a C long, e.g. 99999999999999999999.
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
