@@ -350,3 +350,10 @@ class TestSubmitFeedback:
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         with pytest.raises(ToolsetConfigError, match="Did you mean"):
             toolset.submit_feedback("positive", "mock_list_items")  # ty: ignore[invalid-argument-type]
+
+    @pytest.mark.parametrize("bad", ["", 42])
+    def test_rejects_a_non_string_or_empty_session_id(self, bad):
+        """Checked as execute() checks it, before any account is listed."""
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetConfigError, match="session_id"):
+            toolset.submit_feedback("positive", ["mock_list_items"], session_id=bad)

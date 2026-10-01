@@ -504,12 +504,16 @@ class StackOneToolSet:
                 toolset's own.
 
         Raises:
+            ToolsetConfigError: If ``tool_names`` is a string or ``session_id`` is empty or
+                not a string.
             ToolsetLoadError: If feedback is not enabled for this project.
         """
         if isinstance(tool_names, str):
             raise ToolsetConfigError(
                 f"tool_names must be a list of tool names, not a string. Did you mean [{tool_names!r}]?"
             )
+        if session_id is not None and (not isinstance(session_id, str) or not session_id):
+            raise ToolsetConfigError(f"session_id must be a non-empty string, got {session_id!r}")
 
         # Found in the served catalog, never built here: the server only serves the tool
         # when the org flag and the project setting are both on, and a client-side stand-in
