@@ -12,12 +12,16 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import re
 import threading
+import time
 from collections import Counter
 from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from importlib import metadata
 from typing import Any, TypeVar
 
@@ -59,6 +63,17 @@ _SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
 # A top-level argument with this prefix is a header argument, as is an entry of a nested
 # `headers` object argument.
 _FLAT_HEADER_PREFIX = "headers_"
+
+# How a 429 is retried, on every request the SDK makes: up to three more attempts, each
+# after the server's Retry-After (capped) or else an exponential backoff with jitter.
+RATE_LIMIT_MAX_RETRIES = 3
+RATE_LIMIT_BACKOFF_SECONDS = (1.0, 2.0, 4.0)
+RATE_LIMIT_JITTER = (0.5, 1.0)
+RATE_LIMIT_MAX_DELAY_SECONDS = 30.0
+
+# Looked up at call time, so tests can replace them and not actually wait.
+_sleep = time.sleep
+_async_sleep = anyio.sleep
 
 
 @dataclass
@@ -115,6 +130,90 @@ async def _buffer_error_body(response: httpx.Response) -> None:
         await response.aread()
 
 
+def _retry_after_seconds(value: str | None) -> float | None:
+    """A Retry-After header as seconds from now: delta-seconds or an HTTP-date.
+
+    ``None`` when the header is absent or unreadable, so the caller falls back to its
+    own backoff. A date in the past means retry now.
+    """
+    if value is None:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _rate_limit_delay(response: httpx.Response, retry: int) -> float:
+    """How long to wait before retry number ``retry`` (1-based) of a 429."""
+    delay = _retry_after_seconds(response.headers.get("retry-after"))
+    if delay is None:
+        delay = RATE_LIMIT_BACKOFF_SECONDS[retry - 1] * random.uniform(*RATE_LIMIT_JITTER)
+    return min(delay, RATE_LIMIT_MAX_DELAY_SECONDS)
+
+
+def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) -> None:
+    logger.warning(
+        "%s %s was rate limited (429) on attempt %d of %d; retrying in %.2fs",
+        request.method,
+        request.url,
+        attempt,
+        RATE_LIMIT_MAX_RETRIES + 1,
+        delay,
+    )
+
+
+class RateLimitRetryingClient(httpx.Client):
+    """An ``httpx.Client`` that retries a 429 before the caller ever sees it.
+
+    Retried in ``send`` rather than in a wrapping transport: passing a custom transport
+    makes httpx ignore the proxy environment variables, which would quietly break the SDK
+    behind a corporate proxy. The last 429 is returned as it came, so the caller reports
+    the server's body.
+    """
+
+    def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        attempt = 1
+        response = super().send(request, **kwargs)
+        while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
+            delay = _rate_limit_delay(response, attempt)
+            # Read before closing, so the connection goes back to the pool.
+            response.read()
+            response.close()
+            _log_rate_limit_retry(request, attempt, delay)
+            _sleep(delay)
+            attempt += 1
+            response = super().send(request, **kwargs)
+        return response
+
+
+class RateLimitRetryingAsyncClient(httpx.AsyncClient):
+    """The async counterpart of :class:`RateLimitRetryingClient`, used for every MCP request.
+
+    The MCP client streams its responses; a discarded 429 is read and closed here, and
+    the final one still passes through the response hooks, so its body is buffered.
+    """
+
+    async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        attempt = 1
+        response = await super().send(request, **kwargs)
+        while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
+            delay = _rate_limit_delay(response, attempt)
+            await response.aread()
+            await response.aclose()
+            _log_rate_limit_retry(request, attempt, delay)
+            await _async_sleep(delay)
+            attempt += 1
+            response = await super().send(request, **kwargs)
+        return response
+
+
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float
@@ -128,11 +227,12 @@ async def _mcp_transport(
 
     The HTTP client is built here with the settings the ``mcp`` package's own factory
     uses (redirects followed), because ``streamable_http_client`` takes a client rather
-    than headers and timeouts.
+    than headers and timeouts. It retries a 429, so the MCP client never sees one that
+    a retry got past.
     """
     from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
 
-    async with httpx.AsyncClient(
+    async with RateLimitRetryingAsyncClient(
         headers=headers,
         timeout=httpx.Timeout(timeout),
         follow_redirects=True,

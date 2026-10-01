@@ -30,7 +30,10 @@ export interface McpToolDefinition {
 }
 
 export interface MockMcpServerOptions {
-	/** Tools available per account ID. An account not listed here is refused with a 404. */
+	/**
+	 * Tools available per account ID. An account not listed here is refused with a 404, except a
+	 * `ratelimit-*` id, which serves the `default` catalog after its 429s.
+	 */
 	accountTools: Record<string, readonly McpToolDefinition[]>;
 	/**
 	 * Serve the global `stackone_submit_feedback` tool, in every tool mode, the way the real
@@ -180,6 +183,16 @@ const callMetaTool = (name: string, args: Record<string, unknown>): CallToolResu
 	return undefined;
 };
 
+const isToolsCall = async (request: Request): Promise<boolean> => {
+	try {
+		const payload = (await request.clone().json()) as { method?: string } | { method?: string }[];
+		const messages = Array.isArray(payload) ? payload : [payload];
+		return messages.some((message) => message?.method === 'tools/call');
+	} catch {
+		return false;
+	}
+};
+
 /**
  * Creates a Hono app speaking the MCP protocol at `/mcp`.
  *
@@ -195,6 +208,7 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 
 	// Create a Hono app that handles MCP protocol
 	const app = new Hono();
+	const rateLimitCounts = new Map<string, number>();
 
 	// Apply Basic Auth middleware with hardcoded test credentials
 	app.use(
@@ -234,9 +248,25 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 				400,
 			);
 		}
-		if (!Object.hasOwn(accountTools, accountId)) {
+		// `ratelimit-<all|call>-<n|always>-<tag>` answers 429 (`Retry-After: 0`) to the first n
+		// requests for that exact id, or every one, and then serves the default catalog. `all`
+		// counts every request, `call` only tools/call; the tag keeps tests' counters apart.
+		const rateLimit = /^ratelimit-(all|call)-(\d+|always)-/.exec(accountId);
+		if (rateLimit) {
+			const [, scope, times] = rateLimit;
+			if (scope === 'all' || (await isToolsCall(c.req.raw))) {
+				const seen = (rateLimitCounts.get(accountId) ?? 0) + 1;
+				rateLimitCounts.set(accountId, seen);
+				if (times === 'always' || seen <= Number(times)) {
+					return c.json({ statusCode: 429, message: 'Too many requests' }, 429, {
+						'Retry-After': '0',
+					});
+				}
+			}
+		} else if (!Object.hasOwn(accountTools, accountId)) {
 			return c.json({ statusCode: 404, message: `Unknown account ${accountId}` }, 404);
 		}
+		const accountCatalog = (rateLimit ? accountTools.default : accountTools[accountId]) ?? [];
 
 		// The feedback tool comes first because the real endpoint does the same: it is one
 		// global tool, served identically in both modes and once per account listing. Under
@@ -244,7 +274,7 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 		const searchExecute = c.req.query('tool-mode') === 'search_execute';
 		const listed: McpToolDefinition[] = [
 			...(submitFeedback ? [submitFeedbackTool] : []),
-			...(searchExecute ? metaTools(accountId) : (accountTools[accountId] ?? [])),
+			...(searchExecute ? metaTools(accountId) : accountCatalog),
 		];
 
 		// A low-level Server rather than McpServer: McpServer.registerTool expects a Zod shape

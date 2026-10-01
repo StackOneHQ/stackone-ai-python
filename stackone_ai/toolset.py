@@ -16,6 +16,7 @@ import httpx
 from stackone_ai.tools import (
     USER_AGENT,
     McpToolDefinition,
+    RateLimitRetryingClient,
     StackOneMcpTool,
     StackOneTool,
     Tools,
@@ -167,6 +168,9 @@ class StackOneToolSet:
 
         Raises:
             ToolsetLoadError: If there is an error loading the tools
+
+        A 429 is retried up to three times, after the server's ``Retry-After`` (capped at
+        30 seconds) or else a 1s, 2s, 4s backoff with jitter.
 
         Examples:
             tools = toolset.fetch_tools(account_ids=['123', '456'])
@@ -606,17 +610,21 @@ class StackOneToolSet:
 
         Each entry carries at least ``id``, ``provider`` and ``status``. Only
         accounts with ``status == "active"`` can serve tools.
+
+        Raises:
+            StackOneAPIError: If the API answers with an error, including a 429 that
+                outlasted its retries.
         """
         url = f"{self.base_url.rstrip('/')}/accounts"
         try:
-            response = httpx.get(
-                url,
-                headers={
-                    "Authorization": build_auth_header(self.api_key),
-                    "User-Agent": USER_AGENT,
-                },
-                timeout=self._timeout,
-            )
+            with RateLimitRetryingClient(timeout=self._timeout) as client:
+                response = client.get(
+                    url,
+                    headers={
+                        "Authorization": build_auth_header(self.api_key),
+                        "User-Agent": USER_AGENT,
+                    },
+                )
         except httpx.HTTPError as exc:
             # The only public method with no error handling at all: a dead host, a bad
             # scheme or a timeout leaked httpx's own exception type straight out of the

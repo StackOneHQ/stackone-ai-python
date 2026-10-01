@@ -1332,10 +1332,10 @@ class TestRecentlyFixedBehaviour:
         """list(dict) yields the keys, which blew up much later as an AttributeError."""
         import httpx
 
-        def fake_get(*_args, **_kwargs):
+        def fake_send(*_args, **_kwargs):
             return httpx.Response(200, json={"results": [{"id": "a"}]})
 
-        monkeypatch.setattr("stackone_ai.toolset.httpx.get", fake_get)
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
         toolset = StackOneToolSet(api_key="test-key")
         with pytest.raises(ToolsetLoadError, match="Unexpected /accounts response shape"):
             toolset.fetch_accounts()
@@ -1344,10 +1344,10 @@ class TestRecentlyFixedBehaviour:
         """Non-JSON or invalid UTF-8 (e.g. b'[\xff]') must raise ToolsetLoadError, not escape."""
         import httpx
 
-        def fake_get(*_args, **_kwargs):
+        def fake_send(*_args, **_kwargs):
             return httpx.Response(200, content=b"[\xff]")
 
-        monkeypatch.setattr("stackone_ai.toolset.httpx.get", fake_get)
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_send)
         toolset = StackOneToolSet(api_key="test-key")
         with pytest.raises(ToolsetLoadError, match="Invalid JSON returned by"):
             toolset.fetch_accounts()
