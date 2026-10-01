@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
-from contextlib import asynccontextmanager
+from collections.abc import Iterator
+from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from stackone_ai.tools import McpToolDefinition, fetch_mcp_tools
+from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, fetch_mcp_tools
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import (
     SUBMIT_FEEDBACK_TOOL_NAME,
     StackOneAPIError,
+    ToolParameters,
     ToolsetConfigError,
     ToolsetError,
     ToolsetLoadError,
@@ -957,7 +960,7 @@ class TestListingFailuresAreDiagnosable:
         # error arrives wrapped in an ExceptionGroup.
         grouped = ExceptionGroup("unhandled errors in a TaskGroup", [inner])
 
-        err = _describe_mcp_failure(grouped, "https://api.example.com/mcp")
+        err = _describe_mcp_failure(grouped, "https://api.example.com/mcp", 60.0)
 
         assert "412" in str(err)
         assert "TaskGroup" not in str(err)
@@ -982,7 +985,7 @@ class TestListingFailuresAreDiagnosable:
 
         grouped = ExceptionGroup("unhandled errors in a TaskGroup", [ConnectionError("no route")])
 
-        err = _describe_mcp_failure(grouped, "https://api.example.com/mcp")
+        err = _describe_mcp_failure(grouped, "https://api.example.com/mcp", 60.0)
 
         assert "no route" in str(err)
         assert "TaskGroup" not in str(err)
@@ -1427,55 +1430,108 @@ class TestExecuteReturnShape:
         }
 
 
+@contextmanager
+def _silent_host() -> Iterator[str]:
+    """The base URL of a host that accepts connections and never answers."""
+    import socket
+
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(8)
+    port = listener.getsockname()[1]
+    accepted: list[socket.socket] = []
+
+    def accept_and_stay_silent() -> None:
+        try:
+            while True:
+                connection, _ = listener.accept()
+                accepted.append(connection)
+        except OSError:
+            return
+
+    threading.Thread(target=accept_and_stay_silent, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        listener.close()
+        for connection in accepted:
+            connection.close()
+
+
+def _within(seconds: float, fn: Any) -> BaseException | None:
+    """Run ``fn`` on a thread with a join deadline, and return what it raised.
+
+    If a timeout regresses, the test must FAIL, not hang the whole suite.
+    """
+    outcome: list[BaseException | None] = []
+
+    def attempt() -> None:
+        try:
+            fn()
+            outcome.append(None)
+        except BaseException as exc:
+            outcome.append(exc)
+
+    worker = threading.Thread(target=attempt, daemon=True)
+    worker.start()
+    worker.join(timeout=seconds)
+    assert not worker.is_alive(), "the call ignored its timeout and is still hanging"
+    return outcome[0]
+
+
 class TestTimeoutIsHonoured:
     def test_mcp_listing_respects_timeout_against_a_host_that_never_answers(self):
         """The MCP client's own defaults are a 300s SSE read, and timeout= was never
         passed through — so timeout=2 against a silent host hung for five minutes.
         """
-        import socket
         import time
 
-        listener = socket.socket()
-        listener.bind(("127.0.0.1", 0))
-        listener.listen(8)
-        port = listener.getsockname()[1]
-        accepted: list[socket.socket] = []
-
-        def accept_and_stay_silent() -> None:
-            try:
-                while True:
-                    connection, _ = listener.accept()
-                    accepted.append(connection)
-            except OSError:
-                return
-
-        threading.Thread(target=accept_and_stay_silent, daemon=True).start()
-        try:
-            toolset = StackOneToolSet(
-                api_key="k", account_id="a", base_url=f"http://127.0.0.1:{port}", timeout=1
-            )
-            # Run it on a thread with a join deadline: if the timeout regresses, this
-            # must FAIL, not hang the whole suite for five minutes the way the bug did.
-            outcome: list[BaseException | None] = []
-
-            def attempt() -> None:
-                try:
-                    toolset.fetch_tools()
-                    outcome.append(None)
-                except BaseException as exc:
-                    outcome.append(exc)
-
+        with _silent_host() as base_url:
+            toolset = StackOneToolSet(api_key="k", account_id="a", base_url=base_url, timeout=1)
             started = time.monotonic()
-            worker = threading.Thread(target=attempt, daemon=True)
-            worker.start()
-            worker.join(timeout=15)
-            assert not worker.is_alive(), "fetch_tools ignored timeout=1 and is still hanging"
-            assert isinstance(outcome[0], ToolsetError)
+            assert isinstance(_within(15, toolset.fetch_tools), ToolsetError)
             assert time.monotonic() - started < 10
-        finally:
-            listener.close()
-            for connection in accepted:
-                connection.close()
+
+    @pytest.mark.parametrize("in_a_running_loop", [False, True])
+    def test_a_timeout_says_it_timed_out(self, in_a_running_loop: bool):
+        """Not "RuntimeError: no running event loop", or "WouldBlock:" inside a loop.
+
+        The failure walk followed __context__ to run_async's own probe for a loop, and
+        reported that as the cause of every timeout.
+        """
+        with _silent_host() as base_url:
+            toolset = StackOneToolSet(api_key="k", account_id="a", base_url=base_url, timeout=0.5)
+
+            def fetch() -> None:
+                if not in_a_running_loop:
+                    toolset.fetch_tools()
+                    return
+
+                async def inside_a_loop() -> None:
+                    toolset.fetch_tools()
+
+                asyncio.run(inside_a_loop())
+
+            error = _within(15, fetch)
+
+        assert isinstance(error, ToolsetLoadError)
+        assert str(error) == f"MCP request to {base_url}/mcp timed out after 0.5s"
+
+    def test_a_tool_call_timeout_says_it_timed_out(self):
+        with _silent_host() as base_url:
+            tool = StackOneMcpTool(
+                name="t",
+                description="",
+                parameters=ToolParameters(type="object", properties={}),
+                api_key="k",
+                endpoint=f"{base_url}/mcp",
+                account_id="a",
+                timeout=0.5,
+            )
+            error = _within(15, tool.execute)
+
+        assert isinstance(error, ToolsetLoadError)
+        assert str(error) == f"MCP request to {base_url}/mcp timed out after 0.5s"
 
 
 def test_every_sdk_error_is_a_stackone_error():

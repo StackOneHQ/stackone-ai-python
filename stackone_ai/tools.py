@@ -95,6 +95,12 @@ def run_async(awaitable: Coroutine[Any, Any, T]) -> T:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
+        in_a_loop = False
+    else:
+        in_a_loop = True
+    # Run outside the except block, or every failure would carry the probe's
+    # "no running event loop" as its __context__.
+    if not in_a_loop:
         return asyncio.run(awaitable)
 
     result: dict[str, T] = {}
@@ -370,7 +376,7 @@ def fetch_mcp_tools(
     try:
         return run_async(_list())
     except BaseException as exc:
-        raise _describe_mcp_failure(exc, endpoint) from exc
+        raise _describe_mcp_failure(exc, endpoint, timeout) from exc
 
 
 def _response_body(response: httpx.Response) -> str:
@@ -392,18 +398,17 @@ def _response_body(response: httpx.Response) -> str:
         return ""
 
 
-def _describe_mcp_failure(exc: BaseException, endpoint: str) -> Exception:
+def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> Exception:
     """Turn the MCP client's nested failure into something a caller can act on.
 
     The listing runs inside a TaskGroup, so any HTTP error arrives wrapped in an
     ExceptionGroup whose str() is "unhandled errors in a TaskGroup (1 sub-exception)".
     Unwrap to the underlying error and carry the status code and response body,
     which is where the server explains itself — a dead account, for example,
-    answers 412 with "re-link the account to resume".
+    answers 412 with "re-link the account to resume". A timeout says so, as in Node.
     """
     seen: set[int] = set()
     stack: list[BaseException] = [exc]
-    leaf: BaseException = exc
     while stack:
         current = stack.pop()
         if current is None or id(current) in seen:
@@ -424,12 +429,25 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str) -> Exception:
                 current.response.status_code,
                 body or None,
             )
-        # Track the innermost non-group exception: an ExceptionGroup's own str() is
-        # the "unhandled errors in a TaskGroup" boilerplate that hides the real cause.
-        if not getattr(current, "exceptions", None):
-            leaf = current
         stack.extend(getattr(current, "exceptions", None) or [])
         stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
+
+    # The innermost cause, through group members and __cause__ only. An ExceptionGroup's
+    # own str() is the "unhandled errors in a TaskGroup" boilerplate that hides the real
+    # cause, and a __context__ is only what was being handled when the error was raised:
+    # for the deadline's TimeoutError that is the cancellation, or whatever the
+    # cancelled task happened to be catching.
+    leaf: BaseException = exc
+    while True:
+        if isinstance(leaf, TimeoutError | httpx.TimeoutException):
+            return ToolsetLoadError(f"MCP request to {endpoint} timed out after {timeout:g}s")
+        members = getattr(leaf, "exceptions", None)
+        if members:
+            leaf = members[0]
+        elif leaf.__cause__ is not None:
+            leaf = leaf.__cause__
+        else:
+            break
     return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
 
 
@@ -549,7 +567,7 @@ def call_mcp_tool(
     try:
         return run_async(_call())
     except BaseException as exc:
-        raise _describe_mcp_failure(exc, endpoint) from exc
+        raise _describe_mcp_failure(exc, endpoint, timeout) from exc
 
 
 def _strip_internal_keys(schema: Any) -> Any:
