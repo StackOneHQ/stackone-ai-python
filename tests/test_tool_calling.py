@@ -311,6 +311,14 @@ class TestMcpToolHeaderGuard:
             _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-set": [{"a"}]}})
         assert seen == {}
 
+    def test_a_self_referential_header_value_is_an_argument_error(self, seen):
+        """A cycle would otherwise recurse forever in _header_text, raising RecursionError."""
+        cyclic: dict[str, Any] = {}
+        cyclic["self"] = cyclic
+        with pytest.raises(ToolArgumentsError, match="could not be encoded"):
+            _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-cyclic": cyclic}})
+        assert seen == {}
+
     def test_a_non_object_headers_argument_is_dropped(self, seen, caplog):
         """A string headers argument isn't a header container and isn't an ordinary field either."""
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
@@ -328,6 +336,19 @@ class TestMcpToolHeaderGuard:
         """A schema that declares `headers` itself as a string makes it an ordinary argument."""
         _mcp_tool({"headers": {"type": "string"}}).execute({"headers": "not-an-object"})
         assert seen["arguments"] == {"headers": "not-an-object"}
+
+    def test_a_non_object_headers_argument_is_sent_as_given_when_the_declared_type_list_excludes_object(
+        self, seen
+    ):
+        """`["string", "null"]` never includes "object", so `headers` is an ordinary field."""
+        _mcp_tool({"headers": {"type": ["string", "null"]}}).execute({"headers": "not-an-object"})
+        assert seen["arguments"] == {"headers": "not-an-object"}
+
+    def test_a_headers_object_is_still_a_container_when_the_declared_type_list_includes_object(self, seen):
+        """`["object", "null"]` includes "object", so `headers` is still sanitised as a container."""
+        tool = _mcp_tool({"headers": {"type": ["object", "null"]}})
+        tool.execute({"headers": {"x-trace": "value"}})
+        assert seen["arguments"] == {"headers": {"x-trace": "value"}}
 
     def test_the_request_is_scoped_to_the_tools_account(self, seen):
         tool = _mcp_tool({"headers": {"type": "object"}, "headers_x-account-id": {"type": "string"}})

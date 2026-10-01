@@ -194,6 +194,19 @@ def _js_json(value: Any) -> str:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _declares_object_type(schema_type: Any) -> bool:
+    """Whether a JSON Schema ``type`` declares (among others) ``"object"``.
+
+    ``type`` is either a single string or, per the JSON Schema spec, a list of strings
+    naming every allowed type, e.g. ``["object", "null"]``.
+    """
+    if isinstance(schema_type, str):
+        return schema_type == "object"
+    if isinstance(schema_type, list):
+        return "object" in schema_type
+    return False
+
+
 def _header_text(value: Any) -> str | None:
     """A header argument's value as text, as Node's ``headerText`` writes it; ``None`` if null.
 
@@ -750,12 +763,17 @@ class StackOneTool(BaseModel):
         flat = {prop for prop in properties if prop.startswith(_FLAT_HEADER_PREFIX)}
         nested: set[str] | None = set()
         schema = properties.get("headers")
+        schema_type = schema.get("type") if isinstance(schema, dict) else None
+        declares_object = _declares_object_type(schema_type)
+        # A declared type of `["string", "null"]` is a plain field that happens to be
+        # named `headers`; `["object", "null"]` is still a header container, same as a
+        # bare "object". Only a declared, non-object type makes it ordinary.
         ordinary_headers_field = (
-            isinstance(schema, dict) and isinstance(schema.get("type"), str) and schema["type"] != "object"
+            isinstance(schema, dict) and isinstance(schema_type, str | list) and not declares_object
         )
         if isinstance(schema, dict):
             if "properties" not in schema:
-                if schema.get("type") == "object" and schema.get("additionalProperties") is not False:
+                if declares_object and schema.get("additionalProperties") is not False:
                     nested = None
             elif isinstance(schema["properties"], dict):
                 nested = {str(name).casefold() for name in schema["properties"]}
@@ -1121,6 +1139,14 @@ class StackOneMcpTool(StackOneTool):
             # NaN and Infinity are not JSON either; the MCP client would send them as null.
             raise ToolArgumentsError(
                 f"Arguments for {self.name!r} could not be encoded as JSON: {exc}"
+            ) from exc
+        except RecursionError as exc:
+            # A header value that contains itself, directly or through a cycle of nested
+            # dicts/lists, recurses forever as _header_text walks it. Not a different
+            # defect than the ones above: it's still an argument the server could never
+            # have accepted.
+            raise ToolArgumentsError(
+                f"Arguments for {self.name!r} could not be encoded as JSON: circular reference"
             ) from exc
 
         return call_mcp_tool(
