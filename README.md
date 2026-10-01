@@ -252,6 +252,9 @@ print(tool.parameters.properties)
 Keys `toolset.execute()` does not recognise are not an error — they are dropped,
 and you get the server's defaults.
 
+Results keep the exact value of an integer above 2^53, unlike the Node SDK, whose
+JSON parser has already rounded it by the time the SDK sees it.
+
 A file action's `result` is a download link, `{"download_url", "expires_at", "file":
 {"name", "content_type", "content_length"}}`, rather than the file itself; the SDK does
 not follow it, and `file.name` is chosen by the provider, so reduce it to a safe

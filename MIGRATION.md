@@ -153,6 +153,11 @@ employees = tool.execute({})["result"]["data"]
 A result with `isError` set raises `StackOneAPIError`, which carries the status from the
 payload in `status_code` and the body in `response_body`.
 
+**Integers above 2^53 keep their exact value.** This SDK parses the server's JSON
+itself, so it is not limited to the integer precision of IEEE 754 doubles; the Node
+SDK's result can differ for a field that size, because its JSON parser has already
+rounded it by the time the SDK sees it.
+
 **File actions return a download link, not bytes.** The SDK does not follow the link.
 When no link can be issued, the call raises `StackOneAPIError` with `status_code` 501.
 
