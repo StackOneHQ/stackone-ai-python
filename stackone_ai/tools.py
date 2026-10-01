@@ -130,6 +130,9 @@ async def _buffer_error_body(response: httpx.Response) -> None:
         await response.aread()
 
 
+_HTTP_DATE_START = re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*[, ]")
+
+
 def _retry_after_seconds(value: str | None) -> float | None:
     """A Retry-After header as seconds from now: delta-seconds or an HTTP-date.
 
@@ -142,8 +145,9 @@ def _retry_after_seconds(value: str | None) -> float | None:
     # ASCII digits only: str.isdigit() also accepts "²", which float() then refuses.
     if re.fullmatch(r"[0-9]+", value):
         return float(value)
-    # An HTTP-date always starts with a day name; anything else is unreadable, as in Node.
-    if not value[:1].isascii() or not value[:1].isalpha():
+    # All three HTTP-date forms start with a weekday ("Sun,", "Sunday,", "Sun "); anything
+    # else is unreadable, as in Node, and falls back to the backoff.
+    if not _HTTP_DATE_START.match(value):
         return None
     try:
         when = parsedate_to_datetime(value)

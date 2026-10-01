@@ -183,11 +183,11 @@ const callMetaTool = (name: string, args: Record<string, unknown>): CallToolResu
 	return undefined;
 };
 
-const isToolsCall = async (request: Request): Promise<boolean> => {
+const hasMethod = async (request: Request, method: string): Promise<boolean> => {
 	try {
 		const payload = (await request.clone().json()) as { method?: string } | { method?: string }[];
 		const messages = Array.isArray(payload) ? payload : [payload];
-		return messages.some((message) => message?.method === 'tools/call');
+		return messages.some((message) => message?.method === method);
 	} catch {
 		return false;
 	}
@@ -248,13 +248,15 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 				400,
 			);
 		}
-		// `ratelimit-<all|call>-<n|always>-<tag>` answers 429 (`Retry-After: 0`) to the first n
-		// requests for that exact id, or every one, and then serves the default catalog. `all`
-		// counts every request, `call` only tools/call; the tag keeps tests' counters apart.
-		const rateLimit = /^ratelimit-(all|call)-(\d+|always)-/.exec(accountId);
+		// `ratelimit-<all|list|call>-<n|always>-<tag>` answers 429 (`Retry-After: 0`) to the
+		// first n requests for that exact id, or every one, and then serves the default catalog.
+		// `all` counts every request, `list` only tools/list and `call` only tools/call; the tag
+		// keeps tests' counters apart.
+		const rateLimit = /^ratelimit-(all|list|call)-(\d+|always)-/.exec(accountId);
 		if (rateLimit) {
 			const [, scope, times] = rateLimit;
-			if (scope === 'all' || (await isToolsCall(c.req.raw))) {
+			const method = { list: 'tools/list', call: 'tools/call' }[scope];
+			if (!method || (await hasMethod(c.req.raw, method))) {
 				const seen = (rateLimitCounts.get(accountId) ?? 0) + 1;
 				rateLimitCounts.set(accountId, seen);
 				if (times === 'always' || seen <= Number(times)) {

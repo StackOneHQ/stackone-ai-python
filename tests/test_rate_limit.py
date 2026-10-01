@@ -77,7 +77,21 @@ class TestRetryDelay:
     def test_a_past_http_date_means_now(self):
         assert _retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
 
-    @pytest.mark.parametrize("value", [None, "", "soon", "-1", "1.5e3", "1.5", "\u00b2", "2026-10-01"])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            None,
+            "",
+            "soon",
+            "-1",
+            "1.5e3",
+            "1.5",
+            "\u00b2",
+            "2026-10-01",
+            "March 1, 2027",
+            "X, 21 Oct 2015 07:28:00 GMT",
+        ],
+    )
     def test_an_absent_or_unreadable_header_falls_back(self, value: str | None):
         assert _retry_after_seconds(value) is None
 
@@ -220,9 +234,11 @@ class TestFetchAccounts:
 class TestMcpAgainstMockServer:
     """The mock answers 429 for `ratelimit-<all|call>-<n|always>-<tag>` account ids."""
 
-    def test_listing_recovers_from_429s(self, mcp_mock_server: str, sleeps: list[float]):
+    @pytest.mark.parametrize("account", ["ratelimit-list-2-listing", "ratelimit-all-2-initialize"])
+    def test_listing_recovers_from_429s(self, mcp_mock_server: str, sleeps: list[float], account: str):
+        """On tools/list itself, and on the initialize that precedes it."""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
-        tools = toolset.fetch_tools(account_ids=["ratelimit-all-2-listing"])
+        tools = toolset.fetch_tools(account_ids=[account])
         assert tools.get_tool("default_tool_1") is not None
         assert sleeps == [0.0, 0.0]
 
