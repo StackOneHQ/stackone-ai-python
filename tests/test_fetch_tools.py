@@ -345,13 +345,18 @@ class TestServedRequiredOrder:
 
     @pytest.mark.parametrize(("served", "expected"), _SERVED_REQUIRED_CASES)
     def test_langchain(self, monkeypatch, served, expected):
-        assert self._tool(monkeypatch, served).to_langchain().args_schema.get("required") == expected
+        schema = self._tool(monkeypatch, served).to_langchain().args_schema
+        assert schema.get("required") == expected
+        if expected is None:
+            assert "required" not in schema
 
     @pytest.mark.parametrize(("served", "expected"), _SERVED_REQUIRED_CASES)
     def test_pydantic_ai(self, monkeypatch, served, expected):
         pytest.importorskip("pydantic_ai")
         schema = self._tool(monkeypatch, served).to_pydantic_ai_tool().function_schema.json_schema
         assert schema.get("required") == expected
+        if expected is None:
+            assert "required" not in schema
 
     def test_parameters_still_carry_the_served_list_and_markers(self, monkeypatch):
         """The ADK plugin reads `tool.parameters` directly, so it must not change shape."""
