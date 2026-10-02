@@ -71,9 +71,13 @@ def search_and_execute() -> None:
     print(f"\narguments: {json.dumps(arguments)}")
 
     # session_id links this call, and the feedback below, to the search that found
-    # the action. It is optional: leave it out and each call stands alone.
+    # the action. It is optional: leave it out and each call stands alone. account_id
+    # runs it on the account that found it: with the same provider linked on two
+    # accounts, execute() refuses to pick one.
     session_id = best.get("session_id")
-    result = toolset.execute(best["action_id"], arguments, session_id=session_id)
+    result = toolset.execute(
+        best["action_id"], arguments, account_ids=[best["account_id"]], session_id=session_id
+    )
     print(f"\nresult: {json.dumps(result, default=str)[:300]}...")
 
     try:

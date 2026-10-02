@@ -100,9 +100,17 @@ hit = hits[0]
 result = toolset.execute(
     hit["action_id"],
     {"query": {"page_size": 25}},     # the nested form in hit["input_schema"]
+    account_ids=[hit["account_id"]],
     session_id=hit.get("session_id"),
 )
 ```
+
+`search()` returns dicts carrying `action_id` and the `account_id` that found it, plus
+`description`, `similarity_score`, `input_schema`, `example_request` and `session_id`
+when the server sends them. `top_k` caps the whole result, as in 2.x, after ranking
+across every connector; the same action linked on two accounts is two hits. When an
+action's connector is linked on more than one account, `execute()` raises
+`ToolsetConfigError` unless `account_ids` picks one, such as `[hit["account_id"]]`.
 
 `toolset.execute()` has a new signature. It used to take a meta tool name, such as
 `"tool_execute"`, with arguments as a JSON string or a dict. It now takes
@@ -237,6 +245,10 @@ otherwise the SDK now falls back to `STACKONE_BASE_URL` before the default,
 accounts, pass `account_id=`, `account_ids=` or call `set_accounts()` so the SDK does
 not fetch every catalog.
 
+**`STACKONE_ACCOUNT_ID` is not read.** Pass the account id as `account_id=` or
+`execute={"account_ids": [...]}`. A toolset constructed with neither while
+`STACKONE_ACCOUNT_ID` is set logs a warning that it is ignored.
+
 **An empty account id raises.** `StackOneToolSet(account_id="")` raises
 `ToolsetConfigError`, where it used to be treated as no account at all. An account id
 read from an environment variable that is set but empty now raises too, rather than
@@ -251,14 +263,23 @@ toolset = StackOneToolSet(account_id=os.getenv("STACKONE_ACCOUNT_ID") or None)
 ```
 
 An empty or non-string entry in `account_ids`, `set_accounts()` or
-`execute={"account_ids": [...]}` raises `ToolsetConfigError` as well. A falsy entry
+`execute={"account_ids": [...]}` raises `ToolsetConfigError` as well, and so does
+passing a tuple (or any other non-list) there: pass a list, `list(ids)`, instead. A falsy entry
 (`None`, `0`, `""`) used to produce an unscoped request with no `x-account-id`; a
 truthy non-string entry used to be sent as the header's value.
 
 **`get_tool()` returns the first of any duplicates.** When two accounts serve the same
 tool name, `Tools.get_tool()` now returns the first one listed, where 2.x returned the
 last. Listings are merged in sorted account order, and a warning names the clashing
-tools. Pass `account_ids` to choose the account yourself.
+tools. `execute_openai_tool_calls()`, `to_openai()`, `to_langchain()` and
+`to_pydantic_ai()` use the same one: each builds one tool per name. Pass `account_ids`
+to choose the account yourself.
+
+**A failing account is skipped, and left out for 30 seconds.** An account whose listing
+fails is skipped with a warning and left out of the cached catalog for 30 seconds,
+unless every account fails: then the accounts' shared `StackOneAPIError` is raised
+when they all failed with one status, and otherwise a `ToolsetLoadError` with each
+account's error in `failures`.
 
 ## Feedback
 
@@ -294,7 +315,8 @@ from stackone_ai import Tools
 tools = Tools([t for t in toolset.fetch_tools() if t.name != "stackone_submit_feedback"])
 ```
 
-`submit_feedback()` raises `ToolsetLoadError` when feedback is not enabled.
+`submit_feedback()` raises `ToolsetLoadError` when feedback is not enabled. It calls the
+tool once, on the lowest account id in scope, and sends `action_run_id` when given.
 
 ## Schemas given to a model
 

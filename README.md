@@ -52,12 +52,16 @@ hits = toolset.search("list recent comments", top_k=3)
 #   "similarity_score": 0.86,
 #   "example_request": {"action_id": "linear_list_comments"},
 #   "input_schema": {"type": "object", "properties": {"body": {...}}},
-#   "session_id": "3f9c..."}, ...]
+#   "session_id": "3f9c...",
+#   "account_id": "acc-123"}, ...]
 hit = hits[0]
 
 # 2. Run it. Build the arguments from input_schema.
 result = toolset.execute(
-    hit["action_id"], {"body": {"variables": {"first": 25}}}, session_id=hit.get("session_id")
+    hit["action_id"],
+    {"body": {"variables": {"first": 25}}},
+    account_ids=[hit["account_id"]],
+    session_id=hit.get("session_id"),
 )
 result["result"]["data"]  # as the server wrote it: {"isError": false, "result": ...}; a failure raises
 
@@ -67,13 +71,21 @@ toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("sess
 
 `search()` asks every linked connector and returns actions ranked by
 `similarity_score`, so a catalog of hundreds of tools never has to fit in a
-model's context. This is the recommended way to use the SDK.
+model's context. This is the recommended way to use the SDK. `top_k` (1–50, default
+10) caps the whole result, after ranking across every connector.
+
+Each hit carries the `account_id` of the account that found it, and the same action
+linked on two accounts is two hits. When an action's connector is linked on more than
+one account, `execute()` raises `ToolsetConfigError` rather than pick one: pass the
+hit's account as `account_ids=[hit["account_id"]]`.
 
 Each hit carries the `session_id` of the search that found it, when the server
 issued one, so read it with `hit.get("session_id")`. Passing it to
 `execute()` and `submit_feedback()` links the calls server-side; leaving it out
-is fine. `submit_feedback()` raises `ToolsetLoadError` when feedback is not
-enabled for your project. When it is, `fetch_tools()` also returns a single
+is fine. `submit_feedback()` makes exactly one call, on the account with the lowest id
+among its `account_ids` when given, otherwise among those the toolset is configured
+with or discovers, and sends `action_run_id` only when given. It raises
+`ToolsetLoadError` when feedback is not enabled for your project. When it is, `fetch_tools()` also returns a single
 `stackone_submit_feedback` tool — one, however many accounts are linked — that a
 model can call itself.
 
@@ -191,7 +203,8 @@ print(result["messages"][-1].content)
 ## Advanced Filtering
 
 `fetch_tools()` takes three filters. They combine with AND, and all of them are
-applied locally to one cached listing — changing a filter never refetches.
+applied locally to one cached listing — changing a filter never refetches. Call
+`clear_catalog_cache()` after linking or unlinking accounts.
 
 ```python
 toolset = StackOneToolSet()
@@ -208,7 +221,10 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 - **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
   your active accounts. An empty list means "no filter", not "no accounts". A
   single failing account is logged and skipped, not fatal — unless it is rate
-  limited (see [Rate limits](#rate-limits)).
+  limited (see [Rate limits](#rate-limits)) — and left out of the cached catalog for
+  30 seconds, after which the next call lists it again. If every account fails with
+  the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
+  otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
 - **`providers`** — matched **case-insensitively** as a full prefix, so
   `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
   contains an underscore must be spelled in full (`["browser_linkedin"]`, not
