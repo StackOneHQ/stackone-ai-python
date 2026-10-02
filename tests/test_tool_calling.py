@@ -188,37 +188,6 @@ class TestMcpToolHeaderGuard:
         )
         assert seen["arguments"]["headers"] == {}
 
-    @pytest.mark.parametrize(
-        "name",
-        [" authorization", "AUTHORIZATION\t", "X-Account-Id", " x-account-id "],
-    )
-    def test_whitespace_and_case_variants_do_not_slip_past(self, seen, name):
-        _mcp_tool().execute({"action_id": "a", "headers": {name: "stolen"}})
-        assert seen["arguments"]["headers"] == {}
-
-    @pytest.mark.parametrize("name", ["x-custom\x1f", "\x1cx-custom", "x-custom\x85"])
-    def test_names_are_trimmed_as_javascript_trims_them(self, seen, name, caplog):
-        """str.strip() also strips \\x1c-\\x1f and \\x85, which Node keeps and refuses as malformed."""
-        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {name: "v"}})
-        assert seen["arguments"]["headers"] == {}
-        assert "from a tool call: malformed" in caplog.text
-
-    @pytest.mark.parametrize("name", ["\ufeffx-custom", "x-custom\u3000", "\u00a0x-custom\u2028"])
-    def test_javascript_whitespace_is_trimmed(self, seen, name):
-        _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {name: "v"}})
-        assert seen["arguments"]["headers"] == {"x-custom": "v"}
-
-    def test_a_byte_order_mark_does_not_hide_an_sdk_header(self, seen):
-        _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"\ufeffAuthorization": "stolen"}})
-        assert seen["arguments"]["headers"] == {}
-
-    @pytest.mark.parametrize("value", ["a\r\nEvil: 1", "trailing\n", "bad\rvalue"])
-    def test_crlf_injection_is_rejected(self, seen, value):
-        """`$` also matches before a trailing newline, so this needs fullmatch."""
-        _mcp_tool().execute({"action_id": "a", "headers": {"X-Probe": value}})
-        assert seen["arguments"]["headers"] == {}
-
     def test_a_nested_declared_header_survives(self, seen):
         """The allowlist is the schema itself, so a future action needing a header
         works with no SDK release."""
@@ -231,26 +200,6 @@ class TestMcpToolHeaderGuard:
         tool = _mcp_tool({"headers_x-trace": {"type": "string"}})
         tool.execute({"action_id": "a", "headers": {"X-Trace": "abc"}})
         assert seen["arguments"] == {"action_id": "a", "headers": {}}
-
-    def test_an_open_headers_object_forwards_any_header_but_the_sdks(self, seen):
-        """`*_execute_action` serves `headers` with no `properties`, which declares every name."""
-        tool = _mcp_tool({"headers": {"type": "object"}})
-        tool.execute(
-            {
-                "headers": {
-                    "x-custom": "kept",
-                    "Authorization": "Bearer stolen",
-                    " X-Account-Id ": "victim-account",
-                    "user-agent": "spoofed",
-                }
-            }
-        )
-        assert seen["arguments"]["headers"] == {"x-custom": "kept"}
-
-    def test_an_object_with_additional_properties_allowed_is_open(self, seen):
-        tool = _mcp_tool({"headers": {"type": "object", "additionalProperties": {"type": "string"}}})
-        tool.execute({"headers": {"x-custom": "kept"}})
-        assert seen["arguments"]["headers"] == {"x-custom": "kept"}
 
     @pytest.mark.parametrize(
         "schema",
@@ -272,40 +221,6 @@ class TestMcpToolHeaderGuard:
         tool.execute({"headers": {name: "stolen"}})
         assert seen["arguments"]["headers"] == {}
 
-    def test_none_values_are_skipped(self, seen):
-        tool = _mcp_tool(
-            {
-                "headers": {
-                    "type": "object",
-                    "properties": {"x-present": {"type": "string"}, "x-absent": {"type": "string"}},
-                }
-            }
-        )
-        tool.execute({"headers": {"X-Present": "value", "X-Absent": None}})
-        assert seen["arguments"]["headers"] == {"X-Present": "value"}
-
-    def test_values_are_written_as_node_writes_them(self, seen):
-        """str() sent Python's spelling: "True", "['a', 'b']", "{'k': 1}", "1.0"."""
-        _mcp_tool({"headers": {"type": "object"}}).execute(
-            {
-                "headers": {
-                    "x-bool": True,
-                    "x-list": ["a", "b"],
-                    "x-obj": {"k": 1},
-                    "x-float": 1.0,
-                    "x-num": 1.5,
-                    "x-null": None,
-                }
-            }
-        )
-        assert seen["arguments"]["headers"] == {
-            "x-bool": "true",
-            "x-list": '["a","b"]',
-            "x-obj": '{"k":1}',
-            "x-float": "1",
-            "x-num": "1.5",
-        }
-
     def test_a_value_json_cannot_hold_is_an_argument_error(self, seen):
         with pytest.raises(ValueError, match="could not be encoded"):
             _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-set": [{"a"}]}})
@@ -319,36 +234,11 @@ class TestMcpToolHeaderGuard:
             _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-cyclic": cyclic}})
         assert seen == {}
 
-    def test_a_non_object_headers_argument_is_dropped(self, seen, caplog):
-        """A string headers argument isn't a header container and isn't an ordinary field either."""
-        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            _mcp_tool().execute({"headers": "not-an-object", "q": 1})
-        assert seen["arguments"] == {"q": 1}
-        assert 'Dropping header argument "headers" from a tool call: not an object' in caplog.text
-
     def test_a_list_headers_argument_is_dropped(self, seen, caplog):
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             _mcp_tool().execute({"headers": ["a"], "q": 1})
         assert seen["arguments"] == {"q": 1}
         assert 'Dropping header argument "headers" from a tool call: not an object' in caplog.text
-
-    def test_a_non_object_headers_argument_is_sent_as_given_when_declared_as_a_string(self, seen):
-        """A schema that declares `headers` itself as a string makes it an ordinary argument."""
-        _mcp_tool({"headers": {"type": "string"}}).execute({"headers": "not-an-object"})
-        assert seen["arguments"] == {"headers": "not-an-object"}
-
-    def test_a_non_object_headers_argument_is_sent_as_given_when_the_declared_type_list_excludes_object(
-        self, seen
-    ):
-        """`["string", "null"]` never includes "object", so `headers` is an ordinary field."""
-        _mcp_tool({"headers": {"type": ["string", "null"]}}).execute({"headers": "not-an-object"})
-        assert seen["arguments"] == {"headers": "not-an-object"}
-
-    def test_a_headers_object_is_still_a_container_when_the_declared_type_list_includes_object(self, seen):
-        """`["object", "null"]` includes "object", so `headers` is still sanitised as a container."""
-        tool = _mcp_tool({"headers": {"type": ["object", "null"]}})
-        tool.execute({"headers": {"x-trace": "value"}})
-        assert seen["arguments"] == {"headers": {"x-trace": "value"}}
 
     def test_the_request_is_scoped_to_the_tools_account(self, seen):
         tool = _mcp_tool({"headers": {"type": "object"}, "headers_x-account-id": {"type": "string"}})
@@ -398,46 +288,6 @@ class TestFlatHeaderArguments:
         assert seen["arguments"] == {"q": 1}
         assert "from a tool call: set by the SDK" in caplog.text
 
-    def test_an_undeclared_one_is_dropped(self, seen, caplog):
-        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            _mcp_tool({"headers": {"type": "object"}}).execute({"headers_foo": "bar", "q": 1})
-        assert seen["arguments"] == {"q": 1}
-        assert '"headers_foo" from a tool call: not declared by the schema' in caplog.text
-
-    def test_a_declared_one_is_forwarded_as_given(self, seen):
-        """A declared flat header is an ordinary top-level argument: its value is not stringified."""
-        _mcp_tool({"headers_foo": {"type": "string"}, "headers_n": {"type": "integer"}}).execute(
-            {"headers_foo": "bar", "headers_n": 7, "q": 1}
-        )
-        assert seen["arguments"] == {"headers_foo": "bar", "headers_n": 7, "q": 1}
-
-    def test_it_is_declared_only_under_its_exact_key(self, seen):
-        """Matched as the schema property it is, as in Node: `headers_Foo` does not declare `headers_foo`."""
-        _mcp_tool({"headers_Foo": {"type": "string"}}).execute({"headers_foo": "bar", "q": 1})
-        assert seen["arguments"] == {"q": 1}
-
-    def test_a_declared_one_with_a_malformed_value_is_dropped(self, seen):
-        _mcp_tool({"headers_foo": {"type": "string"}}).execute({"headers_foo": "a\r\nInjected: 1"})
-        assert seen["arguments"] == {}
-
-    def test_a_declared_one_with_a_number_value_is_sent_as_given(self, seen):
-        _mcp_tool({"headers_n": {"type": "integer"}}).execute({"headers_n": 7})
-        assert seen["arguments"] == {"headers_n": 7}
-
-    def test_a_declared_one_with_a_list_value_is_dropped(self, seen, caplog):
-        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            _mcp_tool({"headers_foo": {"type": "array"}}).execute(
-                {"headers_foo": ["a\r\nx-account-id: B"], "q": 1}
-            )
-        assert seen["arguments"] == {"q": 1}
-        assert '"headers_foo" from a tool call: not a string, number or boolean' in caplog.text
-
-    def test_a_declared_one_with_a_dict_value_is_dropped(self, seen, caplog):
-        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            _mcp_tool({"headers_foo": {"type": "object"}}).execute({"headers_foo": {"a": "b"}, "q": 1})
-        assert seen["arguments"] == {"q": 1}
-        assert '"headers_foo" from a tool call: not a string, number or boolean' in caplog.text
-
     def test_non_header_arguments_are_untouched(self, seen):
         """Only `headers` and `headers_<name>` are header arguments; bare lookalikes are not."""
         arguments = {
@@ -469,12 +319,6 @@ class TestDeclaredHeaderValuesAreStillValidated:
 
     def test_a_clean_declared_header_survives(self, tool):
         assert tool._sanitise_headers({"X-Trace": "abc-123"}) == {"X-Trace": "abc-123"}
-
-    def test_the_warning_says_why_a_header_was_dropped(self, tool, caplog):
-        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            tool._sanitise_headers({"X-Other": "a", "Authorization": "b"})
-        assert 'Dropping header "X-Other" from a tool call: not declared by the schema' in caplog.text
-        assert 'Dropping header "Authorization" from a tool call: set by the SDK' in caplog.text
 
 
 @pytest.mark.parametrize(

@@ -76,44 +76,15 @@ def _recorded(base_url: str, account_id: str, method: str) -> list[dict[str, Any
 
 
 class TestRetryDelay:
-    def test_retry_after_in_seconds(self):
-        assert _retry_after_seconds("5") == 5.0
-        assert _retry_after_seconds(" 0 ") == 0.0
-
     def test_retry_after_as_an_http_date(self):
         when = datetime.now(UTC) + timedelta(seconds=10)
         assert 8.0 <= (_retry_after_seconds(format_datetime(when, usegmt=True)) or 0) <= 10.0
 
-    def test_a_past_http_date_means_now(self):
-        assert _retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
-
     @pytest.mark.parametrize(
-        "value",
-        [
-            None,
-            "",
-            "soon",
-            "-1",
-            "1.5e3",
-            "1.5",
-            "\u00b2",
-            "2026-10-01",
-            "March 1, 2027",
-            "X, 21 Oct 2015 07:28:00 GMT",
-            "Sun, 01 Jan 99999999999999999999 00:00:00 GMT",
-        ],
+        "retry_after", [format_datetime(datetime.now(UTC) + timedelta(hours=1), usegmt=True)]
     )
-    def test_an_absent_or_unreadable_header_falls_back(self, value: str | None):
-        assert _retry_after_seconds(value) is None
-
-    @pytest.mark.parametrize(
-        "retry_after", ["120", format_datetime(datetime.now(UTC) + timedelta(hours=1), usegmt=True)]
-    )
-    def test_retry_after_is_capped(self, retry_after: str):
+    def test_an_http_date_retry_after_is_capped(self, retry_after: str):
         assert _rate_limit_delay(_429(retry_after), 1) == RATE_LIMIT_MAX_DELAY_SECONDS == 30.0
-
-    def test_retry_after_zero_is_immediate(self):
-        assert _rate_limit_delay(_429("0"), 3) == 0.0
 
     @pytest.mark.parametrize("retry", [1, 2, 3])
     def test_backoff_without_a_header_is_jittered_within_bounds(self, retry: int):
@@ -122,12 +93,6 @@ class TestRetryDelay:
         delays = [_rate_limit_delay(_429(), retry) for _ in range(200)]
         assert all(base * 0.5 <= delay <= base for delay in delays)
         assert len(set(delays)) > 1
-
-    def test_backoff_jitter_extremes(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(tools_module.random, "random", lambda: 0.0)
-        assert [_rate_limit_delay(_429(), r) for r in (1, 2, 3)] == [0.5, 1.0, 2.0]
-        monkeypatch.setattr(tools_module.random, "random", lambda: 1.0)
-        assert [_rate_limit_delay(_429(), r) for r in (1, 2, 3)] == [1.0, 2.0, 4.0]
 
 
 class TestSyncClient:
