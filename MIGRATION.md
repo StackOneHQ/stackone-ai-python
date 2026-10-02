@@ -298,7 +298,7 @@ tool.execute({"id": "1"}, options={"feedback_session_id": "chat-42"})
 
 # 3.0
 hit = toolset.search("list workers")[0]
-toolset.execute(hit["action_id"], session_id=hit.get("session_id"))
+toolset.execute(hit["action_id"], account_ids=[hit["account_id"]], session_id=hit.get("session_id"))
 toolset.submit_feedback(
     "positive",
     [hit["action_id"]],

@@ -211,8 +211,12 @@ via release-please after a merge to main, never from a developer machine.
 toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
 
 hits = toolset.search("list recent comments", top_k=3)
-session_id = hits[0].get("session_id") if hits else None
-toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}}, session_id=session_id)
+hit = hits[0] if hits else None
+session_id = hit.get("session_id") if hit else None
+account_ids = [hit["account_id"]] if hit else None
+toolset.execute(
+    "linear_list_comments", {"body": {"variables": {"first": 25}}}, account_ids=account_ids, session_id=session_id
+)
 toolset.submit_feedback("positive", ["linear_list_comments"], session_id=session_id)
 
 tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
