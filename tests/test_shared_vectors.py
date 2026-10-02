@@ -60,7 +60,7 @@ VERSIONS = {
     "header-arguments.json": 1,
     "header-names.json": 1,
     "header-values.json": 1,
-    "messages.json": 2,
+    "messages.json": 1,
     "retry-after.json": 1,
 }
 
