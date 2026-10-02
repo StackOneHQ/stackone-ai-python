@@ -1007,12 +1007,14 @@ class TestAccountDiscovery:
         call_count = 0
         started = threading.Event()
         proceed = threading.Event()
+        t2_entered = threading.Event()
 
         def failing_fetch_accounts() -> list[dict[str, Any]]:
             nonlocal call_count
             call_count += 1
             started.set()
             assert proceed.wait(timeout=5)
+            assert t2_entered.wait(timeout=5)
             raise StackOneAPIError("boom", 500, "boom")
 
         monkeypatch.setattr(toolset, "fetch_accounts", failing_fetch_accounts)
@@ -1025,13 +1027,19 @@ class TestAccountDiscovery:
             except StackOneAPIError as exc:
                 errors.append(exc)
 
+        def waiter() -> None:
+            # Signalled right before becoming a waiter, so the owner's raise is held
+            # back until this thread is certain to be the second call into
+            # _discover_account_ids(), rather than racing a fixed sleep.
+            t2_entered.set()
+            worker()
+
         t1 = threading.Thread(target=worker)
         t1.start()
         assert started.wait(timeout=5)
 
-        t2 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=waiter)
         t2.start()
-        time.sleep(0.05)
         proceed.set()
 
         t1.join(timeout=5)
