@@ -470,8 +470,8 @@ class RateLimitRetryingClient(httpx.Client):
 
     ``retry_within`` is the deadline in seconds, measured from the first attempt: a retry
     whose wait would not end before it is not made, and the 429 is returned instead. A
-    retry that times out returns the 429 it was retrying too: the account is rate limited,
-    and reporting the timeout instead would let a caller skip it like any other failure.
+    retry that times out raises :class:`RateLimitTimeout`: the account is rate limited, and
+    an ordinary timeout would let a caller skip it like any other failure.
     """
 
     def __init__(self, *args: Any, retry_within: float | None = None, **kwargs: Any) -> None:
@@ -492,12 +492,15 @@ class RateLimitRetryingClient(httpx.Client):
             _log_rate_limit_retry(request, attempt, delay)
             _sleep(delay)
             attempt += 1
-            throttled = response
             try:
                 response = super().send(request, **kwargs)
-            except httpx.TimeoutException:
-                return throttled
+            except httpx.TimeoutException as exc:
+                raise RateLimitTimeout(str(exc), request=request) from exc
         return response
+
+
+class RateLimitTimeout(httpx.TimeoutException):
+    """A request retried after a 429 timed out: the 429's doing, not an ordinary timeout."""
 
 
 @dataclass
@@ -750,11 +753,11 @@ def _raise_mcp_failure(exc: Exception, endpoint: str, timeout: float, throttle: 
             f"429 {throttled.reason_phrase}", request=throttled.request, response=throttled
         )
         status.__cause__ = exc
-        body = _response_body(throttled)
-        detail = f": {body}" if body else ""
-        reason = f"429 {throttled.reason_phrase}".rstrip()
         raise StackOneAPIError(
-            f"MCP request to {endpoint} failed with {reason}{detail}", 429, body or None
+            f"MCP request to {endpoint} was rate limited (429) and timed out after "
+            f"{_js_number(timeout)}s while retrying",
+            429,
+            None,
         ) from status
     raise _describe_mcp_failure(exc, endpoint, timeout) from exc
 

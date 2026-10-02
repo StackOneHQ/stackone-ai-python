@@ -19,9 +19,11 @@ from stackone_ai.tools import (
     USER_AGENT,
     McpToolDefinition,
     RateLimitRetryingClient,
+    RateLimitTimeout,
     StackOneMcpTool,
     StackOneTool,
     Tools,
+    _js_number,
     _json_text,
     _json_type,
     build_auth_header,
@@ -795,6 +797,14 @@ class StackOneToolSet:
                         "User-Agent": USER_AGENT,
                     },
                 )
+        except RateLimitTimeout as exc:
+            # Timing out while a 429 is retried is still the rate limit, as it is over MCP.
+            raise StackOneAPIError(
+                f"Listing accounts at {url} was rate limited (429) and timed out after "
+                f"{_js_number(self._timeout)}s while retrying",
+                429,
+                None,
+            ) from exc
         except httpx.HTTPError as exc:
             # The only public method with no error handling at all: a dead host, a bad
             # scheme or a timeout leaked httpx's own exception type straight out of the

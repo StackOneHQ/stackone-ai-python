@@ -253,7 +253,10 @@ class TestATimeoutAfterARetried429IsThe429:
         with pytest.raises(StackOneAPIError) as excinfo:
             StackOneToolSet(api_key="k").fetch_accounts()
         assert excinfo.value.status_code == 429
-        assert "Too many requests" in excinfo.value.response_body
+        assert str(excinfo.value) == (
+            "Listing accounts at https://api.stackone.com/accounts was rate limited (429) and "
+            "timed out after 60s while retrying"
+        )
         assert len(seen) == 2
 
     @staticmethod
@@ -278,9 +281,8 @@ class TestATimeoutAfterARetried429IsThe429:
         with pytest.raises(StackOneAPIError) as excinfo:
             fetch_mcp_tools(URL, {"x-account-id": "throttled"}, timeout=0.5)
         assert excinfo.value.status_code == 429
-        assert (
-            str(excinfo.value)
-            == f'MCP request to {URL} failed with 429 Too Many Requests: {{"message":"Too many requests"}}'
+        assert str(excinfo.value) == (
+            f"MCP request to {URL} was rate limited (429) and timed out after 0.5s while retrying"
         )
         assert is_rate_limited(excinfo.value)
 
