@@ -22,15 +22,21 @@ if [ ! -f "$SOURCE/README.md" ]; then
     exit 1
 fi
 
-if git -C "$1" rev-parse --git-dir >/dev/null 2>&1; then
-    if [ -n "$(git -C "$1" status --porcelain -- vectors)" ]; then
-        echo "error: $SOURCE has uncommitted changes" >&2
-        exit 1
-    fi
-    echo "Vendoring vectors/ from sdk-conformance@$(git -C "$1" rev-parse HEAD)"
+if ! git -C "$1" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "error: $1 is not a git checkout, so the copy cannot be tied to a commit" >&2
+    exit 1
 fi
 
+if [ -n "$(git -C "$1" status --porcelain --ignored --untracked-files=all -- vectors)" ]; then
+    echo "error: $SOURCE has uncommitted changes" >&2
+    exit 1
+fi
+echo "Vendoring vectors/ from sdk-conformance@$(git -C "$1" rev-parse HEAD)"
+
+STAGING="$(mktemp -d "${TARGET}.tmp.XXXXXX")"
+trap 'rm -rf "$STAGING"' EXIT
+cp -R "$SOURCE" "$STAGING/vectors"
+diff -r "$STAGING/vectors" "$SOURCE"
 rm -rf "$TARGET"
-cp -R "$SOURCE" "$TARGET"
-diff -r "$TARGET" "$SOURCE"
+mv "$STAGING/vectors" "$TARGET"
 echo "Copied to $TARGET"
