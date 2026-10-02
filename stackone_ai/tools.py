@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from importlib import metadata
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 import anyio
 import httpx
@@ -469,7 +469,9 @@ class RateLimitRetryingClient(httpx.Client):
     the server's body.
 
     ``retry_within`` is the deadline in seconds, measured from the first attempt: a retry
-    whose wait would not end before it is not made, and the 429 is returned instead.
+    whose wait would not end before it is not made, and the 429 is returned instead. A
+    retry that times out returns the 429 it was retrying too: the account is rate limited,
+    and reporting the timeout instead would let a caller skip it like any other failure.
     """
 
     def __init__(self, *args: Any, retry_within: float | None = None, **kwargs: Any) -> None:
@@ -490,8 +492,19 @@ class RateLimitRetryingClient(httpx.Client):
             _log_rate_limit_retry(request, attempt, delay)
             _sleep(delay)
             attempt += 1
-            response = super().send(request, **kwargs)
+            throttled = response
+            try:
+                response = super().send(request, **kwargs)
+            except httpx.TimeoutException:
+                return throttled
         return response
+
+
+@dataclass
+class _Throttle:
+    """The last 429 an MCP exchange retried, if any."""
+
+    response: httpx.Response | None = None
 
 
 class RateLimitRetryingAsyncClient(httpx.AsyncClient):
@@ -502,7 +515,15 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
 
     The deadline is the enclosing cancel scope's: the ``anyio.fail_after(timeout)`` that
     bounds the whole MCP exchange. A retry whose wait would not end before it is not made.
+
+    ``throttle`` records each 429 that is retried. The exchange's timeout cancels the retry
+    rather than raising in it, so the caller reads this afterwards to report a timeout
+    after a retried 429 as that 429 (see :func:`_raise_mcp_failure`).
     """
+
+    def __init__(self, *args: Any, throttle: _Throttle | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._throttle = throttle
 
     async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
         attempt = 1
@@ -514,6 +535,8 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
                 break
             await response.aread()
             await response.aclose()
+            if self._throttle is not None:
+                self._throttle.response = response
             _log_rate_limit_retry(request, attempt, delay)
             await _async_sleep(delay)
             attempt += 1
@@ -547,7 +570,7 @@ def is_rate_limited(exc: BaseException) -> bool:
 
 @asynccontextmanager
 async def _mcp_transport(
-    endpoint: str, headers: dict[str, str], timeout: float
+    endpoint: str, headers: dict[str, str], timeout: float, throttle: _Throttle | None = None
 ) -> AsyncIterator[tuple[Any, Any, Any]]:
     """Open the streamable-HTTP transport with the caller's timeout on every leg.
 
@@ -564,6 +587,7 @@ async def _mcp_transport(
     from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
 
     async with RateLimitRetryingAsyncClient(
+        throttle=throttle,
         headers=headers,
         timeout=httpx.Timeout(timeout),
         follow_redirects=True,
@@ -588,12 +612,14 @@ def fetch_mcp_tools(
             "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
         ) from exc
 
+    throttle = _Throttle()
+
     async def _list() -> list[McpToolDefinition]:
         with anyio.fail_after(timeout):
             return await _list_within_deadline()
 
     async def _list_within_deadline() -> list[McpToolDefinition]:
-        async with _mcp_transport(endpoint, headers, timeout) as (
+        async with _mcp_transport(endpoint, headers, timeout, throttle) as (
             read_stream,
             write_stream,
             _,
@@ -628,7 +654,7 @@ def fetch_mcp_tools(
     except Exception as exc:
         # Exception, not BaseException: Ctrl-C and SystemExit must stop the caller, not come
         # back as a ToolsetLoadError that an agent framework hands the model as a tool result.
-        raise _describe_mcp_failure(exc, endpoint, timeout) from exc
+        _raise_mcp_failure(exc, endpoint, timeout, throttle)
 
 
 def _response_body(response: httpx.Response) -> str:
@@ -689,10 +715,16 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
     # cause, and a __context__ is only what was being handled when the error was raised:
     # for the deadline's TimeoutError that is the cancellation, or whatever the
     # cancelled task happened to be catching.
-    leaf: BaseException = exc
-    while True:
-        if isinstance(leaf, TimeoutError | httpx.TimeoutException):
-            return ToolsetLoadError(f"MCP request to {endpoint} timed out after {_js_number(timeout)}s")
+    leaf = _leaf_failure(exc)
+    if isinstance(leaf, TimeoutError | httpx.TimeoutException):
+        return ToolsetLoadError(f"MCP request to {endpoint} timed out after {_js_number(timeout)}s")
+    return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
+
+
+def _leaf_failure(exc: BaseException) -> BaseException:
+    """The innermost cause through group members and ``__cause__``, stopping at a timeout."""
+    leaf = exc
+    while not isinstance(leaf, TimeoutError | httpx.TimeoutException):
         members = getattr(leaf, "exceptions", None)
         if members:
             leaf = members[0]
@@ -700,7 +732,31 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
             leaf = leaf.__cause__
         else:
             break
-    return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
+    return leaf
+
+
+def _raise_mcp_failure(exc: Exception, endpoint: str, timeout: float, throttle: _Throttle) -> NoReturn:
+    """Raise an MCP exchange's failure as :func:`_describe_mcp_failure` describes it.
+
+    Except a timeout after a retried 429, which is raised as that 429. The retry's wait
+    ended before the deadline, but the retried request itself could still run past it, and
+    as a timeout a multi-account call skipped the account like any other failure and handed
+    back a partial catalog. Chained through an ``HTTPStatusError``, so
+    :func:`is_rate_limited` reads it as the HTTP 429 it is.
+    """
+    throttled = throttle.response
+    if throttled is not None and isinstance(_leaf_failure(exc), TimeoutError | httpx.TimeoutException):
+        status = httpx.HTTPStatusError(
+            f"429 {throttled.reason_phrase}", request=throttled.request, response=throttled
+        )
+        status.__cause__ = exc
+        body = _response_body(throttled)
+        detail = f": {body}" if body else ""
+        reason = f"429 {throttled.reason_phrase}".rstrip()
+        raise StackOneAPIError(
+            f"MCP request to {endpoint} failed with {reason}{detail}", 429, body or None
+        ) from status
+    raise _describe_mcp_failure(exc, endpoint, timeout) from exc
 
 
 def _status_of(parsed: JsonDict) -> int:
@@ -822,12 +878,14 @@ def call_mcp_tool(
     from mcp import types as mcp_types  # ty: ignore[unresolved-import]
     from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
 
+    throttle = _Throttle()
+
     async def _call() -> JsonDict:
         with anyio.fail_after(timeout):
             return await _call_within_deadline()
 
     async def _call_within_deadline() -> JsonDict:
-        async with _mcp_transport(endpoint, headers, timeout) as (
+        async with _mcp_transport(endpoint, headers, timeout, throttle) as (
             read_stream,
             write_stream,
             _,
@@ -855,7 +913,7 @@ def call_mcp_tool(
         return run_async(_call())
     except Exception as exc:
         # Not BaseException, as in fetch_mcp_tools: KeyboardInterrupt and SystemExit propagate.
-        raise _describe_mcp_failure(exc, endpoint, timeout) from exc
+        _raise_mcp_failure(exc, endpoint, timeout, throttle)
 
 
 def _strip_internal_keys(schema: Any) -> Any:

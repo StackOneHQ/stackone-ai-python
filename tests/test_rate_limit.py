@@ -25,7 +25,7 @@ from stackone_ai.tools import (
     is_rate_limited,
 )
 from stackone_ai.toolset import StackOneToolSet
-from stackone_ai.types import StackOneAPIError
+from stackone_ai.types import StackOneAPIError, ToolsetLoadError
 
 URL = "https://api.example.com/mcp"
 
@@ -231,6 +231,95 @@ class TestFetchAccounts:
         assert excinfo.value.status_code == 429
         assert len(seen) == 3
         assert sleeps == [2.0, 2.0]
+
+
+class TestATimeoutAfterARetried429IsThe429:
+    """The retry's wait ends before the deadline, but the retried request can still run past it.
+
+    As a timeout, a multi-account call skipped the account like any other failure and
+    returned a partial catalog that looked complete.
+    """
+
+    def test_fetch_accounts(self, sleeps: list[float], monkeypatch: pytest.MonkeyPatch):
+        seen: list[httpx.Request] = []
+
+        def handler(_self: Any, request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            if len(seen) == 1:
+                return _429("0")
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handler)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            StackOneToolSet(api_key="k").fetch_accounts()
+        assert excinfo.value.status_code == 429
+        assert "Too many requests" in excinfo.value.response_body
+        assert len(seen) == 2
+
+    @staticmethod
+    def _429_then_hang(monkeypatch: pytest.MonkeyPatch, account: str) -> None:
+        """The MCP host answers ``account`` 429 once, then never answers its retry."""
+        real = httpx.AsyncHTTPTransport.handle_async_request
+        attempts: dict[str, int] = {}
+
+        async def handler(self: Any, request: httpx.Request) -> httpx.Response:
+            if request.headers.get("x-account-id") != account:
+                return await real(self, request)
+            attempts[account] = attempts.get(account, 0) + 1
+            if attempts[account] == 1:
+                return _429("0")
+            await asyncio.sleep(60)
+            raise AssertionError("the exchange's deadline should have cancelled this")
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handler)
+
+    def test_listing(self, sleeps: list[float], monkeypatch: pytest.MonkeyPatch):
+        self._429_then_hang(monkeypatch, "throttled")
+        with pytest.raises(StackOneAPIError) as excinfo:
+            fetch_mcp_tools(URL, {"x-account-id": "throttled"}, timeout=0.5)
+        assert excinfo.value.status_code == 429
+        assert (
+            str(excinfo.value)
+            == f'MCP request to {URL} failed with 429 Too Many Requests: {{"message":"Too many requests"}}'
+        )
+        assert is_rate_limited(excinfo.value)
+
+    def test_a_timeout_with_no_429_is_still_a_timeout(self, monkeypatch: pytest.MonkeyPatch):
+        async def hang(_self: Any, _request: httpx.Request) -> httpx.Response:
+            await asyncio.sleep(60)
+            raise AssertionError("unreachable")
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", hang)
+        with pytest.raises(ToolsetLoadError, match="timed out after 0.5s"):
+            fetch_mcp_tools(URL, {"x-account-id": "a"}, timeout=0.5)
+
+    def test_a_multi_account_listing_is_aborted(
+        self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch
+    ):
+        self._429_then_hang(monkeypatch, "throttled")
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, timeout=1)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.fetch_tools(account_ids=["acc1", "throttled"])
+        assert excinfo.value.status_code == 429
+
+    def test_a_tool_call(self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch):
+        from stackone_ai.tools import StackOneMcpTool
+        from stackone_ai.types import ToolParameters
+
+        self._429_then_hang(monkeypatch, "throttled")
+        tool = StackOneMcpTool(
+            name="default_tool_1",
+            description="",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="test-key",
+            endpoint=f"{mcp_mock_server}/mcp",
+            account_id="throttled",
+            timeout=0.5,
+        )
+        with pytest.raises(StackOneAPIError) as excinfo:
+            tool.execute({})
+        assert excinfo.value.status_code == 429
+        assert is_rate_limited(excinfo.value)
 
 
 class TestMcpAgainstMockServer:
