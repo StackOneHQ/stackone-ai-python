@@ -353,6 +353,22 @@ def test_a_non_string_account_id_is_rejected(use, bad):
         use(bad)
 
 
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda: StackOneToolSet(api_key="k", execute={"account_ids": ("acc1", "acc2")}),
+        lambda: StackOneToolSet(api_key="k").set_accounts(("acc1", "acc2")),
+        lambda: StackOneToolSet(api_key="k").fetch_tools(account_ids=("acc1", "acc2")),
+    ],
+    ids=["constructor", "set_accounts", "fetch_tools"],
+)
+def test_a_tuple_of_account_ids_is_rejected(use):
+    """Node rejects anything that isn't an Array, so a tuple is refused too, not silently
+    accepted as a list-like."""
+    with pytest.raises(ToolsetConfigError, match="account_ids must be a list of account id strings"):
+        use()
+
+
 def test_an_empty_constructor_account_id_is_rejected():
     """Treated as unset, it would silently widen every call to all active accounts."""
     with pytest.raises(ToolsetConfigError, match="account_id must not be an empty string"):

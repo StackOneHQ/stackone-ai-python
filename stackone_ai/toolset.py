@@ -282,7 +282,7 @@ class StackOneToolSet:
                 "account_ids must be a list of account ids, not a string. "
                 f"Did you mean [{_json_text(account_ids)}]?"
             )
-        if not isinstance(account_ids, list | tuple) or not all(isinstance(i, str) for i in account_ids):
+        if not isinstance(account_ids, list) or not all(isinstance(i, str) for i in account_ids):
             raise ToolsetConfigError("account_ids must be a list of account id strings")
         ids = list(account_ids)
         if "" in ids:
@@ -750,7 +750,8 @@ class StackOneToolSet:
             if owner:
                 future = self._discovering = concurrent.futures.Future()
 
-        assert future is not None
+        if future is None:
+            raise RuntimeError("account discovery future was not initialized")
         if not owner:
             # A discovery already in flight: wait for it rather than issue a second
             # GET /accounts. Its result, or its exception, is shared with every waiter.
