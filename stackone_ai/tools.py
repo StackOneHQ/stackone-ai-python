@@ -1022,10 +1022,10 @@ class StackOneTool(BaseModel):
         clean: JsonDict = {}
         for key, value in arguments.items():
             if key == "headers":
-                if isinstance(value, dict):
-                    clean[key] = self._sanitise_headers(value)
-                elif ordinary_headers_field:
+                if ordinary_headers_field:
                     clean[key] = value
+                elif isinstance(value, dict):
+                    clean[key] = self._sanitise_headers(value)
                 else:
                     _warn_header_dropped(key, None, "not-an-object")
                 continue
