@@ -259,6 +259,18 @@ toolset.fetch_accounts()  # records acc-123's end user if it is not shared
 tools = toolset.fetch_tools()
 ```
 
+Or pass the end-user id yourself; a value recorded from `GET /accounts` replaces it:
+
+```python
+toolset = StackOneToolSet(account_id="acc-123", headers={"x-end-user-id": "carol"})
+```
+
+### Extra headers
+
+`StackOneToolSet(headers={...})` sends extra headers on every request the toolset makes,
+`GET /accounts` and every MCP request. `Authorization`, `x-account-id` and `User-Agent`
+are always the SDK's own: if you pass them they are ignored, with a warning.
+
 ### Two ways to call a tool
 
 The SDK exposes the same actions through two surfaces. Both execute over MCP

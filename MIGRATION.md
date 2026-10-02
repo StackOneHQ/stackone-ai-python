@@ -398,6 +398,11 @@ always sets `Authorization`, `x-account-id` and `User-Agent` itself, after your 
 and drops any case variant of those names you pass. An `x-end-user-id` you pass is sent as
 given. `headers` is optional.
 
+**`StackOneToolSet(headers=...)` is new.** It sends extra headers on every request the
+toolset makes, `GET /accounts` included, with the same rule: `Authorization`, `x-account-id`
+and `User-Agent` are ignored with a warning, and `x-end-user-id` is passed through unless
+`GET /accounts` reported the account's end user.
+
 ## LangGraph helpers
 
 `stackone_ai.integrations` has been removed. Pass the LangChain tools to LangGraph
