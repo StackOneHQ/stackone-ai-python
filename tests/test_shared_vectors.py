@@ -33,7 +33,9 @@ from stackone_ai.tools import (
     _backoff_delay,
     _describe_mcp_failure,
     _outlasts_deadline,
+    _raise_mcp_failure,
     _retry_after_seconds,
+    _Throttle,
     parse_tool_result,
 )
 from stackone_ai.toolset import StackOneToolSet
@@ -518,10 +520,33 @@ def _mcp_failure(mp, log) -> Emitted:
     return _describe_mcp_failure(failure, ENDPOINT, 60), values
 
 
+def _mcp_rate_limit_timeout(mp, log) -> Emitted:
+    throttled = httpx.Response(429, request=httpx.Request("POST", ENDPOINT))
+    throttle = _Throttle(response=throttled)
+    error = _raised(StackOneAPIError, lambda: _raise_mcp_failure(TimeoutError(), ENDPOINT, 0.5, throttle))
+    assert error.status_code == 429
+    return error, {"endpoint": ENDPOINT, "timeout": 0.5}
+
+
 def _accounts_http_failure(mp, log) -> Emitted:
     url = _accounts_answer(mp, lambda _r: httpx.Response(401, text="bad key\n"))
     error = _raised(StackOneAPIError, StackOneToolSet(api_key="k").fetch_accounts)
     return error, {"url": url, "status": 401, "reason_phrase": "Unauthorized", "body": "bad key"}
+
+
+def _accounts_rate_limit_timeout(mp, log) -> Emitted:
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(429, headers={"Retry-After": "0"})
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    url = _accounts_answer(mp, answer)
+    error = _raised(StackOneAPIError, StackOneToolSet(api_key="k").fetch_accounts)
+    assert error.status_code == 429
+    return error, {"url": url, "timeout": 60.0}
 
 
 def _accounts_unreachable(mp, log) -> Emitted:
@@ -722,7 +747,9 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "mcp-timeout": _mcp_timeout,
     "mcp-http-failure": _mcp_http_failure,
     "mcp-failure": _mcp_failure,
+    "mcp-rate-limit-timeout": _mcp_rate_limit_timeout,
     "accounts-http-failure": _accounts_http_failure,
+    "accounts-rate-limit-timeout": _accounts_rate_limit_timeout,
     "accounts-unreachable": _accounts_unreachable,
     "accounts-invalid-json": _accounts_invalid_json,
     "accounts-unexpected-shape": _accounts_unexpected_shape,
