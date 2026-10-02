@@ -72,6 +72,41 @@ def _trim_header_name(name: str) -> str:
     return name.strip(_JS_WHITESPACE)
 
 
+def is_sdk_owned_header(name: str) -> bool:
+    """Whether a caller-supplied header name is one the SDK owns and will override."""
+    return _ascii_lower(_trim_header_name(name)) in _SDK_OWNED_HEADERS
+
+
+def build_request_headers(
+    *,
+    api_key: str,
+    account_id: str | None = None,
+    end_user_id: str | None = None,
+    extra_headers: Headers | None = None,
+) -> Headers:
+    """The HTTP headers for a request to StackOne: the caller's extra headers first, then
+    the SDK's own, so Authorization, x-account-id and User-Agent are always the SDK's —
+    and so is x-end-user-id when an ``end_user_id`` is given.
+
+    Case variants of the owned names are dropped first — a server would otherwise see
+    both. With no ``account_id``, no x-account-id is sent at all; with no
+    ``end_user_id``, a caller's x-end-user-id is passed through as given.
+    """
+    replaced = _SDK_SET_HEADER_ARGUMENTS if end_user_id else _SDK_OWNED_HEADERS
+    headers: Headers = {
+        name: value
+        for name, value in (extra_headers or {}).items()
+        if _ascii_lower(_trim_header_name(name)) not in replaced
+    }
+    headers["User-Agent"] = USER_AGENT
+    headers["Authorization"] = build_auth_header(api_key)
+    if account_id:
+        headers["x-account-id"] = account_id
+    if end_user_id:
+        headers[END_USER_ID_HEADER] = end_user_id
+    return headers
+
+
 # Header names the SDK sets itself, after every other header. A tool call may not supply
 # them even when a served schema declares them: they are the credential, the tenant
 # selector and the client identity.
@@ -1349,22 +1384,15 @@ class StackOneMcpTool(StackOneTool):
         end_user_id = (
             self._end_user_id_of(self._account_id) if self._end_user_id_of and self._account_id else None
         )
-        replaced = _SDK_SET_HEADER_ARGUMENTS if end_user_id else _SDK_OWNED_HEADERS
-        headers: Headers = {
-            name: value
-            for name, value in self._execute_config.headers.items()
-            if _ascii_lower(_trim_header_name(name)) not in replaced
-        }
         # The constructor requires the key; only code that clears it afterwards gets here.
         if not self._api_key:
             raise StackOneError(f'Tool "{self.name}" has no API key to authenticate with.')
-        headers["User-Agent"] = USER_AGENT
-        headers["Authorization"] = build_auth_header(self._api_key)
-        if self._account_id:
-            headers["x-account-id"] = self._account_id
-        if end_user_id:
-            headers[END_USER_ID_HEADER] = end_user_id
-        return headers
+        return build_request_headers(
+            api_key=self._api_key,
+            account_id=self._account_id,
+            end_user_id=end_user_id,
+            extra_headers=self._execute_config.headers,
+        )
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
         """Call the tool over MCP ``tools/call``.

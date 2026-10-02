@@ -16,8 +16,6 @@ from typing import Any, TypeVar
 import httpx
 
 from stackone_ai.tools import (
-    END_USER_ID_HEADER,
-    USER_AGENT,
     McpToolDefinition,
     RateLimitRetryingClient,
     RateLimitTimeout,
@@ -27,9 +25,10 @@ from stackone_ai.tools import (
     _js_number,
     _json_text,
     _json_type,
-    build_auth_header,
+    build_request_headers,
     fetch_mcp_tools,
     is_rate_limited,
+    is_sdk_owned_header,
 )
 from stackone_ai.types import (
     DEFAULT_BASE_URL,
@@ -38,6 +37,7 @@ from stackone_ai.types import (
     FeedbackCategory,
     FeedbackRating,
     FeedbackSource,
+    Headers,
     JsonDict,
     StackOneAPIError,
     StackOneError,
@@ -150,6 +150,7 @@ class StackOneToolSet:
         execute: ExecuteToolsConfig | None = None,
         timeout: float | None = None,
         tool_mode: ToolMode | None = None,
+        headers: Headers | None = None,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -169,6 +170,12 @@ class StackOneToolSet:
             tool_mode: How the endpoint lists tools. ``"search_execute"`` returns
                 two meta tools per connector instead of one tool per action,
                 keeping the catalog small enough for a model's context.
+            headers: Extra HTTP headers sent with every request this toolset makes
+                (``GET /accounts`` and every MCP request). ``Authorization``,
+                ``x-account-id`` and ``User-Agent`` are always the SDK's own and
+                cannot be set here. ``x-end-user-id`` can: it is passed through as
+                given, unless ``GET /accounts`` reported the account's end user,
+                which then replaces it.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment, or
@@ -184,9 +191,18 @@ class StackOneToolSet:
                 "An API key must be provided, either to the toolset or in the STACKONE_API_KEY "
                 "environment variable"
             )
+        ignored_headers = [name for name in (headers or {}) if is_sdk_owned_header(name)]
+        if ignored_headers:
+            logger.warning(
+                "Ignoring headers %s: the SDK sets them itself. Pass the API key and account ids "
+                "through their own options instead.",
+                ", ".join(_json_text(name) for name in ignored_headers),
+            )
+
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url or os.getenv("STACKONE_BASE_URL") or DEFAULT_BASE_URL
+        self._headers: Headers = dict(headers or {})
         self._account_ids: list[str] = self._validate_account_ids(
             execute.get("account_ids") if execute else None
         )
@@ -817,10 +833,7 @@ class StackOneToolSet:
             with RateLimitRetryingClient(timeout=self._timeout, retry_within=self._timeout) as client:
                 response = client.get(
                     url,
-                    headers={
-                        "Authorization": build_auth_header(self.api_key),
-                        "User-Agent": USER_AGENT,
-                    },
+                    headers=build_request_headers(api_key=self.api_key, extra_headers=self._headers),
                 )
         except RateLimitTimeout as exc:
             # Timing out while a 429 is retried is still the rate limit, as it is over MCP.
@@ -947,16 +960,13 @@ class StackOneToolSet:
         return active
 
     def _build_mcp_headers(self, account_id: str | None) -> dict[str, str]:
-        headers = {
-            "Authorization": build_auth_header(self.api_key),
-            "User-Agent": USER_AGENT,
-        }
-        if account_id:
-            headers["x-account-id"] = account_id
-            end_user_id = self._end_user_id(account_id)
-            if end_user_id:
-                headers[END_USER_ID_HEADER] = end_user_id
-        return headers
+        end_user_id = self._end_user_id(account_id) if account_id else None
+        return build_request_headers(
+            api_key=self.api_key,
+            account_id=account_id,
+            end_user_id=end_user_id,
+            extra_headers=self._headers,
+        )
 
     def _create_tool(
         self,
@@ -992,6 +1002,7 @@ class StackOneToolSet:
             api_key=self.api_key,
             endpoint=endpoint,
             account_id=account_id,
+            headers=self._headers,
             timeout=self._timeout,
         )
         tool._end_user_id_of = self._end_user_id

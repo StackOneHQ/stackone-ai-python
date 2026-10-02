@@ -727,6 +727,12 @@ def _no_executor(mp, log) -> Emitted:
     return _raised(StackOneError, lambda: tool.execute({})), {"tool": "t"}
 
 
+def _toolset_headers_ignored(mp, log) -> Emitted:
+    StackOneToolSet(api_key="k", headers={"Authorization": "x", " X-Account-Id ": "y", "x-trace": "z"})
+    [warning] = _warnings(log)
+    return warning, {"names": '"Authorization", " X-Account-Id "'}
+
+
 def _unknown_tool(mp, log) -> Emitted:
     [message] = Tools([]).execute_openai_tool_calls(
         [{"id": "1", "function": {"name": "nope", "arguments": "{}"}}]
@@ -777,6 +783,7 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "tool-call-failed": _tool_call_failed,
     "no-executor": _no_executor,
     "unknown-tool": _unknown_tool,
+    "toolset-headers-ignored": _toolset_headers_ignored,
 }
 
 
