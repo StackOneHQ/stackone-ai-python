@@ -105,7 +105,7 @@ class TestToolCalling:
 
     def test_parse_arguments_non_dict(self, mock_tool):
         """Test that non-dict JSON raises ValueError"""
-        with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
+        with pytest.raises(ValueError, match=r'^Tool arguments for "[^"]+" must be a JSON object$'):
             mock_tool._parse_arguments("[1, 2, 3]")
 
     def test_arguments_are_not_split_or_renamed(self, seen):
@@ -202,7 +202,7 @@ class TestMcpToolHeaderGuard:
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {name: "v"}})
         assert seen["arguments"]["headers"] == {}
-        assert "Dropping malformed header" in caplog.text
+        assert "from a tool call: malformed" in caplog.text
 
     @pytest.mark.parametrize("name", ["\ufeffx-custom", "x-custom\u3000", "\u00a0x-custom\u2028"])
     def test_javascript_whitespace_is_trimmed(self, seen, name):
@@ -324,13 +324,13 @@ class TestMcpToolHeaderGuard:
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             _mcp_tool().execute({"headers": "not-an-object", "q": 1})
         assert seen["arguments"] == {"q": 1}
-        assert "Dropping header argument 'headers' from a tool call: not an object" in caplog.text
+        assert 'Dropping header argument "headers" from a tool call: not an object' in caplog.text
 
     def test_a_list_headers_argument_is_dropped(self, seen, caplog):
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             _mcp_tool().execute({"headers": ["a"], "q": 1})
         assert seen["arguments"] == {"q": 1}
-        assert "Dropping header argument 'headers' from a tool call: not an object" in caplog.text
+        assert 'Dropping header argument "headers" from a tool call: not an object' in caplog.text
 
     def test_a_non_object_headers_argument_is_sent_as_given_when_declared_as_a_string(self, seen):
         """A schema that declares `headers` itself as a string makes it an ordinary argument."""
@@ -396,13 +396,13 @@ class TestFlatHeaderArguments:
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             tool.execute({name: "stolen", "q": 1})
         assert seen["arguments"] == {"q": 1}
-        assert "it is set by the SDK" in caplog.text
+        assert "from a tool call: set by the SDK" in caplog.text
 
     def test_an_undeclared_one_is_dropped(self, seen, caplog):
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             _mcp_tool({"headers": {"type": "object"}}).execute({"headers_foo": "bar", "q": 1})
         assert seen["arguments"] == {"q": 1}
-        assert "'headers_foo' from a tool call: it is not declared by the schema" in caplog.text
+        assert '"headers_foo" from a tool call: not declared by the schema' in caplog.text
 
     def test_a_declared_one_is_forwarded_as_given(self, seen):
         """A declared flat header is an ordinary top-level argument: its value is not stringified."""
@@ -430,13 +430,13 @@ class TestFlatHeaderArguments:
                 {"headers_foo": ["a\r\nx-account-id: B"], "q": 1}
             )
         assert seen["arguments"] == {"q": 1}
-        assert "'headers_foo' from a tool call: not a string, number or boolean" in caplog.text
+        assert '"headers_foo" from a tool call: not a string, number or boolean' in caplog.text
 
     def test_a_declared_one_with_a_dict_value_is_dropped(self, seen, caplog):
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             _mcp_tool({"headers_foo": {"type": "object"}}).execute({"headers_foo": {"a": "b"}, "q": 1})
         assert seen["arguments"] == {"q": 1}
-        assert "'headers_foo' from a tool call: not a string, number or boolean" in caplog.text
+        assert '"headers_foo" from a tool call: not a string, number or boolean' in caplog.text
 
     def test_non_header_arguments_are_untouched(self, seen):
         """Only `headers` and `headers_<name>` are header arguments; bare lookalikes are not."""
@@ -473,8 +473,8 @@ class TestDeclaredHeaderValuesAreStillValidated:
     def test_the_warning_says_why_a_header_was_dropped(self, tool, caplog):
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             tool._sanitise_headers({"X-Other": "a", "Authorization": "b"})
-        assert "'X-Other' from a tool call: it is not declared by the schema" in caplog.text
-        assert "'Authorization' from a tool call: it is set by the SDK" in caplog.text
+        assert 'Dropping header "X-Other" from a tool call: not declared by the schema' in caplog.text
+        assert 'Dropping header "Authorization" from a tool call: set by the SDK' in caplog.text
 
 
 @pytest.mark.parametrize(

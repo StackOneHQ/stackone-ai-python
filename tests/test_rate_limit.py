@@ -163,7 +163,7 @@ class TestSyncClient:
                 client.get(URL)
         messages = [r.getMessage() for r in caplog.records]
         assert messages == [
-            f"GET {URL} was rate limited (429) on attempt {n} of 4; retrying in 3.00s" for n in (1, 2, 3)
+            f"GET {URL} was rate limited (429) on attempt {n} of 4; retrying in 3s" for n in (1, 2, 3)
         ]
 
 

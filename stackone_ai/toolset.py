@@ -20,6 +20,8 @@ from stackone_ai.tools import (
     StackOneMcpTool,
     StackOneTool,
     Tools,
+    _json_text,
+    _json_type,
     build_auth_header,
     fetch_mcp_tools,
     is_rate_limited,
@@ -128,8 +130,8 @@ class StackOneToolSet:
         api_key_value = api_key or os.getenv("STACKONE_API_KEY")
         if not api_key_value:
             raise ToolsetConfigError(
-                "API key must be provided either through api_key parameter or "
-                "STACKONE_API_KEY environment variable"
+                "An API key must be provided, either to the toolset or in the STACKONE_API_KEY "
+                "environment variable"
             )
         self.api_key: str = api_key_value
         self.account_id = account_id
@@ -277,7 +279,8 @@ class StackOneToolSet:
             return []
         if isinstance(account_ids, str):
             raise ToolsetConfigError(
-                f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
+                "account_ids must be a list of account ids, not a string. "
+                f"Did you mean [{_json_text(account_ids)}]?"
             )
         if not isinstance(account_ids, list | tuple) or not all(isinstance(i, str) for i in account_ids):
             raise ToolsetConfigError("account_ids must be a list of account id strings")
@@ -434,7 +437,9 @@ class StackOneToolSet:
         # connector — and reports it as a load failure, which reads like an outage
         # rather than a typo. Fail here instead, where the caller can see why.
         if not isinstance(top_k, int) or isinstance(top_k, bool) or not 1 <= top_k <= _MAX_TOP_K:
-            raise ToolsetConfigError(f"top_k must be an integer between 1 and {_MAX_TOP_K}, got {top_k!r}")
+            raise ToolsetConfigError(
+                f"top_k must be an integer between 1 and {_MAX_TOP_K}, got {_json_text(top_k)}"
+            )
 
         tools = self._meta_tools("_search_actions", account_ids)
         if not tools:
@@ -515,11 +520,11 @@ class StackOneToolSet:
                 arguments.
         """
         if not isinstance(action_id, str) or not action_id:
-            raise ToolsetConfigError(f"action_id must be a non-empty string, got {action_id!r}")
+            raise ToolsetConfigError(f"action_id must be a non-empty string, got {_json_text(action_id)}")
         if arguments is not None and not isinstance(arguments, dict):
-            raise ToolsetConfigError(f"arguments must be a JSON object, got {type(arguments).__name__}")
+            raise ToolsetConfigError(f"arguments must be a JSON object, got {_json_type(arguments)}")
         if session_id is not None and (not isinstance(session_id, str) or not session_id):
-            raise ToolsetConfigError(f"session_id must be a non-empty string, got {session_id!r}")
+            raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
 
         meta_tools = self._meta_tools("_execute_action", account_ids)
         matches = [
@@ -536,8 +541,8 @@ class StackOneToolSet:
                 # Same provider linked twice. Picking one silently would run the action
                 # against an account the caller never chose.
                 logger.warning(
-                    "%r matches %d connectors (%s); using %s. Pass account_ids to choose.",
-                    action_id,
+                    "%s matches %d connectors (%s); using %s. Pass account ids to choose.",
+                    _json_text(action_id),
                     len(finalists),
                     ", ".join(t.name for t in finalists),
                     finalists[0].name,
@@ -558,7 +563,7 @@ class StackOneToolSet:
             return tool.execute(call_arguments)
 
         raise ToolsetLoadError(
-            f'No connector found for "{action_id}". Use search() to discover valid action ids.'
+            f"No connector found for {_json_text(action_id)}. Use search() to discover valid action ids."
         )
 
     def submit_feedback(
@@ -596,10 +601,11 @@ class StackOneToolSet:
         """
         if isinstance(tool_names, str):
             raise ToolsetConfigError(
-                f"tool_names must be a list of tool names, not a string. Did you mean [{tool_names!r}]?"
+                "tool_names must be a list of tool names, not a string. "
+                f"Did you mean [{_json_text(tool_names)}]?"
             )
         if session_id is not None and (not isinstance(session_id, str) or not session_id):
-            raise ToolsetConfigError(f"session_id must be a non-empty string, got {session_id!r}")
+            raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
 
         # Found in the served catalog, never built here: the server only serves the tool
         # when the org flag and the project setting are both on, and a client-side stand-in
@@ -714,7 +720,7 @@ class StackOneToolSet:
             # list(dict) yields the KEYS, so coercing here turned an unexpected wrapper
             # into a list of strings that blew up much later as an AttributeError.
             raise ToolsetLoadError(
-                f"Unexpected /accounts response shape: expected a list, got {type(accounts).__name__}"
+                f"Unexpected /accounts response shape: expected a list, got {_json_type(accounts)}"
             )
         return accounts
 
@@ -773,12 +779,12 @@ class StackOneToolSet:
             if not accounts:
                 raise ToolsetConfigError(
                     "This API key has no linked accounts. Link one in the StackOne "
-                    "dashboard, or pass account_id explicitly."
+                    "dashboard, or pass an account id explicitly."
                 )
             listed = ", ".join(f"{a.get('provider')} ({a.get('status')})" for a in accounts)
             raise ToolsetConfigError(
                 f"None of this API key's {len(accounts)} linked accounts are active: {listed}. "
-                "Re-link them in the StackOne dashboard, or pass account_id explicitly."
+                "Re-link them in the StackOne dashboard, or pass an account id explicitly."
             )
 
         # Not kept if clear_catalog_cache() ran while the list was in flight: it may name

@@ -326,7 +326,7 @@ class TestStackOneToolExecution:
 
     def test_non_dict_arguments(self):
         """Test non-dict JSON raises ValueError"""
-        with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
+        with pytest.raises(ValueError, match=r'^Tool arguments for "[^"]+" must be a JSON object$'):
             _mcp_tool().execute("[1, 2, 3]")
 
     @given(invalid_json=invalid_json_strategy)
@@ -340,7 +340,7 @@ class TestStackOneToolExecution:
     @settings(max_examples=50)
     def test_non_dict_arguments_pbt(self, non_dict_json: str):
         """PBT: Test non-dict JSON values raise ValueError."""
-        with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
+        with pytest.raises(ValueError, match=r'^Tool arguments for "[^"]+" must be a JSON object$'):
             _mcp_tool().execute(non_dict_json)
 
     def test_api_error_propagates(self, monkeypatch):

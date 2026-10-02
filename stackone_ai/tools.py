@@ -80,6 +80,26 @@ _SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
 # `headers` object argument.
 _FLAT_HEADER_PREFIX = "headers_"
 
+# Why a header argument was dropped: each reason code, and the text its warning gives.
+_HEADER_REASONS = {
+    "set-by-sdk": "set by the SDK",
+    "not-declared": "not declared by the schema",
+    "malformed": "malformed",
+    "not-an-object": "not an object",
+    "not-a-scalar": "not a string, number or boolean",
+}
+
+
+def _warn_header_dropped(argument: str, header: str | None, reason: str) -> None:
+    """Warn that a header argument, or one entry of a ``headers`` object, was dropped."""
+    if header is None:
+        logger.warning(
+            "Dropping header argument %s from a tool call: %s", _json_text(argument), _HEADER_REASONS[reason]
+        )
+    else:
+        logger.warning("Dropping header %s from a tool call: %s", _json_text(header), _HEADER_REASONS[reason])
+
+
 # How a 429 is retried, on every request the SDK makes: up to three more attempts, each
 # after the server's Retry-After (capped) or else an exponential backoff with jitter. A
 # wait that would not end before the request's deadline is not started: the 429 is
@@ -191,6 +211,43 @@ def _js_json(value: Any) -> str:
     if isinstance(value, list | tuple):
         return "[" + ",".join(_js_json(item) for item in value) + "]"
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _json_text(value: Any) -> str:
+    """A value as compact JSON, the way every message quotes a name or a value.
+
+    ``repr`` wrote Python's spelling (``'x'``, ``None``, ``True``); JSON reads the same from
+    either SDK. A value JSON cannot hold, such as a set, falls back to its ``repr``.
+    """
+    try:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return repr(value)
+
+
+def _json_type(value: Any) -> str:
+    """The JSON type of a value: object, array, string, number, boolean or null.
+
+    A value with no JSON type, such as a set, is named by its Python type.
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int | float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list | tuple):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
+
+
+def _seconds_2dp(seconds: float) -> str:
+    """Seconds rounded half up to two decimals, then written as JavaScript writes a number."""
+    return _js_number(math.floor(seconds * 100 + 0.5) / 100)
 
 
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
@@ -367,12 +424,12 @@ def _waits_for_retry(delay: float, remaining: float) -> bool:
 
 def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) -> None:
     logger.warning(
-        "%s %s was rate limited (429) on attempt %d of %d; retrying in %.2fs",
+        "%s %s was rate limited (429) on attempt %d of %d; retrying in %ss",
         request.method,
         request.url,
         attempt,
         RATE_LIMIT_MAX_RETRIES + 1,
-        delay,
+        _seconds_2dp(delay),
     )
 
 
@@ -609,11 +666,11 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
         if isinstance(current, httpx.HTTPStatusError):
             body = _response_body(current.response)
             detail = f": {body}" if body else ""
+            status = f"{current.response.status_code} {current.response.reason_phrase}".rstrip()
             # StackOneAPIError carries the status and body as attributes, so a caller
             # can branch on 412 rather than pattern-matching the message.
             return StackOneAPIError(
-                f"MCP request to {endpoint} failed with "
-                f"{current.response.status_code} {current.response.reason_phrase}{detail}",
+                f"MCP request to {endpoint} failed with {status}{detail}",
                 current.response.status_code,
                 body or None,
             )
@@ -628,7 +685,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
     leaf: BaseException = exc
     while True:
         if isinstance(leaf, TimeoutError | httpx.TimeoutException):
-            return ToolsetLoadError(f"MCP request to {endpoint} timed out after {timeout:g}s")
+            return ToolsetLoadError(f"MCP request to {endpoint} timed out after {_js_number(timeout)}s")
         members = getattr(leaf, "exceptions", None)
         if members:
             leaf = members[0]
@@ -660,7 +717,33 @@ def _status_of(parsed: JsonDict) -> int:
 
 
 def _reject_json_constant(constant: str) -> Any:
-    raise ValueError(f"{constant} is not JSON")
+    raise ValueError(f"{constant} is not valid JSON")
+
+
+def _first_non_finite(value: Any) -> float | None:
+    """The first NaN or infinity in ``value``, depth first in key order, or ``None``.
+
+    A container already on the path is skipped, so a cycle ends here and is reported by
+    ``json.dumps`` as a circular reference.
+    """
+    path: set[int] = set()
+
+    def walk(item: Any) -> float | None:
+        if isinstance(item, float):
+            return None if math.isfinite(item) else item
+        if not isinstance(item, dict | list | tuple) or id(item) in path:
+            return None
+        path.add(id(item))
+        try:
+            for child in item.values() if isinstance(item, dict) else item:
+                found = walk(child)
+                if found is not None:
+                    return found
+            return None
+        finally:
+            path.discard(id(item))
+
+    return walk(value)
 
 
 def parse_tool_result(result: Any, name: str) -> JsonDict:
@@ -706,7 +789,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
         # The transport succeeded, so there is no HTTP status here — but the payload
         # carries the real one, and a caller cannot branch on 0.
         detail = payload or json.dumps(parsed, ensure_ascii=False, separators=(",", ":"), default=str)
-        raise StackOneAPIError(f'Tool "{name}" failed: {detail}', _status_of(parsed), parsed)
+        raise StackOneAPIError(f"Tool {_json_text(name)} failed: {detail}", _status_of(parsed), parsed)
 
     if non_text:
         parsed["content_parts"] = non_text
@@ -824,11 +907,13 @@ class StackOneTool(BaseModel):
                 # NaN and Infinity are not JSON: json.loads accepts them, JSON.parse does not.
                 parsed = json.loads(arguments, parse_constant=_reject_json_constant)
             except ValueError as exc:
-                raise ToolArgumentsError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
+                raise ToolArgumentsError(
+                    f"Invalid JSON in arguments for {_json_text(self.name)}: {exc}"
+                ) from exc
         else:
             parsed = arguments
         if not isinstance(parsed, dict):
-            raise ToolArgumentsError("Tool arguments must be a JSON object")
+            raise ToolArgumentsError(f"Tool arguments for {_json_text(self.name)} must be a JSON object")
         return dict(parsed)
 
     def _declared_headers(self) -> tuple[set[str] | None, set[str], bool]:
@@ -866,23 +951,21 @@ class StackOneTool(BaseModel):
         return nested, flat, ordinary_headers_field
 
     @staticmethod
-    def _header_refusal(name: str, declared: bool) -> str | None:
-        """Why a header argument may not be forwarded, or ``None`` if it may."""
+    def _header_refusal(name: str, text: str, declared: bool) -> str | None:
+        """The reason code a header argument may not be forwarded for, or ``None`` if it may."""
         # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to any
         # server. ASCII only: a name that differs from an owned one outside ASCII is not a
         # token, and is refused as malformed below.
         if _ascii_lower(_trim_header_name(name)) in _SDK_OWNED_HEADERS:
-            return "it is set by the SDK"
+            return "set-by-sdk"
         if not declared:
-            return "it is not declared by the schema"
-        return None
-
-    @staticmethod
-    def _is_well_formed_header(name: str, text: str) -> bool:
+            return "not-declared"
         # Defence in depth on a declared header's model-supplied value. fullmatch, not
         # match: `$` also matches just before a trailing newline, so `match` let "value\n"
         # — the one character class this rejects — straight through.
-        return bool(_HEADER_NAME_PATTERN.fullmatch(name) and _HEADER_VALUE_PATTERN.fullmatch(text))
+        if not (_HEADER_NAME_PATTERN.fullmatch(name) and _HEADER_VALUE_PATTERN.fullmatch(text)):
+            return "malformed"
+        return None
 
     def _sanitise_headers(self, supplied: dict[str, Any] | None) -> dict[str, str]:
         """Keep only the entries of a nested ``headers`` argument the served schema declares.
@@ -905,12 +988,9 @@ class StackOneTool(BaseModel):
             if text is None or not isinstance(key, str):
                 continue
             name = _trim_header_name(key)
-            reason = self._header_refusal(name, declared is None or _ascii_lower(name) in declared)
+            reason = self._header_refusal(name, text, declared is None or _ascii_lower(name) in declared)
             if reason:
-                logger.warning("Dropping header %r from a tool call: %s", name, reason)
-                continue
-            if not self._is_well_formed_header(name, text):
-                logger.warning("Dropping malformed header %r from a tool call", name)
+                _warn_header_dropped("headers", name, reason)
                 continue
             clean[name] = text
         return clean
@@ -942,26 +1022,20 @@ class StackOneTool(BaseModel):
                 elif ordinary_headers_field:
                     clean[key] = value
                 else:
-                    logger.warning("Dropping header argument 'headers' from a tool call: not an object")
+                    _warn_header_dropped(key, None, "not-an-object")
                 continue
             if not key.startswith(_FLAT_HEADER_PREFIX):
                 clean[key] = value
                 continue
             if isinstance(value, dict | list):
-                logger.warning(
-                    "Dropping header argument %r from a tool call: not a string, number or boolean", key
-                )
+                _warn_header_dropped(key, None, "not-a-scalar")
                 continue
             text = _header_text(value)
             if text is None:
                 continue
-            name = key[len(_FLAT_HEADER_PREFIX) :]
-            reason = self._header_refusal(name, key in declared_flat)
+            reason = self._header_refusal(key[len(_FLAT_HEADER_PREFIX) :], text, key in declared_flat)
             if reason:
-                logger.warning("Dropping header argument %r from a tool call: %s", key, reason)
-                continue
-            if not self._is_well_formed_header(name, text):
-                logger.warning("Dropping malformed header argument %r from a tool call", key)
+                _warn_header_dropped(key, None, reason)
                 continue
             clean[key] = value
         return clean
@@ -976,7 +1050,7 @@ class StackOneTool(BaseModel):
             StackOneError: Always, on the base class.
         """
         raise StackOneError(
-            f'Tool "{self.name}" has no executor. Override execute() to run a hand-built tool.'
+            f"Tool {_json_text(self.name)} has no executor. Override execute() to run a hand-built tool."
         )
 
     def call(self, *args: Any, **kwargs: Any) -> JsonDict:
@@ -1214,27 +1288,28 @@ class StackOneMcpTool(StackOneTool):
         """
         parsed = self._parse_arguments(arguments)
 
+        unencodable = f"Arguments for {_json_text(self.name)} could not be encoded as JSON"
         try:
             # Without this a prompt-injected call could put its own Authorization or
             # x-account-id in a header argument the server unpacks.
             parsed = self._sanitise_header_arguments(parsed)
-            json.dumps(parsed, ensure_ascii=False, allow_nan=False).encode("utf-8")
+            # NaN and Infinity are not JSON; the MCP client would send them as null.
+            non_finite = _first_non_finite(parsed)
+            json.dumps(parsed, ensure_ascii=False).encode("utf-8")
         except (UnicodeEncodeError, TypeError, ValueError) as exc:
-            # A lone surrogate — what a model emits when a token boundary splits an emoji —
-            # or a value JSON cannot encode (a set, bytes) would otherwise fail deep inside
-            # the MCP client and surface as a transport error. It is an argument problem.
-            # NaN and Infinity are not JSON either; the MCP client would send them as null.
-            raise ToolArgumentsError(
-                f"Arguments for {self.name!r} could not be encoded as JSON: {exc}"
-            ) from exc
+            # A lone surrogate, in any string or key however deep — what a model emits when a
+            # token boundary splits an emoji — or a value JSON cannot encode (a set, bytes,
+            # a cycle) would otherwise fail deep inside the MCP client and surface as a
+            # transport error. It is an argument problem.
+            raise ToolArgumentsError(f"{unencodable}: {exc}") from exc
         except RecursionError as exc:
             # A header value that contains itself, directly or through a cycle of nested
             # dicts/lists, recurses forever as _header_text walks it. Not a different
             # defect than the ones above: it's still an argument the server could never
             # have accepted.
-            raise ToolArgumentsError(
-                f"Arguments for {self.name!r} could not be encoded as JSON: circular reference"
-            ) from exc
+            raise ToolArgumentsError(f"{unencodable}: circular reference") from exc
+        if non_finite is not None:
+            raise ToolArgumentsError(f"{unencodable}: {_js_number(non_finite)} is not a JSON number")
 
         return call_mcp_tool(
             self._endpoint, self._prepare_headers(), self.name, parsed, timeout=self._execute_config.timeout
@@ -1268,8 +1343,8 @@ class Tools:
             counts = Counter(tool.name for tool in tools)
             clashing = sorted(name for name, count in counts.items() if count > 1)
             logger.warning(
-                "%d tool name(s) are served by more than one account (%s). get_tool() will "
-                "return the first one listed — pass account_ids to choose.",
+                "%d tool name(s) are served by more than one account (%s). Looking a tool up by "
+                "name returns the first one listed — pass account ids to choose.",
                 len(clashing),
                 ", ".join(clashing[:5]),
             )
@@ -1335,7 +1410,7 @@ class Tools:
             call_id, name, arguments = _read_openai_tool_call(call)
             tool = self.get_tool(name)
             if tool is None:
-                result: Any = {"error": f"Unknown tool {name!r}"}
+                result: Any = {"error": f"Unknown tool {_json_text(name)}"}
             else:
                 try:
                     result = tool.execute(arguments)
