@@ -211,7 +211,8 @@ argument is sent unchanged.
 
 A top-level `headers` argument that isn't a plain object is dropped with a warning,
 unless the schema declares `headers` itself as a non-object field, in which case it's
-an ordinary argument that happens to be named `headers` and is sent as given. A
+an ordinary argument that happens to be named `headers`: it skips header filtering and is
+sent as given, subject to the same JSON-value check as every other argument. A
 `headers_<name>` argument is dropped with a warning when its value is a list or dict.
 
 `*_execute_action` serves an open `headers` object, so `toolset.execute()` passes your
