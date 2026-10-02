@@ -124,9 +124,9 @@ class TestRetryDelay:
         assert len(set(delays)) > 1
 
     def test_backoff_jitter_extremes(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(tools_module.random, "uniform", lambda low, high: low)
+        monkeypatch.setattr(tools_module.random, "random", lambda: 0.0)
         assert [_rate_limit_delay(_429(), r) for r in (1, 2, 3)] == [0.5, 1.0, 2.0]
-        monkeypatch.setattr(tools_module.random, "uniform", lambda low, high: high)
+        monkeypatch.setattr(tools_module.random, "random", lambda: 1.0)
         assert [_rate_limit_delay(_429(), r) for r in (1, 2, 3)] == [1.0, 2.0, 4.0]
 
 

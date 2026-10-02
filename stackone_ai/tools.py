@@ -21,9 +21,8 @@ from collections import Counter
 from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from email.utils import parsedate_to_datetime
 from importlib import metadata
 from typing import Any, TypeVar
 
@@ -243,41 +242,115 @@ async def _buffer_error_body(response: httpx.Response) -> None:
         await response.aread()
 
 
-_HTTP_DATE_START = re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*[, ]")
+# The three HTTP-date forms of RFC 9110 §5.6.7, exactly: case-sensitive, single spaces, and
+# GMT only. re.ASCII, or \d would also match "٣".
+_DAY = r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)"
+_MONTH = r"(?P<month>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+_TIME = r"(?P<hour>\d\d):(?P<minute>\d\d):(?P<second>\d\d)"
+_IMF_FIXDATE = re.compile(rf"{_DAY}, (?P<day>\d\d) {_MONTH} (?P<year>\d{{4}}) {_TIME} GMT", re.ASCII)
+_RFC850_DATE = re.compile(
+    rf"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), "
+    rf"(?P<day>\d\d)-{_MONTH}-(?P<year>\d\d) {_TIME} GMT",
+    re.ASCII,
+)
+_ASCTIME_DATE = re.compile(rf"{_DAY} {_MONTH} (?P<day>\d\d| \d) {_TIME} (?P<year>\d{{4}})", re.ASCII)
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
-def _retry_after_seconds(value: str | None) -> float | None:
-    """A Retry-After header as seconds from now: delta-seconds or an HTTP-date.
+def _add_years(when: datetime, years: int) -> datetime:
+    """``when`` moved by whole years; 29 February lands on the 28th in a common year."""
+    try:
+        return when.replace(year=when.year + years)
+    except ValueError:
+        return when.replace(year=when.year + years, day=28)
+
+
+def _parse_http_date(value: str, now: datetime) -> datetime | None:
+    """An RFC 9110 HTTP-date as a UTC datetime, or ``None`` if it is not one.
+
+    Written out rather than left to ``email.utils.parsedate_to_datetime``, which reads
+    far more than an HTTP-date: trailing text, numeric zones, two-digit years in any form.
+    The weekday is not checked against the date, as RFC 9110 does not ask it to be.
+    """
+    match = _IMF_FIXDATE.fullmatch(value) or _ASCTIME_DATE.fullmatch(value)
+    two_digit_year = False
+    if match is None:
+        match = _RFC850_DATE.fullmatch(value)
+        two_digit_year = True
+    if match is None:
+        return None
+    year = int(match["year"])
+    second = int(match["second"])
+    if two_digit_year:
+        # §5.6.7: a two-digit year more than 50 years ahead is the most recent past year
+        # with those digits.
+        year += now.year - now.year % 100
+    try:
+        # Second 60 is a leap second: the instant the next minute starts.
+        when = datetime(
+            year,
+            _MONTHS.index(match["month"]) + 1,
+            int(match["day"]),
+            int(match["hour"]),
+            int(match["minute"]),
+            min(second, 59),
+            tzinfo=UTC,
+        )
+    except ValueError:
+        # Day 32, hour 25, 30 February, year 0.
+        return None
+    if second == 60:
+        when += timedelta(seconds=1)
+    elif second > 60:
+        return None
+    if two_digit_year:
+        if when > _add_years(now, 50):
+            when = _add_years(when, -100)
+        elif _add_years(when, 100) <= _add_years(now, 50):
+            when = _add_years(when, 100)
+    return when
+
+
+def _retry_after_seconds(value: str | None, now: datetime | None = None) -> float | None:
+    """A Retry-After header as seconds from ``now``: delta-seconds or an HTTP-date.
 
     ``None`` when the header is absent or unreadable, so the caller falls back to its
-    own backoff. A date in the past means retry now.
+    own backoff. A date in the past means retry now. ``now`` defaults to the current time.
     """
     if value is None:
         return None
-    value = value.strip()
+    value = value.strip(_JS_WHITESPACE)
     # ASCII digits only: str.isdigit() also accepts "²", which float() then refuses.
     if re.fullmatch(r"[0-9]+", value):
         return float(value)
-    # All three HTTP-date forms start with a weekday ("Sun,", "Sunday,", "Sun "); anything
-    # else is unreadable, as in Node, and falls back to the backoff.
-    if not _HTTP_DATE_START.match(value):
+    now = now or datetime.now(UTC)
+    when = _parse_http_date(value, now)
+    if when is None:
         return None
-    try:
-        when = parsedate_to_datetime(value)
-    except (TypeError, ValueError, IndexError, OverflowError):
-        # OverflowError: a year too large for a C long, e.g. 99999999999999999999.
-        return None
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+    return max(0.0, (when - now).total_seconds())
+
+
+def _backoff_delay(retry: int, retry_after: float | None, random_value: float | None = None) -> float:
+    """How long to wait before retry number ``retry`` (1-based) of a 429.
+
+    ``retry_after`` is the 429's Retry-After in seconds, or ``None`` if it had none readable;
+    then the backoff for ``retry`` is jittered by ``random_value``, uniform in [0, 1).
+    """
+    if retry_after is None:
+        r = random.random() if random_value is None else random_value
+        low, high = RATE_LIMIT_JITTER
+        retry_after = RATE_LIMIT_BACKOFF_SECONDS[retry - 1] * (low + (high - low) * r)
+    return min(retry_after, RATE_LIMIT_MAX_DELAY_SECONDS)
 
 
 def _rate_limit_delay(response: httpx.Response, retry: int) -> float:
-    """How long to wait before retry number ``retry`` (1-based) of a 429."""
-    delay = _retry_after_seconds(response.headers.get("retry-after"))
-    if delay is None:
-        delay = RATE_LIMIT_BACKOFF_SECONDS[retry - 1] * random.uniform(*RATE_LIMIT_JITTER)
-    return min(delay, RATE_LIMIT_MAX_DELAY_SECONDS)
+    """How long to wait before retry number ``retry`` (1-based) of this 429."""
+    return _backoff_delay(retry, _retry_after_seconds(response.headers.get("retry-after")))
+
+
+def _waits_for_retry(delay: float, remaining: float) -> bool:
+    """Whether a wait of ``delay`` ends before a deadline ``remaining`` seconds away."""
+    return delay < remaining
 
 
 def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) -> None:
@@ -298,7 +371,7 @@ def _outlasts_deadline(request: httpx.Request, attempt: int, delay: float, remai
     timeout, which a multi-account call skips like any per-account failure, and hand back
     a partial catalog that looks complete. The 429 itself ends the call.
     """
-    if delay < remaining:
+    if _waits_for_retry(delay, remaining):
         return False
     logger.warning(
         "%s %s was rate limited (429) on attempt %d of %d; not retrying, because waiting "
