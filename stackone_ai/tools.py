@@ -1411,18 +1411,32 @@ class Tools:
             self._tool_map.setdefault(tool.name, tool)
 
         # Two accounts on one provider serve identically named tools, and get_tool()
-        # returns only one of them. OpenAI accepts the duplicate function names without
-        # complaint, so nothing downstream surfaces it either — the only symptom is an
-        # action running against an account the caller never chose.
-        if len(self._tool_map) != len(tools):
-            counts = Counter(tool.name for tool in tools)
-            clashing = sorted(name for name, count in counts.items() if count > 1)
-            logger.warning(
-                "%d tool name(s) are served by more than one account (%s). Looking a tool up by "
-                "name returns the first one listed — pass account ids to choose.",
-                len(clashing),
-                ", ".join(clashing[:5]),
-            )
+        # returns only one of them — the only symptom would otherwise be an action running
+        # against an account the caller never chose.
+        self._warn_duplicate_names()
+
+    def _warn_duplicate_names(self) -> None:
+        """Warn once if more than one tool has the same name."""
+        if len(self._tool_map) == len(self.tools):
+            return
+        counts = Counter(tool.name for tool in self.tools)
+        clashing = sorted(name for name, count in counts.items() if count > 1)
+        logger.warning(
+            "%d tool name(s) are served by more than one account (%s). The first one listed, from the "
+            "lowest account id, is used — pass account ids to choose.",
+            len(clashing),
+            ", ".join(clashing[:5]),
+        )
+
+    def _first_per_name(self) -> list[StackOneTool]:
+        """The first tool of each name, in order: the one :meth:`get_tool` returns.
+
+        Every adapter is built from these, so a model is never offered a tool a lookup by
+        name would not find. OpenAI was sent two functions of one name, and LangChain and
+        Pydantic AI each kept whichever their own lookup happened to find.
+        """
+        self._warn_duplicate_names()
+        return list(self._tool_map.values())
 
     def __getitem__(self, index: int) -> StackOneTool:
         return self.tools[index]
@@ -1459,8 +1473,8 @@ class Tools:
         return None
 
     def to_openai(self) -> list[JsonDict]:
-        """Convert all tools to OpenAI function format"""
-        return [tool.to_openai_function() for tool in self.tools]
+        """Convert the tools to OpenAI function format, the first of each name only."""
+        return [tool.to_openai_function() for tool in self._first_per_name()]
 
     def execute_openai_tool_calls(self, tool_calls: Iterable[Any] | None) -> list[JsonDict]:
         """Run a Chat Completions response's tool calls and return the ``tool`` messages.
@@ -1498,15 +1512,15 @@ class Tools:
         return messages
 
     def to_langchain(self) -> Sequence[Any]:
-        """Convert all tools to LangChain format.
+        """Convert the tools to LangChain format, the first of each name only.
 
         Requires ``stackone-ai[langchain]``.
         """
-        return [tool.to_langchain() for tool in self.tools]
+        return [tool.to_langchain() for tool in self._first_per_name()]
 
     def to_pydantic_ai(self) -> list[Any]:
-        """Convert all tools to Pydantic AI ``Tool`` instances.
+        """Convert the tools to Pydantic AI ``Tool`` instances, the first of each name only.
 
         Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
         """
-        return [tool.to_pydantic_ai_tool() for tool in self.tools]
+        return [tool.to_pydantic_ai_tool() for tool in self._first_per_name()]

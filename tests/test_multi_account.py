@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from stackone_ai import toolset as toolset_module
-from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
+from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, Tools
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
 from stackone_ai.types import (
     StackOneAPIError,
@@ -271,3 +271,66 @@ class TestExtraHeadersCannotReplaceTheSdksOwn:
             "x-account-id": "acc1",
         }
         assert headers["User-Agent"].startswith("stackone-ai-python/")
+
+
+def _duplicated() -> Tools:
+    """hris_list on acc1 and acc2. Constructing it warns, so a test clears caplog after."""
+
+    def tool(name: str, account: str) -> StackOneMcpTool:
+        return StackOneMcpTool(
+            name=name,
+            description=f"on {account}",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="k",
+            endpoint="https://api.example.com/mcp",
+            account_id=account,
+        )
+
+    return Tools([tool("hris_list", "acc1"), tool("other", "acc1"), tool("hris_list", "acc2")])
+
+
+class TestAdaptersKeepTheFirstOfEachName:
+    DUPLICATE_WARNING = (
+        "1 tool name(s) are served by more than one account (hris_list). The first one listed, "
+        "from the lowest account id, is used — pass account ids to choose."
+    )
+
+    def test_openai(self, caplog):
+        tools = _duplicated()
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            functions = tools.to_openai()
+        assert [(f["function"]["name"], f["function"]["description"]) for f in functions] == [
+            ("hris_list", "on acc1"),
+            ("other", "on acc1"),
+        ]
+        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+
+    def test_langchain(self, caplog):
+        tools = _duplicated()
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            converted = tools.to_langchain()
+        assert [(t.name, t.description) for t in converted] == [
+            ("hris_list", "on acc1"),
+            ("other", "on acc1"),
+        ]
+        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+
+    def test_pydantic_ai(self, caplog):
+        tools = _duplicated()
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            converted = tools.to_pydantic_ai()
+        assert [(t.name, t.description) for t in converted] == [
+            ("hris_list", "on acc1"),
+            ("other", "on acc1"),
+        ]
+        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+
+    def test_no_warning_without_a_clash(self, caplog):
+        unique = _duplicated().tools[:2]
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            Tools(unique).to_openai()
+        assert caplog.records == []

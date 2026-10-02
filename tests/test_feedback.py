@@ -103,7 +103,7 @@ class TestFeedbackToolIsListedOnce:
             tools = toolset.fetch_tools(account_ids=["acc2", "acc1"])
         assert len(tools) == 2
         assert "more than one account (linear_list_issues)" in caplog.text
-        assert "Looking a tool up by name returns the first one listed" in caplog.text
+        assert "The first one listed, from the lowest account id, is used" in caplog.text
 
         # The first listed, as Node's getTool() does. Listings merge in sorted account order.
         assert [t.get_account_id() for t in tools] == ["acc1", "acc2"]
