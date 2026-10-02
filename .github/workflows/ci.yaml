@@ -105,10 +105,15 @@ jobs:
             echo "can-skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Runs the full suite, both SDKs side by side, so a change here that the Node SDK does not
+  # match fails here rather than drifting.
   conformance:
     needs: check-secret
     if: needs.check-secret.outputs.can-skip != 'true'
     runs-on: ubuntu-latest
+    env:
+      # Switch to main once StackOneHQ/stackone-ai-node#383 merges.
+      NODE_SDK_REF: refactor/mcp-only-toolset
     steps:
       - name: Check conformance token is configured
         env:
@@ -133,6 +138,15 @@ jobs:
           path: sdk-conformance
           persist-credentials: false
 
+      # Public, so no token.
+      - name: Checkout Node SDK
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: StackOneHQ/stackone-ai-node
+          ref: ${{ env.NODE_SDK_REF }}
+          path: stackone-ai-node
+          persist-credentials: false
+
       # tests/test_shared_vectors.py grades the SDK against this copy; it must be the
       # pinned commit's vectors/ byte for byte. Refresh with scripts/sync_vectors.sh.
       - name: Vendored vectors match the pinned sdk-conformance
@@ -150,10 +164,21 @@ jobs:
           version: 10.26.0
           package_json_file: sdk-conformance/package.json
 
+      # 24, not 22: the Node SDK's devEngines pins Node ^24.11.0, and the suite runs on it too.
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
+
+      - name: Install Node SDK dependencies
+        working-directory: stackone-ai-node
+        run: pnpm install --frozen-lockfile
+
+      # The runner imports the built dist, not src, so the harness grades the publishable
+      # artifact. It refuses a dist older than src.
+      - name: Build Node SDK
+        working-directory: stackone-ai-node
+        run: pnpm run build
 
       - name: Install conformance dependencies
         working-directory: sdk-conformance
@@ -162,8 +187,9 @@ jobs:
       - name: Run conformance suite
         working-directory: sdk-conformance
         env:
+          NODE_SDK_DIST: ${{ github.workspace }}/stackone-ai-node/dist/index.mjs
           PYTHON_SDK_DIR: ${{ github.workspace }}/sdk
-        run: pnpm test:python -- --strict-schema
+        run: pnpm test -- --strict-schema
 
   # Make this the one required status check. Individually required checks go
   # missing when a job is renamed or a matrix entry is added, and nothing notices.
