@@ -324,6 +324,60 @@ class TestATimeoutAfterARetried429IsThe429:
         assert is_rate_limited(excinfo.value)
 
 
+class TestAStaleThrottleMarkerDoesNotTaintALaterTimeout:
+    """A retried 429 that then succeeds must not mark a later, unrelated timeout as a 429.
+
+    ``initialize`` and ``tools/list`` share one ``_Throttle`` for the whole MCP exchange.
+    Without clearing the marker after the retry succeeds, a plain timeout on ``tools/list``
+    was reported as the ``initialize`` 429 instead, and a multi-account call aborted the
+    whole listing rather than skipping the one account.
+    """
+
+    @staticmethod
+    def _429_once_on_initialize_then_hang_on_list(monkeypatch: pytest.MonkeyPatch, account: str) -> None:
+        import json as _json
+
+        real = httpx.AsyncHTTPTransport.handle_async_request
+        attempts: dict[str, int] = {}
+
+        async def handler(self: Any, request: httpx.Request) -> httpx.Response:
+            if request.headers.get("x-account-id") != account:
+                return await real(self, request)
+            method = _json.loads(request.content or b"{}").get("method")
+            if method == "initialize":
+                attempts["initialize"] = attempts.get("initialize", 0) + 1
+                if attempts["initialize"] == 1:
+                    return _429("0")
+                return await real(self, request)
+            if method == "tools/list":
+                await asyncio.sleep(60)
+                raise AssertionError("the exchange's deadline should have cancelled this")
+            return await real(self, request)
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handler)
+
+    def test_fetch_mcp_tools_times_out_rather_than_reporting_a_stale_429(
+        self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch
+    ):
+        self._429_once_on_initialize_then_hang_on_list(monkeypatch, "acc1")
+        with pytest.raises(ToolsetLoadError, match="timed out after 0.5s") as excinfo:
+            fetch_mcp_tools(
+                f"{mcp_mock_server}/mcp",
+                {"x-account-id": "acc1", "Authorization": "Basic dGVzdC1rZXk6"},
+                timeout=0.5,
+            )
+        assert not is_rate_limited(excinfo.value)
+
+    def test_a_two_account_listing_skips_only_the_timed_out_account(
+        self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch
+    ):
+        self._429_once_on_initialize_then_hang_on_list(monkeypatch, "acc2")
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, timeout=0.5)
+        tools = toolset.fetch_tools(account_ids=["acc1", "acc2"])
+        assert tools.get_tool("acc1_tool_1") is not None
+        assert tools.get_tool("acc2_tool_1") is None
+
+
 class TestMcpAgainstMockServer:
     """The mock answers 429 for `ratelimit-<all|call>-<n|always>-<tag>` account ids."""
 

@@ -544,6 +544,8 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
             await _async_sleep(delay)
             attempt += 1
             response = await super().send(request, **kwargs)
+        if self._throttle is not None and response.status_code != 429:
+            self._throttle.response = None
         return response
 
 
