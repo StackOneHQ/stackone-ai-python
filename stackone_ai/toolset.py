@@ -8,7 +8,9 @@ import fnmatch
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import httpx
@@ -54,6 +56,29 @@ _Listing = tuple[McpToolDefinition, str | None, str]
 # The search_actions meta tool's served schema caps top_k at 50.
 _MAX_TOP_K = 50
 
+FAILED_ACCOUNT_RETRY_SECONDS = 30.0
+"""How long an account that failed to list tools is left out of a cached catalog.
+
+Its healthy siblings' listings are cached all the same. A later call within this window
+serves them without the failed account, and without warning about it again; the first
+call after it lists the failed account again.
+"""
+
+# Looked up at call time, so tests can move it on rather than wait.
+_clock = time.monotonic
+
+
+@dataclass(frozen=True)
+class _Catalog:
+    """A cached catalog: each healthy account's listing, and when each failed one failed."""
+
+    listings: dict[str | None, list[_Listing]]
+    failed_at: dict[str | None, float] = field(default_factory=dict)
+
+    def in_order(self, account_scope: list[str | None]) -> list[_Listing]:
+        return [listing for account in account_scope for listing in self.listings.get(account, [])]
+
+
 _Item = TypeVar("_Item")
 _Result = TypeVar("_Result")
 
@@ -81,6 +106,29 @@ def _fan_out(
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
     return [(item, outcomes[index]) for index, item in enumerate(items)]
+
+
+def _all_accounts_failed(failures: list[tuple[str | None, Exception]]) -> Exception:
+    """The error for a listing in which every account failed, in account order.
+
+    When every failure is a StackOneAPIError with the same status, the first of them: two
+    accounts answering 401 are a revoked key, and a caller must be able to tell that from a
+    429 as it can with one account. Otherwise a ToolsetLoadError, caused by the first
+    failure and keeping them all in ``failures``.
+    """
+    errors = [failure for _, failure in failures]
+    first = errors[0]
+    if isinstance(first, StackOneAPIError) and all(
+        isinstance(error, StackOneAPIError) and error.status_code == first.status_code for error in errors
+    ):
+        return first
+    error = ToolsetLoadError(
+        "Every account failed to list tools: "
+        + "; ".join(f"{account}: {failure}" for account, failure in failures),
+        failures=errors,
+    )
+    error.__cause__ = first
+    return error
 
 
 class StackOneToolSet:
@@ -147,7 +195,7 @@ class StackOneToolSet:
         # Cache the listing, not the Tools wrapper. StackOneTool objects are mutable
         # (Tools.set_account_id rebinds them), so handing the same instances back on a
         # cache hit let one caller silently rescope every later caller's tools.
-        self._catalog_cache: dict[tuple[Any, ...], list[_Listing]] = {}
+        self._catalog_cache: dict[tuple[Any, ...], _Catalog] = {}
         self._discovered_account_ids: list[str] | None = None
         # Shared while in flight, so concurrent fetch_tools() and search() calls on a
         # fresh toolset make one GET /accounts between them rather than one each.
@@ -205,10 +253,14 @@ class StackOneToolSet:
             Collection of tools matching the filter criteria
 
         Raises:
-            ToolsetLoadError: If there is an error loading the tools
+            ToolsetLoadError: If there is an error loading the tools. When every account
+                fails for differing reasons, its ``failures`` holds each account's error
+                and its ``__cause__`` is the first.
             StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
-                after retries, even when only one of several accounts is. Other
-                per-account failures skip that account with a warning.
+                after retries, even when only one of several accounts is; or with the API's
+                status when every account fails with that same status, so a caller can tell
+                a revoked key's 401 from a 429. Other per-account failures skip that account
+                with a warning, and leave it out for ``FAILED_ACCOUNT_RETRY_SECONDS``.
 
         A 429 is retried up to three times, after the server's ``Retry-After`` (capped at
         30 seconds) or else a 1s, 2s, 4s backoff with jitter. A wait that would not end
@@ -239,15 +291,11 @@ class StackOneToolSet:
             # actions narrow the list in memory, so they must not force a refetch.
             # base_url and api_key belong here — leaving them out meant reassigning
             # either one kept serving the old catalog, still pointed at the old host.
-            cache_key = self._cache_key(account_scope, mode)
-            with self._cache_lock:
-                cached = self._catalog_cache.get(cache_key)
-            if cached is None:
-                cached = self._list_catalog(account_scope, mode, generation)
+            listings = self._catalog(account_scope, mode, generation)
 
             all_tools = [
                 self._create_tool(tool_def, account, endpoint)
-                for tool_def, account, endpoint in self._dedupe_global_tools(cached)
+                for tool_def, account, endpoint in self._dedupe_global_tools(listings)
             ]
 
             if providers:
@@ -304,17 +352,41 @@ class StackOneToolSet:
             resolved = self._discover_account_ids()
         return list(resolved)
 
-    def _list_catalog(
+    def _catalog(
         self, account_scope: list[str | None], mode: ToolMode | None, generation: int
     ) -> list[_Listing]:
-        """List every scoped account's catalog, tolerating accounts that fail.
+        """Every scoped account's catalog, from the cache where it can be.
 
-        Except for a rate limit: a 429 that outlasts its retries is raised, not skipped.
+        One unusable account must not cost the caller every other account's tools, so a
+        failing account is skipped with a warning. The healthy accounts' listings are cached
+        all the same, and the failed account is left out, silently, until
+        ``FAILED_ACCOUNT_RETRY_SECONDS`` have passed, when the next call lists it again. Not
+        caching at all made every call re-list every account, and wait out the full timeout
+        on one that hangs.
+
+        A 429 that outlasts its retries is raised, not skipped: it is the key's, not the
+        account's, and skipping it would hand back a catalog missing whichever accounts
+        happened to be throttled. When every account fails, see :func:`_all_accounts_failed`.
 
         ``generation`` is the cache generation as of the start of the call that resolved
         ``account_scope``: a clear_catalog_cache() during account discovery must stop the
         catalog this scope resolves to from being cached, same as the discovered list.
         """
+        key = self._cache_key(account_scope, mode)
+        with self._cache_lock:
+            cached = self._catalog_cache.get(key)
+        now = _clock()
+        if cached is None:
+            due = account_scope
+        else:
+            due = [
+                account
+                for account, failed_at in cached.failed_at.items()
+                if now - failed_at >= FAILED_ACCOUNT_RETRY_SECONDS
+            ]
+            if not due:
+                return cached.in_order(account_scope)
+
         # No param-style pin: arguments are sent verbatim and the server maps them with its
         # own reverse map, so the model sees whatever style the server serves.
         endpoint = f"{self.base_url.rstrip('/')}/mcp"
@@ -328,42 +400,35 @@ class StackOneToolSet:
             listed = fetch_mcp_tools(endpoint, headers, timeout=self._timeout)
             return [(tool_def, account, endpoint) for tool_def in listed]
 
-        listings: list[_Listing] = []
+        def _store(catalog: _Catalog) -> None:
+            with self._cache_lock:
+                if generation == self._cache_generation:
+                    self._catalog_cache[key] = catalog
+
         if len(account_scope) == 1:
-            listings.extend(_fetch_for_account(account_scope[0]))
-            self._store_listing(account_scope, mode, listings, generation)
-            return listings
+            catalog = _Catalog({account_scope[0]: _fetch_for_account(account_scope[0])})
+            _store(catalog)
+            return catalog.in_order(account_scope)
 
-        failures: list[str] = []
-        for account, outcome in _fan_out(_fetch_for_account, account_scope):
+        listings = dict(cached.listings) if cached else {}
+        failed_at = dict(cached.failed_at) if cached else {}
+        failures: list[tuple[str | None, Exception]] = []
+        for account, outcome in _fan_out(_fetch_for_account, due):
             if isinstance(outcome, Exception):
-                # One unusable account must not cost the caller every other
-                # account's tools; report which one, keep the rest.
-                failures.append(f"{account}: {outcome}")
+                failures.append((account, outcome))
             else:
-                listings.extend(outcome)
-        if failures and not listings:
-            raise ToolsetLoadError("No account returned tools. " + " | ".join(failures))
-        for failure in failures:
-            logger.warning("Skipping account that failed to list tools — %s", failure)
+                listings[account] = outcome
+                failed_at.pop(account, None)
+        if not listings:
+            raise _all_accounts_failed(failures)
+        failed_now = _clock()
+        for account, failure in failures:
+            logger.warning("Skipping account that failed to list tools — %s: %s", account, failure)
+            failed_at[account] = failed_now
 
-        # A degraded catalog must not be cached: the warning fires once, and every later
-        # call would then serve the short list silently, for the life of the process.
-        if not failures:
-            self._store_listing(account_scope, mode, listings, generation)
-        return listings
-
-    def _store_listing(
-        self,
-        account_scope: list[str | None],
-        mode: ToolMode | None,
-        listings: list[_Listing],
-        generation: int,
-    ) -> None:
-        """Cache a listing, unless the cache was cleared while it was being fetched."""
-        with self._cache_lock:
-            if generation == self._cache_generation:
-                self._catalog_cache[self._cache_key(account_scope, mode)] = listings
+        catalog = _Catalog(listings, failed_at)
+        _store(catalog)
+        return catalog.in_order(account_scope)
 
     @staticmethod
     def _dedupe_global_tools(

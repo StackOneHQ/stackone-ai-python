@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal, TypeAlias, TypedDict
 
 from pydantic import (
@@ -96,9 +97,15 @@ class ToolsetConfigError(ToolsetError):
 
 
 class ToolsetLoadError(ToolsetError):
-    """Raised when there is an error loading tools"""
+    """Raised when there is an error loading tools.
 
-    pass
+    ``failures`` holds each account's error when every account failed to list tools for
+    differing reasons, in account order; otherwise it is empty.
+    """
+
+    def __init__(self, message: str, *, failures: Sequence[Exception] = ()) -> None:
+        super().__init__(message)
+        self.failures: list[Exception] = list(failures)
 
 
 class ExecuteToolsConfig(TypedDict, total=False):

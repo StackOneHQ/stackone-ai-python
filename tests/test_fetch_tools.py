@@ -889,8 +889,11 @@ class TestParallelFetch:
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", always_fails)
 
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
-        with pytest.raises(ToolsetLoadError, match="No account returned tools"):
-            toolset.fetch_tools(account_ids=["a", "b"])
+        with pytest.raises(ToolsetLoadError) as excinfo:
+            toolset.fetch_tools(account_ids=["b", "a"])
+        assert str(excinfo.value) == "Every account failed to list tools: a: boom for a; b: boom for b"
+        assert [str(f) for f in excinfo.value.failures] == ["boom for a", "boom for b"]
+        assert excinfo.value.__cause__ is excinfo.value.failures[0]
 
 
 class TestMcpEndpoint:
