@@ -124,3 +124,13 @@ def mcp_mock_server_without_feedback() -> Generator[str, None, None]:
     """The same mock, serving a project with feedback disabled: the tool is absent."""
     with _run_mcp_mock_server({"MOCK_SUBMIT_FEEDBACK": "off"}) as base_url:
         yield base_url
+
+
+@pytest.fixture(scope="session")
+def mcp_mock_server_with_end_users() -> Generator[str, None, None]:
+    """The same mock, listing acc1 as non-shared (end user ``end-user-1``) and acc2 as shared.
+
+    Like the real API, it refuses an MCP request for acc1 that lacks acc1's ``x-end-user-id``.
+    """
+    with _run_mcp_mock_server({"MOCK_END_USERS": "on"}) as base_url:
+        yield base_url

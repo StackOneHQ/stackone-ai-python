@@ -16,6 +16,7 @@ from typing import Any, TypeVar
 import httpx
 
 from stackone_ai.tools import (
+    END_USER_ID_HEADER,
     USER_AGENT,
     McpToolDefinition,
     RateLimitRetryingClient,
@@ -209,6 +210,10 @@ class StackOneToolSet:
         # to prevent.
         self._cache_generation = 0
         self._cache_lock = threading.Lock()
+        # Each non-shared account's end-user id, from the last successful GET /accounts.
+        # Replaced whole by the next one, and kept by clear_catalog_cache(): it describes
+        # the accounts, not the catalog.
+        self._end_user_ids: dict[str, str] = {}
         self._tool_mode: ToolMode | None = tool_mode
 
         # 2.x read STACKONE_ACCOUNT_ID; 3.x never does, and without an account it uses every
@@ -236,7 +241,8 @@ class StackOneToolSet:
         """Invalidate the cached tool catalog.
 
         Call when linked accounts change outside of ``set_accounts`` or when
-        you need to force a fresh fetch from the StackOne MCP endpoint.
+        you need to force a fresh fetch from the StackOne MCP endpoint. The end-user ids
+        recorded from GET /accounts are kept until the next one replaces them.
         """
         with self._cache_lock:
             self._cache_generation += 1
@@ -607,7 +613,8 @@ class StackOneToolSet:
 
         ``arguments["headers"]`` is forwarded to the action: ``*_execute_action`` serves an
         open ``headers`` object, so any header name is accepted except Authorization,
-        x-account-id and User-Agent, which the SDK sets itself and which are dropped.
+        x-account-id, User-Agent and x-end-user-id, which the SDK sets itself and which are
+        dropped.
 
         ``session_id`` is the value a :meth:`search` hit carries. Passing it links
         this call to that search server-side.
@@ -796,6 +803,11 @@ class StackOneToolSet:
         Each entry carries at least ``id``, ``provider`` and ``status``. Only
         accounts with ``status == "active"`` can serve tools.
 
+        For each account with ``shared`` false and an ``origin_username``, that username is
+        recorded as the account's end-user id, replacing what the last call recorded. Every
+        MCP request this toolset's tools make for that account then carries it in
+        ``x-end-user-id``, which the API requires for a non-shared account.
+
         Raises:
             StackOneAPIError: If the API answers with an error, including a 429 that
                 outlasted its retries.
@@ -844,7 +856,24 @@ class StackOneToolSet:
             raise ToolsetLoadError(
                 f"Unexpected /accounts response shape: expected a list, got {_json_type(accounts)}"
             )
+        end_user_ids = {
+            account["id"]: account["origin_username"]
+            for account in accounts
+            if isinstance(account, dict)
+            and isinstance(account.get("id"), str)
+            and account["id"]
+            and account.get("shared") is False
+            and isinstance(account.get("origin_username"), str)
+            and account["origin_username"]
+        }
+        with self._cache_lock:
+            self._end_user_ids = end_user_ids
         return accounts
+
+    def _end_user_id(self, account_id: str) -> str | None:
+        """The end-user id GET /accounts recorded for an account, if it is not shared."""
+        with self._cache_lock:
+            return self._end_user_ids.get(account_id)
 
     def _discover_account_ids(self) -> list[str]:
         """List the linked accounts this API key can use.
@@ -924,6 +953,9 @@ class StackOneToolSet:
         }
         if account_id:
             headers["x-account-id"] = account_id
+            end_user_id = self._end_user_id(account_id)
+            if end_user_id:
+                headers[END_USER_ID_HEADER] = end_user_id
         return headers
 
     def _create_tool(
@@ -935,7 +967,8 @@ class StackOneToolSet:
         """Build an executable tool from a served catalog entry.
 
         Every tool, in every mode, executes over MCP ``tools/call`` on the endpoint that
-        listed it, with the ``x-account-id`` of the account that listed it.
+        listed it, with the ``x-account-id`` of the account that listed it, and the
+        ``x-end-user-id`` recorded for that account when the request is made.
         """
         schema = tool_def.input_schema or {}
         # Pop keys we explicitly override to avoid "multiple values for keyword argument"
@@ -952,7 +985,7 @@ class StackOneToolSet:
             type=schema_type,
             properties=schema_properties,
         )
-        return StackOneMcpTool(
+        tool = StackOneMcpTool(
             name=tool_def.name,
             description=tool_def.description or "",
             parameters=parameters,
@@ -961,6 +994,8 @@ class StackOneToolSet:
             account_id=account_id,
             timeout=self._timeout,
         )
+        tool._end_user_id_of = self._end_user_id
+        return tool
 
     def _normalize_schema_properties(self, schema: dict[str, Any]) -> dict[str, Any]:
         """Mirror the served schema's properties, recording requiredness per property.

@@ -19,7 +19,7 @@ import re
 import threading
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Coroutine, Iterable, Sequence
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -76,6 +76,14 @@ def _trim_header_name(name: str) -> str:
 # them even when a served schema declares them: they are the credential, the tenant
 # selector and the client identity.
 _SDK_OWNED_HEADERS = frozenset({"authorization", "x-account-id", "user-agent"})
+
+# The end user a non-shared account belongs to, which the API requires on every MCP request
+# for that account. The SDK sets it when GET /accounts recorded one for the account; a
+# caller's configured headers may carry it otherwise. A model may never supply it.
+END_USER_ID_HEADER = "x-end-user-id"
+
+# Header names a tool call's header arguments may not carry, even when declared.
+_SDK_SET_HEADER_ARGUMENTS = _SDK_OWNED_HEADERS | {END_USER_ID_HEADER}
 
 # A top-level argument with this prefix is a header argument, as is an entry of a nested
 # `headers` object argument.
@@ -1036,7 +1044,7 @@ class StackOneTool(BaseModel):
         # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to any
         # server. ASCII only: a name that differs from an owned one outside ASCII is not a
         # token, and is refused as malformed below.
-        if _ascii_lower(_trim_header_name(name)) in _SDK_OWNED_HEADERS:
+        if _ascii_lower(_trim_header_name(name)) in _SDK_SET_HEADER_ARGUMENTS:
             return "set-by-sdk"
         if not declared:
             return "not-declared"
@@ -1057,8 +1065,8 @@ class StackOneTool(BaseModel):
         X-Api-Key, ...) and is wrong the moment one is missed.
 
         The allowlist is the served schema itself, so this needs no maintenance. An open
-        ``headers`` object declares every name. Authorization, x-account-id and User-Agent
-        are refused even when declared: the SDK sets them itself.
+        ``headers`` object declares every name. Authorization, x-account-id, User-Agent and
+        x-end-user-id are refused even when declared: the SDK sets them itself.
         """
         declared, _, _ = self._declared_headers()
 
@@ -1304,6 +1312,10 @@ class StackOneMcpTool(StackOneTool):
     """
 
     _endpoint: str = PrivateAttr()
+    # Set by the toolset that built the tool: the end-user id it recorded for an account.
+    # Looked up per request, so a tool keeps up with a later GET /accounts and with
+    # set_account_id().
+    _end_user_id_of: Callable[[str], str | None] | None = PrivateAttr(default=None)
 
     def __init__(
         self,
@@ -1331,12 +1343,17 @@ class StackOneMcpTool(StackOneTool):
 
         Authorization, x-account-id and User-Agent are set last, and any case variant of
         them among the extras is dropped first, so neither can replace the credential or
-        retarget the call at another account.
+        retarget the call at another account. So is x-end-user-id, when the toolset recorded
+        one for this tool's account; otherwise a configured x-end-user-id is sent as given.
         """
+        end_user_id = (
+            self._end_user_id_of(self._account_id) if self._end_user_id_of and self._account_id else None
+        )
+        replaced = _SDK_SET_HEADER_ARGUMENTS if end_user_id else _SDK_OWNED_HEADERS
         headers: Headers = {
             name: value
             for name, value in self._execute_config.headers.items()
-            if _ascii_lower(_trim_header_name(name)) not in _SDK_OWNED_HEADERS
+            if _ascii_lower(_trim_header_name(name)) not in replaced
         }
         # The constructor requires the key; only code that clears it afterwards gets here.
         if not self._api_key:
@@ -1345,6 +1362,8 @@ class StackOneMcpTool(StackOneTool):
         headers["Authorization"] = build_auth_header(self._api_key)
         if self._account_id:
             headers["x-account-id"] = self._account_id
+        if end_user_id:
+            headers[END_USER_ID_HEADER] = end_user_id
         return headers
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
@@ -1353,7 +1372,8 @@ class StackOneMcpTool(StackOneTool):
         Arguments are sent as given; the server maps them onto the action. Header arguments
         — the entries of a ``headers`` object and any ``headers_<name>`` — are the exception:
         these arguments are model-controlled, so each is kept only if this tool's own schema
-        declares it, and never if it is Authorization, x-account-id or User-Agent.
+        declares it, and never if it is Authorization, x-account-id, User-Agent or
+        x-end-user-id.
 
         Returns:
             The tool's result as the server wrote it (see :func:`parse_tool_result`): for an

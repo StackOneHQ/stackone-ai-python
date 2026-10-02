@@ -240,12 +240,32 @@ toolset.set_accounts(["acc-123"])
 tools = toolset.fetch_tools(providers=["linear"])
 ```
 
+### Non-shared accounts
+
+The API requires every MCP request for a non-shared account to carry that account's
+end-user id in `x-end-user-id`. Whenever the SDK calls `GET /accounts`, during discovery
+or in `fetch_accounts()`, it records the `origin_username` of each account with
+`shared: false`, and sends it as `x-end-user-id` on every request for that account,
+including from tools it built earlier. Each successful `GET /accounts` replaces the
+record; `clear_catalog_cache()` keeps it.
+
+With explicit account ids the SDK does not call `GET /accounts`, so it sends no
+`x-end-user-id`. To use a non-shared account by id, call `toolset.fetch_accounts()`
+once first:
+
+```python
+toolset = StackOneToolSet(account_id="acc-123")
+toolset.fetch_accounts()  # records acc-123's end user if it is not shared
+tools = toolset.fetch_tools()
+```
+
 ### Two ways to call a tool
 
 The SDK exposes the same actions through two surfaces. Both execute over MCP
 `tools/call`, on the endpoint and with the account that listed the tool, and send
 your arguments as given, except header arguments: each is forwarded only if the tool's
-schema declares it, and `Authorization`, `x-account-id` and `User-Agent` never are (see
+schema declares it, and `Authorization`, `x-account-id`, `User-Agent` and `x-end-user-id`
+never are (see
 [the migration guide](MIGRATION.md#tool-arguments-and-headers)). They take **different
 argument shapes**, because each mirrors the schema the server served for it. Both return the server's result exactly
 as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.

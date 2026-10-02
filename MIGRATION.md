@@ -212,8 +212,8 @@ if the tool's schema declares it in the same form: under `headers.properties`, o
 `headers_<name>` property. An open `headers` object, `"type": "object"` with no
 `properties` and `additionalProperties` not `false`, declares every name; without
 `"type": "object"`, or with `additionalProperties: false` and no `properties`, it
-declares none. `Authorization`, `x-account-id` and `User-Agent` are never forwarded,
-even when declared, because the SDK sets them itself. A dropped header argument is
+declares none. `Authorization`, `x-account-id`, `User-Agent` and `x-end-user-id` are
+never forwarded, even when declared, because the SDK sets them itself. A dropped header argument is
 logged as a warning, except a null value, which is omitted silently. Every other
 argument is sent unchanged.
 
@@ -224,7 +224,7 @@ sent as given, subject to the same JSON-value check as every other argument. A
 `headers_<name>` argument is dropped with a warning when its value is a list or dict.
 
 `*_execute_action` serves an open `headers` object, so `toolset.execute()` passes your
-own headers on to the action, with the exception of those three:
+own headers on to the action, with the exception of those four:
 
 ```python
 toolset.execute("linear_list_comments", {"headers": {"x-request-id": "abc"}})
@@ -244,6 +244,13 @@ otherwise the SDK now falls back to `STACKONE_BASE_URL` before the default,
 `GET /accounts` and lists the catalog of every active account. If you have many
 accounts, pass `account_id=`, `account_ids=` or call `set_accounts()` so the SDK does
 not fetch every catalog.
+
+**A non-shared account's end user is sent for you.** The API requires every MCP request
+for a non-shared account to carry the account's end-user id in `x-end-user-id`. Whenever
+the SDK calls `GET /accounts` (discovery, or `fetch_accounts()`), it records the
+`origin_username` of each account with `shared: false` and sends it as `x-end-user-id` on
+every request for that account. With explicit account ids it makes no `GET /accounts` and
+sends none: call `toolset.fetch_accounts()` once first to use a non-shared account by id.
 
 **`STACKONE_ACCOUNT_ID` is not read.** Pass the account id as `account_id=` or
 `execute={"account_ids": [...]}`. A toolset constructed with neither while
@@ -388,7 +395,8 @@ field. Passing `method`, `url`, `body_type` or `parameter_locations` raises a py
 
 **`StackOneMcpTool(headers=...)` adds headers; it does not replace them.** The SDK
 always sets `Authorization`, `x-account-id` and `User-Agent` itself, after your headers,
-and drops any case variant of those names you pass. `headers` is optional.
+and drops any case variant of those names you pass. An `x-end-user-id` you pass is sent as
+given. `headers` is optional.
 
 ## LangGraph helpers
 
