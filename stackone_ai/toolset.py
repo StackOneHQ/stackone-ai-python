@@ -587,8 +587,12 @@ class StackOneToolSet:
         ``session_id`` is the value a :meth:`search` hit carries. Passing it links
         this call to that search server-side.
 
+        ``account_ids`` restricts routing to these accounts. Pass a search hit's
+        ``account_id`` to run the action on the account that found it.
+
         Raises:
-            ToolsetConfigError: If ``action_id``, ``arguments`` or ``session_id`` is malformed.
+            ToolsetConfigError: If ``action_id``, ``arguments`` or ``session_id`` is malformed,
+                or the action's connector is linked on more than one account in scope.
             ToolArgumentsError: If the arguments cannot be encoded as JSON.
             ToolsetLoadError: If no connector matches.
             StackOneAPIError: If the action fails, including when the server rejects the
@@ -613,14 +617,14 @@ class StackOneToolSet:
             best = max(len(self._connector_of(t, "_execute_action")) for t in matches)
             finalists = [t for t in matches if len(self._connector_of(t, "_execute_action")) == best]
             if len(finalists) > 1:
-                # Same provider linked twice. Picking one silently would run the action
-                # against an account the caller never chose.
-                logger.warning(
-                    "%s matches %d connectors (%s); using %s. Pass account ids to choose.",
-                    _json_text(action_id),
-                    len(finalists),
-                    ", ".join(t.name for t in finalists),
-                    finalists[0].name,
+                # The same provider linked twice, which discovery makes common. Picking one
+                # would run the action against an account the caller never chose — another
+                # end user's, possibly.
+                ordered = sorted(finalists, key=lambda t: t.get_account_id() or "")
+                raise ToolsetConfigError(
+                    f"{_json_text(action_id)} matches {len(finalists)} connectors on different accounts "
+                    f"({', '.join(f'{t.name} on {t.get_account_id()}' for t in ordered)}). "
+                    "Pass the account id to use, such as a search hit's account_id."
                 )
             tool = finalists[0]
             # action_id LAST, removed first so it is last in key order too, as in Node.

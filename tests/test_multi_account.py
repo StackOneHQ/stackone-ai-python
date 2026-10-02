@@ -16,6 +16,7 @@ from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
 from stackone_ai.types import (
     StackOneAPIError,
+    ToolsetConfigError,
     ToolsetLoadError,
 )
 
@@ -193,3 +194,29 @@ class TestSearchHits:
             ("hris_list", "acc2", "s-acc2"),
             ("crm_list", "acc2", "s-acc2"),
         ]
+
+
+class TestExecuteRouting:
+    PER_ACCOUNT = {
+        "acc1": ["hris_acc1_execute_action"],
+        "acc2": ["hris_acc2_execute_action"],
+    }
+
+    def test_a_connector_on_two_accounts_is_refused(self, monkeypatch):
+        seen = _meta_tools(monkeypatch, self.PER_ACCOUNT)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc2", "acc1"]})
+        with pytest.raises(ToolsetConfigError) as excinfo:
+            toolset.execute("hris_list_employees")
+        assert str(excinfo.value) == (
+            '"hris_list_employees" matches 2 connectors on different accounts '
+            "(hris_acc1_execute_action on acc1, hris_acc2_execute_action on acc2). "
+            "Pass the account id to use, such as a search hit's account_id."
+        )
+        assert "tool" not in seen
+
+    @pytest.mark.parametrize("account", ["acc1", "acc2"])
+    def test_a_hits_account_id_routes_to_it(self, monkeypatch, account):
+        seen = _meta_tools(monkeypatch, self.PER_ACCOUNT)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.execute("hris_list_employees", account_ids=[account])
+        assert (seen["tool"], seen["account"]) == (f"hris_{account}_execute_action", account)
