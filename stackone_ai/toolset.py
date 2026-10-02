@@ -665,13 +665,14 @@ class StackOneToolSet:
         session_id: str | None = None,
         source: FeedbackSource = "model",
         account_ids: list[str] | None = None,
+        action_run_id: str | None = None,
     ) -> JsonDict:
         """Record a verdict on how well the tools served this session.
 
-        Calls the server's ``stackone_submit_feedback`` tool once, through the first account:
-        the first of ``account_ids``, or else the first the toolset is scoped to, in
-        ``GET /accounts`` order when discovered. Pass the ``session_id`` from a
-        :meth:`search` hit to attach the feedback to that session.
+        Calls the server's ``stackone_submit_feedback`` tool once, through the account with
+        the lowest id among those the call is scoped to: ``account_ids``, or else the
+        toolset's, or else every active one. Pass the ``session_id`` from a :meth:`search`
+        hit to attach the feedback to that session.
 
         Args:
             rating: ``"positive"``, ``"negative"`` or ``"neutral"``.
@@ -680,8 +681,9 @@ class StackOneToolSet:
             category: What the feedback is about, e.g. ``"search"`` or ``"execute"``.
             session_id: The session to link this feedback to.
             source: Who produced the feedback.
-            account_ids: Accounts to choose from; only the first is used. Defaults to the
-                toolset's own.
+            account_ids: Accounts to choose from; only the lowest id is used. Defaults to
+                the toolset's own.
+            action_run_id: The action run the feedback is about. Sent only when given.
 
         Raises:
             ToolsetConfigError: If ``tool_names`` is a string or ``session_id`` is empty or
@@ -701,7 +703,9 @@ class StackOneToolSet:
         # would report success for feedback that went nowhere. It is global and served in
         # every mode, so one account's search_execute listing — two tools per connector,
         # not one per action — is enough to find it.
-        first_account = self._resolve_account_ids(account_ids)[0]
+        # The lowest id is the one a caller can predict, whatever order GET /accounts lists
+        # them in.
+        first_account = min(self._resolve_account_ids(account_ids))
         tool = self.fetch_tools(account_ids=[first_account], mode="search_execute").get_tool(
             SUBMIT_FEEDBACK_TOOL_NAME
         )
@@ -715,7 +719,13 @@ class StackOneToolSet:
         # as optional strings, so a null is a present key of the wrong type and fails
         # validation where an absent one would not.
         arguments: JsonDict = {"rating": rating, "tool_names": list(tool_names)}
-        optional = {"feedback": feedback, "category": category, "session_id": session_id, "source": source}
+        optional = {
+            "feedback": feedback,
+            "category": category,
+            "session_id": session_id,
+            "action_run_id": action_run_id,
+            "source": source,
+        }
         arguments.update({key: value for key, value in optional.items() if value is not None})
         return tool.execute(arguments)
 

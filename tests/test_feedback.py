@@ -292,18 +292,34 @@ class TestSubmitFeedback:
         assert [c["accountId"] for c in calls] == ["acc1"]
 
     @pytest.mark.parametrize("mode", [None, "individual"])
-    def test_lists_only_the_first_given_account_in_search_execute_mode(self, mcp_mock_server: str, mode):
-        """The first account as given, not as sorted; and the small listing whatever the mode."""
+    def test_lists_only_the_lowest_given_account_in_search_execute_mode(self, mcp_mock_server: str, mode):
+        """The lowest account id, not the first given; and the small listing whatever the mode."""
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
         _reset_requests(mcp_mock_server)
         toolset.submit_feedback("positive", ["acc1_tool_1"], account_ids=["acc2", "acc1"])
 
         listings = [r for r in _requests(mcp_mock_server) if r.get("method") == "tools/list"]
-        assert [(r["accountId"], r["search"]) for r in listings] == [("acc2", "?tool-mode=search_execute")]
+        assert [(r["accountId"], r["search"]) for r in listings] == [("acc1", "?tool-mode=search_execute")]
         calls = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
-        assert [c["accountId"] for c in calls] == ["acc2"]
+        assert [c["accountId"] for c in calls] == ["acc1"]
 
-    def test_defaults_to_the_first_discovered_account_in_accounts_order(self, monkeypatch):
+    def test_sends_action_run_id_only_when_given(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="acc1")
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ["a"], session_id=MOCK_SESSION_ID, action_run_id="run-1")
+        toolset.submit_feedback("positive", ["a"])
+
+        first, second = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert list(first["arguments"].items()) == [
+            ("rating", "positive"),
+            ("tool_names", ["a"]),
+            ("session_id", MOCK_SESSION_ID),
+            ("action_run_id", "run-1"),
+            ("source", "model"),
+        ]
+        assert "action_run_id" not in second["arguments"]
+
+    def test_defaults_to_the_lowest_discovered_account_id(self, monkeypatch):
         monkeypatch.setattr(
             StackOneToolSet,
             "fetch_accounts",
@@ -327,8 +343,8 @@ class TestSubmitFeedback:
 
         StackOneToolSet(api_key="test-key").submit_feedback("positive", ["x"])
 
-        assert listed == [("zeta", "https://api.stackone.com/mcp?tool-mode=search_execute")]
-        assert called == ["zeta"]
+        assert listed == [("alpha", "https://api.stackone.com/mcp?tool-mode=search_execute")]
+        assert called == ["alpha"]
 
     def test_accepts_any_sequence_of_tool_names(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
