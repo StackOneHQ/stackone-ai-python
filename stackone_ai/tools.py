@@ -625,7 +625,9 @@ def fetch_mcp_tools(
 
     try:
         return run_async(_list())
-    except BaseException as exc:
+    except Exception as exc:
+        # Exception, not BaseException: Ctrl-C and SystemExit must stop the caller, not come
+        # back as a ToolsetLoadError that an agent framework hands the model as a tool result.
         raise _describe_mcp_failure(exc, endpoint, timeout) from exc
 
 
@@ -842,7 +844,8 @@ def call_mcp_tool(
 
     try:
         return run_async(_call())
-    except BaseException as exc:
+    except Exception as exc:
+        # Not BaseException, as in fetch_mcp_tools: KeyboardInterrupt and SystemExit propagate.
         raise _describe_mcp_failure(exc, endpoint, timeout) from exc
 
 

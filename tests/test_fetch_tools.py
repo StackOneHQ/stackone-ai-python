@@ -1699,6 +1699,47 @@ class TestTimeoutIsHonoured:
         assert str(error) == f"MCP request to {base_url}/mcp timed out after 0.5s"
 
 
+class TestInterruptsPropagate:
+    """Ctrl-C and SystemExit stop the caller; they are not reported as a failed MCP request.
+
+    Caught as BaseException they came out as a ToolsetLoadError, which LangChain's
+    handle_tool_error or a LangGraph ToolNode hands the model as a tool result.
+    """
+
+    @staticmethod
+    def _interrupted(monkeypatch, interrupt: BaseException) -> None:
+        def run_async(awaitable: Any) -> Any:
+            awaitable.close()
+            raise interrupt
+
+        monkeypatch.setattr("stackone_ai.tools.run_async", run_async)
+
+    @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+    def test_listing(self, monkeypatch, interrupt: type[BaseException]):
+        self._interrupted(monkeypatch, interrupt())
+        with pytest.raises(interrupt):
+            fetch_mcp_tools("https://api.example.com/mcp", {})
+
+    @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+    def test_tool_call(self, monkeypatch, interrupt: type[BaseException]):
+        self._interrupted(monkeypatch, interrupt())
+        tool = StackOneMcpTool(
+            name="t",
+            description="",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="k",
+            endpoint="https://api.example.com/mcp",
+            account_id="a",
+        )
+        with pytest.raises(interrupt):
+            tool.execute({})
+
+    def test_an_ordinary_failure_is_still_described(self, monkeypatch):
+        self._interrupted(monkeypatch, RuntimeError("boom"))
+        with pytest.raises(ToolsetLoadError, match="failed: RuntimeError: boom"):
+            fetch_mcp_tools("https://api.example.com/mcp", {})
+
+
 def test_every_sdk_error_is_a_stackone_error():
     """`except StackOneError` must be a real catch-all.
 
