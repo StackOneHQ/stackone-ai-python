@@ -247,7 +247,7 @@ not fetch every catalog.
 
 **`STACKONE_ACCOUNT_ID` is not read.** Pass the account id as `account_id=` or
 `execute={"account_ids": [...]}`. A toolset constructed with neither while
-`STACKONE_ACCOUNT_ID` is set logs a warning that it is ignored.
+`STACKONE_ACCOUNT_ID` is set to a non-empty value logs a warning that it is ignored.
 
 **An empty account id raises.** `StackOneToolSet(account_id="")` raises
 `ToolsetConfigError`, where it used to be treated as no account at all. An account id
@@ -275,11 +275,14 @@ tools. `execute_openai_tool_calls()`, `to_openai()`, `to_langchain()` and
 `to_pydantic_ai()` use the same one: each builds one tool per name. Pass `account_ids`
 to choose the account yourself.
 
-**A failing account is skipped, and left out for 30 seconds.** An account whose listing
-fails is skipped with a warning and left out of the cached catalog for 30 seconds,
-unless every account fails: then the accounts' shared `StackOneAPIError` is raised
-when they all failed with one status, and otherwise a `ToolsetLoadError` with each
-account's error in `failures`.
+**A failing account is skipped, and left out for 30 seconds.** In a multi-account scope, an
+account whose listing fails with a non-429 error is skipped with a warning and left out of
+the cached catalog for 30 seconds, unless every account fails: then the accounts' shared
+`StackOneAPIError` is raised when they all failed with one status, and otherwise a
+`ToolsetLoadError` with each account's error in `failures`. A 429 that outlasts its retries
+is never skipped — it aborts the whole call, even when other accounts are healthy, since
+it is the key's rate limit rather than that account's failure. A single-account scope
+raises its failure rather than skipping or caching it.
 
 ## Feedback
 
