@@ -134,8 +134,8 @@ class StackOneToolSet:
         self.api_key: str = api_key_value
         self.account_id = account_id
         self.base_url = base_url or os.getenv("STACKONE_BASE_URL") or DEFAULT_BASE_URL
-        self._account_ids: list[str] = (
-            self._validate_account_ids(execute.get("account_ids", [])) if execute else []
+        self._account_ids: list[str] = self._validate_account_ids(
+            execute.get("account_ids") if execute else None
         )
         self._execute_config: ExecuteToolsConfig | None = execute
         execute_timeout = execute.get("timeout") if execute else None
@@ -159,7 +159,7 @@ class StackOneToolSet:
         self._cache_lock = threading.Lock()
         self._tool_mode: ToolMode | None = tool_mode
 
-    def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
+    def set_accounts(self, account_ids: list[str] | None) -> StackOneToolSet:
         """Set account IDs for filtering tools
 
         Returns:
@@ -264,19 +264,24 @@ class StackOneToolSet:
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
 
     @staticmethod
-    def _validate_account_ids(account_ids: list[str]) -> list[str]:
-        """A copy of the account ids, refusing a bare string, a non-string id or an empty id.
+    def _validate_account_ids(account_ids: Any) -> list[str]:
+        """A copy of the account ids, refusing a bare string, a non-list, a non-string id or
+        an empty id. ``None`` means not given: no ids.
 
         An empty or ``None`` id would be sent with no ``x-account-id``, so it is rejected
-        rather than letting the server answer for an account nobody chose, as in Node.
+        rather than letting the server answer for an account nobody chose, as in Node. A
+        dict is refused rather than iterated, which read ``{"id": "acc-1"}`` as the account
+        ``"id"``.
         """
+        if account_ids is None:
+            return []
         if isinstance(account_ids, str):
             raise ToolsetConfigError(
                 f"account_ids must be a list of account ids, not a string. Did you mean [{account_ids!r}]?"
             )
+        if not isinstance(account_ids, list | tuple) or not all(isinstance(i, str) for i in account_ids):
+            raise ToolsetConfigError("account_ids must be a list of account id strings")
         ids = list(account_ids)
-        if not all(isinstance(account_id, str) for account_id in ids):
-            raise ToolsetConfigError(f"account_ids must be a list of account id strings, got {ids!r}")
         if "" in ids:
             raise ToolsetConfigError("account_ids must not contain an empty account id")
         return ids
