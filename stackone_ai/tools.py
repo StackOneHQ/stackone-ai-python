@@ -443,14 +443,13 @@ def _outlasts_deadline(request: httpx.Request, attempt: int, delay: float, remai
     if _waits_for_retry(delay, remaining):
         return False
     logger.warning(
-        "%s %s was rate limited (429) on attempt %d of %d; not retrying, because waiting "
-        "%.2fs would outlast the request's deadline (%.2fs left)",
+        "%s %s was rate limited (429) on attempt %d of %d; not retrying, because waiting %ss "
+        "would pass the deadline",
         request.method,
         request.url,
         attempt,
         RATE_LIMIT_MAX_RETRIES + 1,
-        delay,
-        max(remaining, 0.0),
+        _seconds_2dp(delay),
     )
     return True
 
