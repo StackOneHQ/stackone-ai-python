@@ -9,6 +9,9 @@
 
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
+> **Upgrading from 2.x?** 3.0 has breaking changes. See the
+> [migration guide](https://github.com/StackOneHQ/stackone-ai-python/blob/main/MIGRATION.md).
+
 ## Features
 
 - **Search and execute**: find an action in natural language and run it, so a
@@ -48,16 +51,43 @@ hits = toolset.search("list recent comments", top_k=3)
 #   "description": "Returns a page of Linear comments as a connection object ...",
 #   "similarity_score": 0.86,
 #   "example_request": {"action_id": "linear_list_comments"},
-#   "input_schema": {"type": "object", "properties": {"body": {...}}}}, ...]
+#   "input_schema": {"type": "object", "properties": {"body": {...}}},
+#   "session_id": "3f9c...",
+#   "account_id": "acc-123"}, ...]
+hit = hits[0]
 
 # 2. Run it. Build the arguments from input_schema.
-result = toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
-result["data"]  # the provider's payload — a failed call raises instead
+result = toolset.execute(
+    hit["action_id"],
+    {"body": {"variables": {"first": 25}}},
+    account_ids=[hit["account_id"]],
+    session_id=hit.get("session_id"),
+)
+result["result"]["data"]  # as the server wrote it: {"isError": false, "result": ...}; a failure raises
+
+# 3. Optionally, say how it went. The same session_id links it to the search.
+toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("session_id"))
 ```
 
 `search()` asks every linked connector and returns actions ranked by
 `similarity_score`, so a catalog of hundreds of tools never has to fit in a
-model's context. This is the recommended way to use the SDK.
+model's context. This is the recommended way to use the SDK. `top_k` (1–50, default
+10) caps the whole result, after ranking across every connector.
+
+Each hit carries the `account_id` of the account that found it, and the same action
+linked on two accounts is two hits. When an action's connector is linked on more than
+one account, `execute()` raises `ToolsetConfigError` rather than pick one: pass the
+hit's account as `account_ids=[hit["account_id"]]`.
+
+Each hit carries the `session_id` of the search that found it, when the server
+issued one, so read it with `hit.get("session_id")`. Passing it to
+`execute()` and `submit_feedback()` links the calls server-side; leaving it out
+is fine. `submit_feedback()` makes exactly one call, on the account with the lowest id
+among its `account_ids` when given, otherwise among those the toolset is configured
+with or discovers, and sends `action_run_id` only when given. It raises
+`ToolsetLoadError` when feedback is not enabled for your project. When it is, `fetch_tools()` also returns a single
+`stackone_submit_feedback` tool — one, however many accounts are linked — that a
+model can call itself.
 
 ## Integration Examples
 
@@ -173,7 +203,8 @@ print(result["messages"][-1].content)
 ## Advanced Filtering
 
 `fetch_tools()` takes three filters. They combine with AND, and all of them are
-applied locally to one cached listing — changing a filter never refetches.
+applied locally to one cached listing — changing a filter never refetches. Call
+`clear_catalog_cache()` after linking or unlinking accounts.
 
 ```python
 toolset = StackOneToolSet()
@@ -189,7 +220,11 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 
 - **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
   your active accounts. An empty list means "no filter", not "no accounts". A
-  single failing account is logged and skipped, not fatal.
+  single failing account is logged and skipped, not fatal — unless it is rate
+  limited (see [Rate limits](#rate-limits)) — and left out of the cached catalog for
+  30 seconds, after which the next call lists it again. If every account fails with
+  the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
+  otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
 - **`providers`** — matched **case-insensitively** as a full prefix, so
   `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
   contains an underscore must be spelled in full (`["browser_linkedin"]`, not
@@ -205,31 +240,102 @@ toolset.set_accounts(["acc-123"])
 tools = toolset.fetch_tools(providers=["linear"])
 ```
 
+### Non-shared accounts
+
+The API requires every MCP request for a non-shared account to carry that account's
+end-user id in `x-end-user-id`. Whenever the SDK calls `GET /accounts`, during discovery
+or in `fetch_accounts()`, it records the `origin_username` of each account with
+`shared: false`, and sends it as `x-end-user-id` on every request for that account,
+including from tools it built earlier. Each successful `GET /accounts` replaces the
+record; `clear_catalog_cache()` keeps it.
+
+With explicit account ids the SDK does not call `GET /accounts`, so it sends no
+`x-end-user-id`. To use a non-shared account by id, call `toolset.fetch_accounts()`
+once first:
+
+```python
+toolset = StackOneToolSet(account_id="acc-123")
+toolset.fetch_accounts()  # records acc-123's end user if it is not shared
+tools = toolset.fetch_tools()
+```
+
+Or pass the end-user id yourself; a value recorded from `GET /accounts` replaces it:
+
+```python
+toolset = StackOneToolSet(account_id="acc-123", headers={"x-end-user-id": "carol"})
+```
+
+### Extra headers
+
+`StackOneToolSet(headers={...})` sends extra headers on every request the toolset makes,
+`GET /accounts` and every MCP request. `Authorization`, `x-account-id` and `User-Agent`
+are always the SDK's own: if you pass them they are ignored, with a warning.
+
 ### Two ways to call a tool
 
-The SDK exposes the same actions through two surfaces. They take **different
-argument shapes**, because each mirrors the schema the server served for it. Both
-return the payload itself.
+The SDK exposes the same actions through two surfaces. Both execute over MCP
+`tools/call`, on the endpoint and with the account that listed the tool, and send
+your arguments as given, except header arguments: each is forwarded only if the tool's
+schema declares it, and `Authorization`, `x-account-id`, `User-Agent` and `x-end-user-id`
+never are (see
+[the migration guide](MIGRATION.md#tool-arguments-and-headers)). They take **different
+argument shapes**, because each mirrors the schema the server served for it. Both return the server's result exactly
+as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.
 
 | | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
 |---|---|---|
 | Schema to read | `input_schema` on each hit | `tool.parameters.properties` |
-| Argument shape | nested — `{"body": {"variables": {...}}}` | flat, prefixed — `body_variables`, `path_id` |
+| Argument shape | nested — `{"body": {"variables": {...}}}` | the keys the tool's served schema names |
 | Best for | agents that discover actions at run time | binding a fixed, filtered set of tools to a model |
 
 ```python
-# Same action, both surfaces:
+# The search/execute surface always takes the nested form:
 toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
 
+# A fetch_tools() tool takes whatever its own schema declares:
 tool = toolset.fetch_tools(actions=["linear_list_comments"]).get_tool("linear_list_comments")
-tool.execute({"body_variables": {"first": 25}})
+print(tool.parameters.properties)
 ```
 
-Mixing them fails silently in **one direction**. A `fetch_tools()` tool also
-accepts the nested form. But flat keys like `body_variables` passed to
-`toolset.execute()` are not an error — they are dropped, and you get the server's
-defaults.
+Keys `toolset.execute()` does not recognise are not an error — they are dropped,
+and you get the server's defaults.
 
+Results keep the exact value of an integer above 2^53, unlike the Node SDK, whose
+JSON parser has already rounded it by the time the SDK sees it.
+
+A file action's `result` is a download link, `{"download_url", "expires_at", "file":
+{"name", "content_type", "content_length"}}`, rather than the file itself; the SDK does
+not follow it, and `file.name` is chosen by the provider, so reduce it to a safe
+basename before writing to disk. When no link can be issued the call raises `StackOneAPIError` with
+`status_code` 501.
+
+## Rate limits
+
+Every request the SDK makes (`GET /accounts` and each MCP request, `tools/call`
+included) retries an HTTP 429 up to three times. It waits for the response's
+`Retry-After`, in seconds or as an HTTP date and capped at 30 seconds, or without one
+for 1s, 2s and 4s, each scaled by a random factor between 0.5 and 1. Each retry logs a
+warning. No other status is retried. A wait that would not end before the request's
+`timeout` is not started: an MCP request's deadline is its whole exchange, and
+`GET /accounts`'s is measured from its first attempt.
+
+A 429 that is still there after the fourth attempt, or that there is no time left to
+wait out, raises `StackOneAPIError` with
+`status_code` 429 and the server's body. That ends the whole call: when `fetch_tools()`
+or `search()` spans several accounts, one rate-limited account raises rather than being
+skipped, so you never get a partial catalog that looks complete. Other per-account
+failures are still logged and skipped.
+
+## Custom base URL
+
+```python
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet(base_url="https://api.example-dev.com")
+```
+
+Falls back to the `STACKONE_BASE_URL` environment variable, then to
+`https://api.stackone.com`, if `base_url` is not given.
 
 ## Examples
 
