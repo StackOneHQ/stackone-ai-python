@@ -112,8 +112,11 @@ jobs:
     if: needs.check-secret.outputs.can-skip != 'true'
     runs-on: ubuntu-latest
     env:
-      # Switch to main once StackOneHQ/stackone-ai-node#383 merges.
-      NODE_SDK_REF: refactor/mcp-only-toolset
+      # Pinned to a commit on refactor/mcp-only-toolset, not the branch: a force-push or the
+      # branch's deletion on merge must not silently change what this job grades. Bump
+      # deliberately while StackOneHQ/stackone-ai-node#383 is open; switch to a main commit
+      # once it merges.
+      NODE_SDK_REF: 16eb6971593db03c9327f0a3814d4a09df952438
     steps:
       - name: Check conformance token is configured
         env:
