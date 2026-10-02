@@ -216,6 +216,29 @@ class TestToolCreation:
         assert tool.parameters.type == "object"
 
 
+class TestRootType:
+    """The root type the model sees: a served string as is, anything else "object", as in Node."""
+
+    @pytest.mark.parametrize(
+        ("served", "expected"),
+        [
+            ({"type": "object"}, "object"),
+            ({}, "object"),
+            ({"type": ["object", "null"]}, "object"),
+            ({"type": None}, "object"),
+            ({"type": 7}, "object"),
+        ],
+    )
+    def test_root_type(self, monkeypatch, served: dict[str, Any], expected: str):
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda *_a, **_k: [McpToolDefinition(name="t", description="", input_schema=served)],
+        )
+        tool = StackOneToolSet(api_key="test-key", account_id="acc1").fetch_tools()[0]
+        assert tool.parameters.type == expected
+        assert tool.to_openai_function()["function"]["parameters"]["type"] == expected
+
+
 class TestSchemaPropertyNormalization:
     """Test schema property normalization with monkeypatch (for precise schema control)."""
 

@@ -818,7 +818,10 @@ class StackOneToolSet:
         schema = tool_def.input_schema or {}
         # Pop keys we explicitly override to avoid "multiple values for keyword argument"
         rest = dict(schema)
-        schema_type = str(rest.pop("type", "object"))
+        # A string type is passed through; anything else, such as ["object", "null"], is
+        # "object", as in Node. str() handed the model "['object', 'null']".
+        served_type = rest.pop("type", "object")
+        schema_type = served_type if isinstance(served_type, str) else "object"
         rest.pop("properties", None)
         schema_properties = self._normalize_schema_properties(schema)
 
