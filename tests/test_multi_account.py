@@ -355,6 +355,9 @@ class TestAccountIdEnvironmentVariable:
             pytest.param("acc1", {"account_id": "acc2"}, False, id="account-id"),
             pytest.param("acc1", {"execute": {"account_ids": ["acc2"]}}, False, id="account-ids"),
             pytest.param("acc1", {"execute": {"timeout": 5}}, True, id="execute-without-account-ids"),
+            # An empty account_ids list is unset too, the same as _resolve_account_ids()
+            # treats it: it must not swallow the warning.
+            pytest.param("acc1", {"execute": {"account_ids": []}}, True, id="empty-account-ids"),
         ],
     )
     def test_warning(self, monkeypatch, caplog, value, kwargs, warned):

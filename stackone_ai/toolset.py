@@ -213,8 +213,9 @@ class StackOneToolSet:
 
         # 2.x read STACKONE_ACCOUNT_ID; 3.x never does, and without an account it uses every
         # active account on the key. Anyone upgrading with only the variable set would
-        # otherwise widen to other end users' accounts with no sign of it.
-        scoped = account_id is not None or (execute is not None and execute.get("account_ids") is not None)
+        # otherwise widen to other end users' accounts with no sign of it. An empty
+        # account_ids list is unset too, the same as _resolve_account_ids() treats it.
+        scoped = account_id is not None or bool(self._account_ids)
         if os.getenv("STACKONE_ACCOUNT_ID") and not scoped:
             logger.warning(
                 "STACKONE_ACCOUNT_ID is set, but the SDK does not read it: with no account id passed, "
