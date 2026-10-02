@@ -794,20 +794,21 @@ class TestExecuteOpenAIToolCalls:
         )
         assert "Unknown tool" in message["content"]
 
-    def test_non_text_content_parts_serialise_instead_of_crashing(self, monkeypatch):
-        """Non-text MCP content parts are objects, which json.dumps cannot encode."""
+    def test_non_text_content_parts_reach_the_model_as_json(self, monkeypatch):
+        """An image part went to the model as its repr ("type='image' data=..."), not JSON."""
         import json
 
-        from mcp.types import ImageContent
+        from mcp.types import CallToolResult
 
-        image = ImageContent(type="image", data="AAAA", mimeType="image/png")
-        tools = self._tools(monkeypatch, lambda _args: {"a": 1, "content_parts": [image]})
+        from stackone_ai.tools import parse_tool_result
+
+        image = {"type": "image", "data": "AAAA", "mimeType": "image/png"}
+        served = CallToolResult.model_validate({"content": [{"type": "text", "text": '{"a":1}'}, image]})
+        tools = self._tools(monkeypatch, lambda _args: parse_tool_result(served, "linear_list_issues"))
         [message] = tools.execute_openai_tool_calls(
             [{"id": "c", "function": {"name": "linear_list_issues", "arguments": "{}"}}]
         )
-        content = json.loads(message["content"])
-        assert content["a"] == 1
-        assert content["content_parts"] == [str(image)]
+        assert json.loads(message["content"]) == {"a": 1, "content_parts": [image]}
 
     def test_a_download_link_is_passed_through(self, monkeypatch):
         import json

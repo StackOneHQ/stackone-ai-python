@@ -753,13 +753,20 @@ def _first_non_finite(value: Any) -> float | None:
     return walk(value)
 
 
+def _plain_part(part: Any) -> Any:
+    """A content part as the JSON it arrived as: wire field names, unset fields left out."""
+    if isinstance(part, BaseModel):
+        return part.model_dump(mode="json", by_alias=True, exclude_none=True)
+    return part
+
+
 def parse_tool_result(result: Any, name: str) -> JsonDict:
     """Turn an MCP ``CallToolResult`` into a plain dict.
 
     Text parts are joined and parsed as JSON; a non-object is wrapped as
     ``{"result": ...}``. With no text at all, ``structuredContent`` is used, and text
     wins when both are present. Parts that are not text (images, embedded resources)
-    are kept under ``content_parts``.
+    are kept under ``content_parts`` as plain JSON, the form they arrived in.
 
     The result is returned as the server wrote it. For an action tool, ``*_execute_action``
     and feedback that is ``{"isError": false, "result": ..., "defenderMetadata"?: ...,
@@ -773,8 +780,10 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     texts = [getattr(part, "text", "") for part in result.content]
     payload = "".join(t for t in texts if t)
     # Parts that are not text (images, embedded resources) have no `.text`; keep them
-    # rather than silently returning an empty dict.
-    non_text = [part for part in result.content if not getattr(part, "text", "")]
+    # rather than silently returning an empty dict. As plain JSON, as Node returns them:
+    # the mcp package's pydantic objects broke json.dumps on the result, and
+    # execute_openai_tool_calls() sent the model their repr.
+    non_text = [_plain_part(part) for part in result.content if not getattr(part, "text", "")]
 
     parsed: JsonDict = {}
     structured = getattr(result, "structuredContent", None)
@@ -1425,7 +1434,7 @@ class Tools:
                 except (StackOneError, ValueError) as exc:
                     body = getattr(exc, "response_body", None)
                     result = {"error": str(exc), **({"response_body": body} if body else {})}
-            # default=str: non-text content parts (images, embedded resources) are objects.
+            # default=str: a hand-built tool may return something JSON cannot encode.
             content = json.dumps(result, default=str)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": content})
         return messages

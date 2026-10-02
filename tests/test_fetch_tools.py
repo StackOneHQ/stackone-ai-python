@@ -1241,6 +1241,18 @@ def _text(text: str) -> dict[str, str]:
 
 
 _IMAGE = {"type": "image", "data": "AAAA", "mimeType": "image/png"}
+_AUDIO = {
+    "type": "audio",
+    "data": "AAAA",
+    "mimeType": "audio/wav",
+    "annotations": {"audience": ["user"], "priority": 0.5},
+    "_meta": {"k": 1},
+}
+_RESOURCE = {
+    "type": "resource",
+    "resource": {"uri": "file:///report.txt", "mimeType": "text/plain", "text": "hi"},
+}
+_RESOURCE_LINK = {"type": "resource_link", "uri": "file:///report.txt", "name": "report"}
 
 
 class TestToolResultParity:
@@ -1282,6 +1294,11 @@ class TestToolResultParity:
                 {"ok": True, "content_parts": [_IMAGE]},
                 id="structured-and-image",
             ),
+            pytest.param({"content": [_AUDIO]}, {"content_parts": [_AUDIO]}, id="audio"),
+            pytest.param({"content": [_RESOURCE]}, {"content_parts": [_RESOURCE]}, id="embedded-resource"),
+            pytest.param(
+                {"content": [_RESOURCE_LINK]}, {"content_parts": [_RESOURCE_LINK]}, id="resource-link"
+            ),
         ],
     )
     def test_success(self, result: dict, expected: dict):
@@ -1294,9 +1311,6 @@ class TestToolResultParity:
         from stackone_ai.tools import parse_tool_result
 
         parsed = parse_tool_result(CallToolResult.model_validate(result), "t")
-        # Non-text parts are kept as the MCP types they arrived as; compare their wire form.
-        if "content_parts" in parsed:
-            parsed["content_parts"] = [part.model_dump(exclude_none=True) for part in parsed["content_parts"]]
         assert parsed == expected
 
     @pytest.mark.parametrize(
