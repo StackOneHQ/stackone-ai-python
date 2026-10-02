@@ -209,6 +209,16 @@ class StackOneToolSet:
         self._cache_lock = threading.Lock()
         self._tool_mode: ToolMode | None = tool_mode
 
+        # 2.x read STACKONE_ACCOUNT_ID; 3.x never does, and without an account it uses every
+        # active account on the key. Anyone upgrading with only the variable set would
+        # otherwise widen to other end users' accounts with no sign of it.
+        scoped = account_id is not None or (execute is not None and execute.get("account_ids") is not None)
+        if os.getenv("STACKONE_ACCOUNT_ID") and not scoped:
+            logger.warning(
+                "STACKONE_ACCOUNT_ID is set, but the SDK does not read it: with no account id passed, "
+                "every active account on this API key is used. Pass an account id to scope the toolset."
+            )
+
     def set_accounts(self, account_ids: list[str] | None) -> StackOneToolSet:
         """Set account IDs for filtering tools
 

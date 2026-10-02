@@ -334,3 +334,41 @@ class TestAdaptersKeepTheFirstOfEachName:
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
             Tools(unique).to_openai()
         assert caplog.records == []
+
+
+class TestAccountIdEnvironmentVariable:
+    """3.x never reads STACKONE_ACCOUNT_ID; a 2.x setup relying on it is warned, once."""
+
+    WARNING = (
+        "STACKONE_ACCOUNT_ID is set, but the SDK does not read it: with no account id passed, every "
+        "active account on this API key is used. Pass an account id to scope the toolset."
+    )
+
+    @pytest.mark.parametrize(
+        ("value", "kwargs", "warned"),
+        [
+            pytest.param("acc1", {}, True, id="set-and-unscoped"),
+            pytest.param("", {}, False, id="empty"),
+            pytest.param(None, {}, False, id="unset"),
+            pytest.param("acc1", {"account_id": "acc2"}, False, id="account-id"),
+            pytest.param("acc1", {"execute": {"account_ids": ["acc2"]}}, False, id="account-ids"),
+            pytest.param("acc1", {"execute": {"timeout": 5}}, True, id="execute-without-account-ids"),
+        ],
+    )
+    def test_warning(self, monkeypatch, caplog, value, kwargs, warned):
+        if value is None:
+            monkeypatch.delenv("STACKONE_ACCOUNT_ID", raising=False)
+        else:
+            monkeypatch.setenv("STACKONE_ACCOUNT_ID", value)
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            StackOneToolSet(api_key="k", **kwargs)
+        assert [r.getMessage() for r in caplog.records] == ([self.WARNING] if warned else [])
+
+    def test_the_variable_is_still_never_read(self, monkeypatch):
+        monkeypatch.setenv("STACKONE_ACCOUNT_ID", "from-env")
+        accounts = _Accounts(monkeypatch, discovered=["t"])
+        monkeypatch.setattr(
+            StackOneToolSet, "fetch_accounts", lambda _self: [{"id": "discovered", "status": "active"}]
+        )
+        StackOneToolSet(api_key="k").fetch_tools()
+        assert accounts.listed == ["discovered"]
