@@ -16,6 +16,7 @@ from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
 from stackone_ai.types import (
     StackOneAPIError,
+    ToolParameters,
     ToolsetConfigError,
     ToolsetLoadError,
 )
@@ -220,3 +221,53 @@ class TestExecuteRouting:
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
         toolset.execute("hris_list_employees", account_ids=[account])
         assert (seen["tool"], seen["account"]) == (f"hris_{account}_execute_action", account)
+
+
+class TestPinnedArgumentsGoLast:
+    """A pinned session_id and action_id are moved to the end, as in Node."""
+
+    def test_a_supplied_session_id_is_moved_before_action_id(self, monkeypatch):
+        seen = _meta_tools(monkeypatch, {"acc1": ["hris_acc1_execute_action"]})
+        toolset = StackOneToolSet(api_key="k", account_id="acc1")
+        toolset.execute(
+            "hris_list_employees",
+            {"session_id": "model-chosen", "action_id": "x", "query": {"a": 1}},
+            session_id="s-1",
+        )
+        assert list(seen["arguments"].items()) == [
+            ("query", {"a": 1}),
+            ("session_id", "s-1"),
+            ("action_id", "hris_list_employees"),
+        ]
+
+    def test_an_unpinned_session_id_stays_where_it_was(self, monkeypatch):
+        seen = _meta_tools(monkeypatch, {"acc1": ["hris_acc1_execute_action"]})
+        toolset = StackOneToolSet(api_key="k", account_id="acc1")
+        toolset.execute("hris_list_employees", {"session_id": "s-0", "query": {}})
+        assert list(seen["arguments"]) == ["session_id", "query", "action_id"]
+
+
+class TestExtraHeadersCannotReplaceTheSdksOwn:
+    def test_a_case_or_space_variant_of_an_sdk_owned_header_is_dropped(self):
+        tool = StackOneMcpTool(
+            name="t",
+            description="",
+            parameters=ToolParameters(type="object", properties={}),
+            api_key="k",
+            endpoint="https://api.example.com/mcp",
+            account_id="acc1",
+            headers={
+                "authorization": "Bearer stolen",
+                " X-Account-Id ": "someone-else",
+                "USER-AGENT": "spoofed",
+                "x-custom": "kept",
+            },
+        )
+        headers = tool._prepare_headers()
+        assert headers == {
+            "x-custom": "kept",
+            "User-Agent": headers["User-Agent"],
+            "Authorization": "Basic azo=",
+            "x-account-id": "acc1",
+        }
+        assert headers["User-Agent"].startswith("stackone-ai-python/")
