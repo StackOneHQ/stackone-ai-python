@@ -131,7 +131,9 @@ class TestEveryAccountFails:
             StackOneToolSet(api_key="k").fetch_tools(account_ids=["a", "b"])
         assert str(excinfo.value) == "Every account failed to list tools: a: 401; b: 412"
         assert excinfo.value.failures == [unauthorised, broken]
-        assert excinfo.value.__cause__ is unauthorised
+        cause = excinfo.value.__cause__
+        assert isinstance(cause, ExceptionGroup)
+        assert list(cause.exceptions) == [unauthorised, broken]
 
     def test_an_account_that_lists_nothing_has_not_failed(self, monkeypatch):
         _Accounts(monkeypatch, a=[], b=RuntimeError("boom"))

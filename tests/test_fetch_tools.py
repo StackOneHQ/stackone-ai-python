@@ -893,7 +893,9 @@ class TestParallelFetch:
             toolset.fetch_tools(account_ids=["b", "a"])
         assert str(excinfo.value) == "Every account failed to list tools: a: boom for a; b: boom for b"
         assert [str(f) for f in excinfo.value.failures] == ["boom for a", "boom for b"]
-        assert excinfo.value.__cause__ is excinfo.value.failures[0]
+        cause = excinfo.value.__cause__
+        assert isinstance(cause, ExceptionGroup)
+        assert list(cause.exceptions) == excinfo.value.failures
 
 
 class TestMcpEndpoint:

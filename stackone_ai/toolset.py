@@ -113,8 +113,8 @@ def _all_accounts_failed(failures: list[tuple[str | None, Exception]]) -> Except
 
     When every failure is a StackOneAPIError with the same status, the first of them: two
     accounts answering 401 are a revoked key, and a caller must be able to tell that from a
-    429 as it can with one account. Otherwise a ToolsetLoadError, caused by the first
-    failure and keeping them all in ``failures``.
+    429 as it can with one account. Otherwise a ToolsetLoadError, caused by an
+    ExceptionGroup of the failures and keeping them in ``failures`` too.
     """
     errors = [failure for _, failure in failures]
     first = errors[0]
@@ -127,7 +127,7 @@ def _all_accounts_failed(failures: list[tuple[str | None, Exception]]) -> Except
         + "; ".join(f"{account}: {failure}" for account, failure in failures),
         failures=errors,
     )
-    error.__cause__ = first
+    error.__cause__ = ExceptionGroup("Every account failed to list tools", errors)
     return error
 
 
@@ -264,8 +264,8 @@ class StackOneToolSet:
 
         Raises:
             ToolsetLoadError: If there is an error loading the tools. When every account
-                fails for differing reasons, its ``failures`` holds each account's error
-                and its ``__cause__`` is the first.
+                fails for differing reasons, its ``failures`` holds each account's error,
+                and its ``__cause__`` is an ExceptionGroup of them.
             StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
                 after retries, even when only one of several accounts is; or with the API's
                 status when every account fails with that same status, so a caller can tell
