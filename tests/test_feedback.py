@@ -175,7 +175,7 @@ class TestSearchSessionId:
             ],
         )
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
-        assert toolset.search("x") == [{"action_id": "a_x"}]
+        assert toolset.search("x") == [{"action_id": "a_x", "account_id": "acc1"}]
 
 
 class TestExecuteSessionId:

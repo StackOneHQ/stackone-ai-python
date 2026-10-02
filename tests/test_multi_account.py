@@ -7,11 +7,12 @@ every surface has to say which account it means.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 
 from stackone_ai import toolset as toolset_module
-from stackone_ai.tools import McpToolDefinition
+from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
 from stackone_ai.types import (
     StackOneAPIError,
@@ -141,3 +142,54 @@ class TestEveryAccountFails:
             with pytest.raises(ToolsetLoadError):
                 toolset.fetch_tools(account_ids=["a", "b"])
         assert len(accounts.listed) == 4
+
+
+def _meta_tools(monkeypatch: pytest.MonkeyPatch, per_account: dict[str, list[str]]) -> dict[str, Any]:
+    """Serve ``per_account``'s meta tools, and record what each one is called with."""
+    seen: dict[str, Any] = {}
+
+    def fake_execute(self: StackOneMcpTool, arguments: Any) -> dict[str, Any]:
+        seen["tool"], seen["account"], seen["arguments"] = self.name, self.get_account_id(), arguments
+        if self.name.endswith("_search_actions"):
+            return {"session_id": f"s-{self.get_account_id()}", "actions": seen["hits"][self.name]}
+        return {"isError": False, "result": {}}
+
+    monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
+    monkeypatch.setattr(
+        "stackone_ai.toolset.fetch_mcp_tools",
+        lambda _e, headers, **_k: [_tool(name) for name in per_account[headers["x-account-id"]]],
+    )
+    return seen
+
+
+class TestSearchHits:
+    def test_each_hit_names_its_account_and_top_k_cuts_the_merged_ranking(self, monkeypatch):
+        seen = _meta_tools(
+            monkeypatch,
+            {
+                "acc1": ["hris_acc1_search_actions"],
+                "acc2": ["hris_acc2_search_actions", "crm_acc2_search_actions"],
+            },
+        )
+        seen["hits"] = {
+            "hris_acc1_search_actions": [
+                {"action_id": "hris_list", "similarity_score": 0.9},
+                {"action_id": "hris_get", "similarity_score": 0.4},
+            ],
+            "hris_acc2_search_actions": [
+                {"action_id": "hris_list", "similarity_score": 0.8},
+                {"action_id": "hris_get", "similarity_score": 0.3},
+            ],
+            "crm_acc2_search_actions": [{"action_id": "crm_list", "similarity_score": 0.7}],
+        }
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+
+        hits = toolset.search("list", top_k=3)
+
+        # top_k is the total, not per connector: 3 connectors asked for 3 each served 5.
+        assert seen["arguments"]["top_k"] == 3
+        assert [(h["action_id"], h["account_id"], h["session_id"]) for h in hits] == [
+            ("hris_list", "acc1", "s-acc1"),
+            ("hris_list", "acc2", "s-acc2"),
+            ("crm_list", "acc2", "s-acc2"),
+        ]

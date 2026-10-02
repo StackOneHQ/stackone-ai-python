@@ -484,13 +484,16 @@ class StackOneToolSet:
 
         Args:
             query: What you want to do, e.g. "list recent comments".
-            top_k: Maximum results per connector.
+            top_k: Maximum results, across every connector searched.
             account_ids: Restrict to these accounts. Defaults to all active ones.
 
         Returns:
-            Action dicts carrying at least ``action_id`` and ``description``, plus the
-            ``session_id`` of the search that found them when the server issued one.
-            Pass it to :meth:`execute` and :meth:`submit_feedback` to link the calls.
+            At most ``top_k`` action dicts, best first across every connector, each carrying
+            at least ``action_id`` and ``description``, the ``account_id`` of the account
+            whose connector found it, and the ``session_id`` of the search when the server
+            issued one. The same action linked on two accounts is two hits. Pass
+            ``session_id`` to :meth:`execute` and :meth:`submit_feedback` to link the calls,
+            and ``account_id`` in ``account_ids`` to run the action on that account.
 
         Raises:
             StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
@@ -515,11 +518,16 @@ class StackOneToolSet:
             actions = list(found.get("actions", []))
             # The server returns session_id once per search, beside the actions. Results
             # from every connector are merged and re-ranked below, so this is the last
-            # point at which a hit can still be traced to the search that produced it.
+            # point at which a hit can still be traced to the search, and the account,
+            # that produced it.
             session_id = found.get("session_id")
-            if not isinstance(session_id, str) or not session_id:
-                return actions
-            return [{**action, "session_id": session_id} for action in actions]
+            traced: JsonDict = {}
+            if isinstance(session_id, str) and session_id:
+                traced["session_id"] = session_id
+            account_id = tool.get_account_id()
+            if account_id:
+                traced["account_id"] = account_id
+            return [{**action, **traced} for action in actions]
 
         results: list[JsonDict] = []
         failures: list[str] = []
@@ -550,8 +558,10 @@ class StackOneToolSet:
                 return 0.0
             return float(raw)
 
+        # Then cut to top_k: each connector was asked for top_k, so the merged list can
+        # hold many more.
         results.sort(key=_score, reverse=True)
-        return results
+        return results[:top_k]
 
     def execute(
         self,
