@@ -414,9 +414,21 @@ class StackOneToolSet:
             return [(tool_def, account, endpoint) for tool_def in listed]
 
         def _store(catalog: _Catalog) -> None:
+            # Merged with whatever is cached now, not overwritten: a concurrent call for the
+            # same key may have stored a healthier catalog since this call read it, and a
+            # wholesale overwrite would hide its successes behind this call's failures for
+            # FAILED_ACCOUNT_RETRY_SECONDS. A listing wins over a failure for the same account.
             with self._cache_lock:
-                if generation == self._cache_generation:
-                    self._catalog_cache[key] = catalog
+                if generation != self._cache_generation:
+                    return
+                existing = self._catalog_cache.get(key)
+                if existing is not None:
+                    merged_listings = {**existing.listings, **catalog.listings}
+                    merged_failed_at = {**existing.failed_at, **catalog.failed_at}
+                    for account in catalog.listings:
+                        merged_failed_at.pop(account, None)
+                    catalog = _Catalog(merged_listings, merged_failed_at)
+                self._catalog_cache[key] = catalog
 
         if len(account_scope) == 1:
             catalog = _Catalog({account_scope[0]: _fetch_for_account(account_scope[0])})

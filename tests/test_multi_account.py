@@ -7,6 +7,7 @@ every surface has to say which account it means.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 import pytest
@@ -113,6 +114,55 @@ class TestPartialFailureCaching:
         toolset.clear_catalog_cache()
         toolset.fetch_tools(account_ids=["a", "b"])
         assert sorted(accounts.listed) == ["a", "b"]
+
+
+class TestConcurrentCallsDoNotClobberEachOthersPartialCatalog:
+    """Two concurrent fetch_tools() calls for the same scope must not overwrite each
+    other's cache entry: a transient failure in one must not hide a success the other
+    just cached for FAILED_ACCOUNT_RETRY_SECONDS.
+    """
+
+    def test_a_slower_failure_does_not_clobber_a_faster_success(self, monkeypatch, clock):
+        b_started = threading.Event()
+        second_call_done = threading.Event()
+        b_calls: list[int] = []
+
+        def fetch(_endpoint: str, headers: dict[str, str], **_kwargs: object) -> list[McpToolDefinition]:
+            account = headers["x-account-id"]
+            if account == "a":
+                return [_tool("tool_a")]
+            b_calls.append(1)
+            if len(b_calls) == 1:
+                # The first caller to reach "b" blocks until the second caller's whole
+                # fetch_tools() call has finished and cached both accounts, then fails —
+                # so its own store is the last one to run.
+                b_started.set()
+                assert second_call_done.wait(timeout=5)
+                raise RuntimeError("boom")
+            return [_tool("tool_b")]
+
+        monkeypatch.setattr(toolset_module, "fetch_mcp_tools", fetch)
+        toolset = StackOneToolSet(api_key="k")
+        results: dict[str, list[str]] = {}
+
+        def call_first() -> None:
+            results["first"] = [t.name for t in toolset.fetch_tools(account_ids=["a", "b"])]
+
+        def call_second() -> None:
+            assert b_started.wait(timeout=5)
+            results["second"] = [t.name for t in toolset.fetch_tools(account_ids=["a", "b"])]
+            second_call_done.set()
+
+        first = threading.Thread(target=call_first)
+        second = threading.Thread(target=call_second)
+        first.start()
+        second.start()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+        assert results["second"] == ["tool_a", "tool_b"]
+        # The slower, failing call must not have evicted "b" from the cache behind it.
+        assert [t.name for t in toolset.fetch_tools(account_ids=["a", "b"])] == ["tool_a", "tool_b"]
 
 
 class TestEveryAccountFails:
