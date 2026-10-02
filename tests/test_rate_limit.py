@@ -80,6 +80,14 @@ class TestRetryDelay:
         when = datetime.now(UTC) + timedelta(seconds=10)
         assert 8.0 <= (_retry_after_seconds(format_datetime(when, usegmt=True)) or 0) <= 10.0
 
+    def test_retry_after_with_an_ordinary_leap_second(self):
+        now = datetime(2015, 6, 30, 23, 59, 0, tzinfo=UTC)
+        assert _retry_after_seconds("Tue, 30 Jun 2015 23:59:60 GMT", now) == 60.0
+
+    def test_retry_after_with_a_leap_second_at_the_maximum_year_does_not_overflow(self):
+        now = datetime(9999, 12, 31, 23, 59, 0, tzinfo=UTC)
+        assert _retry_after_seconds("Fri, 31 Dec 9999 23:59:60 GMT", now) == 60.0
+
     @pytest.mark.parametrize(
         "retry_after", [format_datetime(datetime.now(UTC) + timedelta(hours=1), usegmt=True)]
     )

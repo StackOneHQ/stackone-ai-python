@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import calendar
 import json
 import logging
 import math
@@ -334,12 +335,17 @@ def _add_years(when: datetime, years: int) -> datetime:
         return when.replace(year=when.year + years, day=28)
 
 
-def _parse_http_date(value: str, now: datetime) -> datetime | None:
-    """An RFC 9110 HTTP-date as a UTC datetime, or ``None`` if it is not one.
+def _parse_http_date(value: str, now: datetime) -> float | None:
+    """An RFC 9110 HTTP-date as seconds since the epoch, or ``None`` if it is not one.
 
     Written out rather than left to ``email.utils.parsedate_to_datetime``, which reads
     far more than an HTTP-date: trailing text, numeric zones, two-digit years in any form.
     The weekday is not checked against the date, as RFC 9110 does not ask it to be.
+
+    Seconds since the epoch, not a ``datetime``, because a leap second (second 60) on
+    the last representable instant, e.g. ``Fri, 31 Dec 9999 23:59:60 GMT``, rolls over
+    into year 10000, which ``datetime`` cannot hold. ``calendar.timegm`` takes the date
+    fields as plain integers and does the arithmetic without that ceiling.
     """
     match = _IMF_FIXDATE.fullmatch(value) or _ASCTIME_DATE.fullmatch(value)
     two_digit_year = False
@@ -349,35 +355,34 @@ def _parse_http_date(value: str, now: datetime) -> datetime | None:
     if match is None:
         return None
     year = int(match["year"])
+    month = _MONTHS.index(match["month"]) + 1
+    day = int(match["day"])
+    hour = int(match["hour"])
+    minute = int(match["minute"])
     second = int(match["second"])
+    if second > 60:
+        return None
     if two_digit_year:
         # §5.6.7: a two-digit year more than 50 years ahead is the most recent past year
         # with those digits.
         year += now.year - now.year % 100
     try:
-        # Second 60 is a leap second: the instant the next minute starts.
-        when = datetime(
-            year,
-            _MONTHS.index(match["month"]) + 1,
-            int(match["day"]),
-            int(match["hour"]),
-            int(match["minute"]),
-            min(second, 59),
-            tzinfo=UTC,
-        )
+        # Second 60 is a leap second: validated as if it were 59, the instant before the
+        # next minute starts. Also catches day 32, hour 25, 30 February, year 0.
+        datetime(year, month, day, hour, minute, min(second, 59), tzinfo=UTC)
     except ValueError:
-        # Day 32, hour 25, 30 February, year 0.
-        return None
-    if second == 60:
-        when += timedelta(seconds=1)
-    elif second > 60:
         return None
     if two_digit_year:
+        # Bounded to a century around `now`, so no overflow risk going through datetime.
+        when = datetime(year, month, day, hour, minute, min(second, 59), tzinfo=UTC)
+        if second == 60:
+            when += timedelta(seconds=1)
         if when > _add_years(now, 50):
             when = _add_years(when, -100)
         elif _add_years(when, 100) <= _add_years(now, 50):
             when = _add_years(when, 100)
-    return when
+        return calendar.timegm(when.utctimetuple())
+    return calendar.timegm((year, month, day, hour, minute, second))
 
 
 def _retry_after_seconds(value: str | None, now: datetime | None = None) -> float | None:
@@ -393,10 +398,11 @@ def _retry_after_seconds(value: str | None, now: datetime | None = None) -> floa
     if re.fullmatch(r"[0-9]+", value):
         return float(value)
     now = now or datetime.now(UTC)
-    when = _parse_http_date(value, now)
-    if when is None:
+    when_epoch = _parse_http_date(value, now)
+    if when_epoch is None:
         return None
-    return max(0.0, (when - now).total_seconds())
+    now_epoch = calendar.timegm(now.utctimetuple()) + now.microsecond / 1e6
+    return max(0.0, when_epoch - now_epoch)
 
 
 def _backoff_delay(retry: int, retry_after: float | None, random_value: float | None = None) -> float:
