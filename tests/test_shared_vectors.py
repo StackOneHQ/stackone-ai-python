@@ -475,22 +475,30 @@ def _skip_connector(mp, log) -> Emitted:
 
 
 def _duplicate_tool_names(mp, log) -> Emitted:
-    Tools([_served_tool({"type": "object", "properties": {}}, "t") for _ in range(2)])
-    return _warnings(log)[0], {"count": 1, "names": "t"}
+    tools = Tools([_served_tool({"type": "object", "properties": {}}, "t") for _ in range(2)])
+    # Once by the collection, and again by each adapter that keeps the first of each name.
+    tools.to_openai()
+    collection, adapter = _warnings(log)
+    assert collection == adapter
+    return adapter, {"count": 1, "names": "t"}
 
 
 def _ambiguous_connector(mp, log) -> Emitted:
     mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("linear_{account}_execute_action"))
     mp.setattr(StackOneMcpTool, "execute", lambda _self, _arguments=None: {})
-    StackOneToolSet(api_key="k").execute("linear_list_issues", account_ids=["acc-1", "acc-2"])
-    tools = "linear_acc-1_execute_action, linear_acc-2_execute_action"
-    values = {
-        "action_id": "linear_list_issues",
-        "count": 2,
-        "tools": tools,
-        "tool": "linear_acc-1_execute_action",
-    }
-    return _warnings(log)[0], values
+    error = _raised(
+        ToolsetConfigError,
+        lambda: StackOneToolSet(api_key="k").execute("linear_list_issues", account_ids=["acc-2", "acc-1"]),
+    )
+    tools = "linear_acc-1_execute_action on acc-1, linear_acc-2_execute_action on acc-2"
+    return error, {"action_id": "linear_list_issues", "count": 2, "tools": tools}
+
+
+def _account_id_env_ignored(mp, log) -> Emitted:
+    mp.setenv("STACKONE_ACCOUNT_ID", "acc-1")
+    StackOneToolSet(api_key="k")
+    [warning] = _warnings(log)
+    return warning, {}
 
 
 def _mcp_timeout(mp, log) -> Emitted:
@@ -553,14 +561,17 @@ def _no_active_accounts(mp, log) -> Emitted:
     return error, {"count": 2, "accounts": "linear (inactive), jira (error)"}
 
 
-def _no_account_returned_tools(mp, log) -> Emitted:
-    mp.setattr(
-        "stackone_ai.toolset.fetch_mcp_tools", _failing_for({"acc-1", "acc-2"}, ToolsetLoadError("boom"), "t")
-    )
+def _all_accounts_failed(mp, log) -> Emitted:
+    failures = {"acc-1": StackOneAPIError("gone", 412, None), "acc-2": ToolsetLoadError("boom")}
+
+    def fail(_endpoint: str, headers: dict[str, str], **_kwargs: object) -> list[McpToolDefinition]:
+        raise failures[headers["x-account-id"]]
+
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", fail)
     error = _raised(
-        ToolsetLoadError, lambda: StackOneToolSet(api_key="k").fetch_tools(account_ids=["acc-1", "acc-2"])
+        ToolsetLoadError, lambda: StackOneToolSet(api_key="k").fetch_tools(account_ids=["acc-2", "acc-1"])
     )
-    return error, {"failures": "acc-1: boom | acc-2: boom"}
+    return error, {"failures": "acc-1: gone; acc-2: boom"}
 
 
 def _no_connector_returned_results(mp, log) -> Emitted:
@@ -707,6 +718,7 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "skip-connector": _skip_connector,
     "duplicate-tool-names": _duplicate_tool_names,
     "ambiguous-connector": _ambiguous_connector,
+    "account-id-env-ignored": _account_id_env_ignored,
     "mcp-timeout": _mcp_timeout,
     "mcp-http-failure": _mcp_http_failure,
     "mcp-failure": _mcp_failure,
@@ -716,7 +728,7 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "accounts-unexpected-shape": _accounts_unexpected_shape,
     "no-linked-accounts": _no_linked_accounts,
     "no-active-accounts": _no_active_accounts,
-    "no-account-returned-tools": _no_account_returned_tools,
+    "all-accounts-failed": _all_accounts_failed,
     "no-connector-returned-results": _no_connector_returned_results,
     "fetch-tools-failed": _fetch_tools_failed,
     "missing-api-key": _missing_api_key,
