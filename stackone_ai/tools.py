@@ -193,6 +193,18 @@ def _js_json(value: Any) -> str:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+
+def _ascii_lower(name: str) -> str:
+    """A header name lower-cased in ASCII only, as HTTP compares names.
+
+    ``casefold()`` folded "ſ" (U+017F) to "s", so "uſer-agent" read as User-Agent. It is
+    not a token at all, and is refused as malformed instead.
+    """
+    return name.translate(_ASCII_LOWER)
+
+
 def _declares_object_type(schema_type: Any) -> bool:
     """Whether a JSON Schema ``type`` declares (among others) ``"object"``.
 
@@ -809,8 +821,9 @@ class StackOneTool(BaseModel):
             return {}
         if isinstance(arguments, str):
             try:
-                parsed = json.loads(arguments)
-            except json.JSONDecodeError as exc:
+                # NaN and Infinity are not JSON: json.loads accepts them, JSON.parse does not.
+                parsed = json.loads(arguments, parse_constant=_reject_json_constant)
+            except ValueError as exc:
                 raise ToolArgumentsError(f"Invalid JSON in arguments for {self.name!r}: {exc}") from exc
         else:
             parsed = arguments
@@ -819,10 +832,10 @@ class StackOneTool(BaseModel):
         return dict(parsed)
 
     def _declared_headers(self) -> tuple[set[str] | None, set[str], bool]:
-        """The header names this tool's served schema declares, casefolded.
+        """The header names this tool's served schema declares.
 
         Returns ``(nested, flat, ordinary_headers_field)``: the names under a nested
-        ``headers`` object, casefolded, each flat ``headers_<name>`` property exactly as
+        ``headers`` object, lower-cased in ASCII, each flat ``headers_<name>`` property exactly as
         served — a flat header is a top-level argument, so it is declared only under its
         own key, as in Node — and whether the schema declares a top-level ``headers``
         property as something other than an object, an ordinary field that happens to be
@@ -849,15 +862,16 @@ class StackOneTool(BaseModel):
                 if declares_object and schema.get("additionalProperties") is not False:
                     nested = None
             elif isinstance(schema["properties"], dict):
-                nested = {str(name).casefold() for name in schema["properties"]}
+                nested = {_ascii_lower(str(name)) for name in schema["properties"]}
         return nested, flat, ordinary_headers_field
 
     @staticmethod
     def _header_refusal(name: str, declared: bool) -> str | None:
         """Why a header argument may not be forwarded, or ``None`` if it may."""
         # Normalise before comparing: " x-foo" and "X-FOO\t" are the same header to any
-        # server, and casefold() closes the non-ASCII folding holes lower() leaves.
-        if _trim_header_name(name).casefold() in _SDK_OWNED_HEADERS:
+        # server. ASCII only: a name that differs from an owned one outside ASCII is not a
+        # token, and is refused as malformed below.
+        if _ascii_lower(_trim_header_name(name)) in _SDK_OWNED_HEADERS:
             return "it is set by the SDK"
         if not declared:
             return "it is not declared by the schema"
@@ -891,7 +905,7 @@ class StackOneTool(BaseModel):
             if text is None or not isinstance(key, str):
                 continue
             name = _trim_header_name(key)
-            reason = self._header_refusal(name, declared is None or name.casefold() in declared)
+            reason = self._header_refusal(name, declared is None or _ascii_lower(name) in declared)
             if reason:
                 logger.warning("Dropping header %r from a tool call: %s", name, reason)
                 continue
@@ -1168,7 +1182,7 @@ class StackOneMcpTool(StackOneTool):
         headers: Headers = {
             name: value
             for name, value in self._execute_config.headers.items()
-            if _trim_header_name(name).casefold() not in _SDK_OWNED_HEADERS
+            if _ascii_lower(_trim_header_name(name)) not in _SDK_OWNED_HEADERS
         }
         # The constructor requires the key; only code that clears it afterwards gets here.
         if not self._api_key:
