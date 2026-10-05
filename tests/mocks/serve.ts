@@ -90,7 +90,7 @@ app.delete("/__requests", (c) => {
 });
 
 app.use("/mcp", async (c, next) => {
-  const accountId = c.req.header("x-account-id") ?? null;
+  const accountId = c.req.header("x-account-id") ?? c.req.query("x-account-id") ?? null;
   const endUserId = c.req.header("x-end-user-id") ?? null;
   if (c.req.method === "POST") {
     try {

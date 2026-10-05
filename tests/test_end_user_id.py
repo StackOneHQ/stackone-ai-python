@@ -42,6 +42,17 @@ def _methods(base_url: str, account: str) -> set[str]:
 class TestOverTheWire:
     """Against a mock that, like the API, refuses acc1's requests without acc1's end user."""
 
+    def test_a_query_scoped_request_without_the_header_is_refused(self, mcp_mock_server_with_end_users: str):
+        """The account id can arrive as a query parameter, as the real mounted MCP app allows."""
+        base_url = mcp_mock_server_with_end_users
+        response = httpx.post(
+            f"{base_url}/mcp?x-account-id=acc1",
+            auth=("test-key", ""),
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        )
+        assert response.status_code == 400
+        assert response.json()["message"] == UCA_REFUSAL
+
     def test_discovery_sends_it_on_every_listing_request(self, mcp_mock_server_with_end_users: str):
         base_url = mcp_mock_server_with_end_users
         _reset(base_url)
