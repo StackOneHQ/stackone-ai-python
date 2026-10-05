@@ -116,7 +116,7 @@ jobs:
       # branch's deletion on merge must not silently change what this job grades. Bump
       # deliberately while StackOneHQ/stackone-ai-node#383 is open; switch to a main commit
       # once it merges.
-      NODE_SDK_REF: c5f2537d1b6d6b7a1bb214e1a19e7d752b271139
+      NODE_SDK_REF: 9d332abc109934702a297e6b23c7af4c3727854a
     steps:
       - name: Check conformance token is configured
         env:
