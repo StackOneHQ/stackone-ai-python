@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from collections.abc import Iterator
@@ -1124,6 +1125,81 @@ class TestAccountDiscovery:
         )
         assert toolset._discover_account_ids() == ["acc2"]
 
+    def test_a_discovery_after_a_clear_does_not_join_one_from_before_it(self, monkeypatch):
+        toolset = StackOneToolSet(api_key="test-key")
+        listed = iter(["before", "after"])
+        started = threading.Event()
+        proceed = threading.Event()
+
+        def fetch_accounts() -> list[dict[str, Any]]:
+            account = next(listed)
+            if account == "before":
+                started.set()
+                assert proceed.wait(timeout=5)
+            return [{"id": account, "provider": "p", "status": "active"}]
+
+        monkeypatch.setattr(toolset, "fetch_accounts", fetch_accounts)
+        before: dict[str, list[str]] = {}
+        thread = threading.Thread(target=lambda: before.setdefault("ids", toolset._discover_account_ids()))
+        thread.start()
+        assert started.wait(timeout=5)
+
+        toolset.clear_catalog_cache()
+        try:
+            assert toolset._discover_account_ids() == ["after"]
+        finally:
+            proceed.set()
+            thread.join(timeout=5)
+        assert before["ids"] == ["before"]
+        assert toolset._discover_account_ids() == ["after"]
+
+    @pytest.mark.parametrize("before_fails", [False, True], ids=["before-succeeds", "before-fails"])
+    def test_a_discovery_from_before_a_clear_does_not_unshare_the_one_after_it(
+        self, monkeypatch, before_fails
+    ):
+        """Finishing, it must leave the in-flight discovery alone unless it is its own: else a
+        third caller starts another GET /accounts rather than joining the one after the clear."""
+        toolset = StackOneToolSet(api_key="test-key")
+        calls: list[str] = []
+        release = {"before": threading.Event(), "after": threading.Event()}
+        started = {"before": threading.Event(), "after": threading.Event()}
+
+        def fetch_accounts() -> list[dict[str, Any]]:
+            name = ["before", "after", "extra"][len(calls)]
+            calls.append(name)
+            if name != "extra":
+                started[name].set()
+                assert release[name].wait(timeout=5)
+            if name == "before" and before_fails:
+                raise ToolsetLoadError("boom")
+            return [{"id": name, "provider": "p", "status": "active"}]
+
+        monkeypatch.setattr(toolset, "fetch_accounts", fetch_accounts)
+
+        def discover() -> None:
+            with contextlib.suppress(ToolsetLoadError):
+                toolset._discover_account_ids()
+
+        before = threading.Thread(target=discover)
+        before.start()
+        assert started["before"].wait(timeout=5)
+        toolset.clear_catalog_cache()
+        after = threading.Thread(target=discover)
+        after.start()
+        assert started["after"].wait(timeout=5)
+
+        release["before"].set()
+        before.join(timeout=5)
+        third: dict[str, list[str]] = {}
+        joining = threading.Thread(target=lambda: third.setdefault("ids", toolset._discover_account_ids()))
+        joining.start()
+        release["after"].set()
+        joining.join(timeout=5)
+        after.join(timeout=5)
+
+        assert calls == ["before", "after"]
+        assert third["ids"] == ["after"]
+
     def test_missing_account_header_is_rejected_by_the_server(self, mcp_mock_server: str):
         """Guards the mock itself: if it stops enforcing this, these tests go hollow."""
         import httpx
@@ -1602,6 +1678,39 @@ class TestCacheIsolation:
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
         toolset.fetch_tools()
         assert toolset._catalog_cache == {}
+
+    def test_a_fetch_after_a_clear_does_not_adopt_a_listing_from_before_it(self, monkeypatch):
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        served = iter(["stale_tool", "fresh_tool"])
+        started = threading.Event()
+        proceed = threading.Event()
+
+        def fake_fetch(
+            _endpoint: str, _headers: dict[str, str], **_kwargs: object
+        ) -> list[McpToolDefinition]:
+            name = next(served)
+            if name == "stale_tool":
+                started.set()
+                assert proceed.wait(timeout=5)
+            return [McpToolDefinition(name=name, description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+        before: dict[str, list[str]] = {}
+        thread = threading.Thread(
+            target=lambda: before.setdefault("names", [t.name for t in toolset.fetch_tools()])
+        )
+        thread.start()
+        assert started.wait(timeout=5)
+
+        toolset.clear_catalog_cache()
+        try:
+            assert [t.name for t in toolset.fetch_tools()] == ["fresh_tool"]
+        finally:
+            proceed.set()
+            thread.join(timeout=5)
+        assert before["names"] == ["stale_tool"]
+        # The listing from before the clear finished last, and did not replace the fresh one.
+        assert [t.name for t in toolset.fetch_tools()] == ["fresh_tool"]
 
     def test_nested_schema_is_not_shared_between_callers(self, monkeypatch):
         """Rebuilding tools per call copied the tool but not the schema graph under it."""

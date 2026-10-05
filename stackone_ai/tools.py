@@ -964,6 +964,24 @@ def call_mcp_tool(
         _raise_mcp_failure(exc, endpoint, timeout, throttle)
 
 
+def is_end_user_refusal(exc: BaseException, account_id: str) -> bool:
+    """Whether ``exc`` is the API's 400 for an account's request without its end user.
+
+    The API answers an MCP request for a non-shared account whose ``x-end-user-id`` does not
+    name the account's end user with a 400 whose message names the account, as in Node.
+    """
+    if not (isinstance(exc, StackOneAPIError) and exc.status_code == 400):
+        return False
+    body = exc.response_body
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except ValueError:
+            pass
+    message = body.get("message") if isinstance(body, dict) else body
+    return message == f"x-end-user-id header does not match account end user id for account {account_id}"
+
+
 def _strip_internal_keys(schema: Any) -> Any:
     """Recursively drop the SDK's internal markers from a property schema.
 
@@ -1351,6 +1369,9 @@ class StackOneMcpTool(StackOneTool):
     # Looked up per request, so a tool keeps up with a later GET /accounts and with
     # set_account_id().
     _end_user_id_of: Callable[[str], str | None] | None = PrivateAttr(default=None)
+    # Also set by the toolset: given the API's refusal of a request sent without an end
+    # user, looks the account's end user up, and says whether there now is one to retry with.
+    _look_up_end_user: Callable[[str, Exception], bool] | None = PrivateAttr(default=None)
 
     def __init__(
         self,
@@ -1381,9 +1402,7 @@ class StackOneMcpTool(StackOneTool):
         retarget the call at another account. So is x-end-user-id, when the toolset recorded
         one for this tool's account; otherwise a configured x-end-user-id is sent as given.
         """
-        end_user_id = (
-            self._end_user_id_of(self._account_id) if self._end_user_id_of and self._account_id else None
-        )
+        end_user_id = self._recorded_end_user_id()
         # The constructor requires the key; only code that clears it afterwards gets here.
         if not self._api_key:
             raise StackOneError(f'Tool "{self.name}" has no API key to authenticate with.')
@@ -1393,6 +1412,11 @@ class StackOneMcpTool(StackOneTool):
             end_user_id=end_user_id,
             extra_headers=self._execute_config.headers,
         )
+
+    def _recorded_end_user_id(self) -> str | None:
+        if self._end_user_id_of is None or not self._account_id:
+            return None
+        return self._end_user_id_of(self._account_id)
 
     def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
         """Call the tool over MCP ``tools/call``.
@@ -1410,7 +1434,9 @@ class StackOneMcpTool(StackOneTool):
 
         Raises:
             StackOneAPIError: If the result carries ``isError``, with the status from its
-                payload, or the endpoint answers with an HTTP error.
+                payload, or the endpoint answers with an HTTP error. A 400 asking for the
+                end user of an account the toolset has none recorded for is answered first:
+                the toolset looks it up with ``GET /accounts`` and the call is sent once more.
             ToolArgumentsError: If the arguments are not a JSON object or cannot be encoded.
                 A subclass of both StackOneError and ValueError.
         """
@@ -1439,9 +1465,25 @@ class StackOneMcpTool(StackOneTool):
         if non_finite is not None:
             raise ToolArgumentsError(f"{unencodable}: {_js_number(non_finite)} is not a JSON number")
 
-        return call_mcp_tool(
-            self._endpoint, self._prepare_headers(), self.name, parsed, timeout=self._execute_config.timeout
-        )
+        def call() -> JsonDict:
+            timeout = self._execute_config.timeout
+            return call_mcp_tool(self._endpoint, self._prepare_headers(), self.name, parsed, timeout=timeout)
+
+        account_id = self._account_id
+        without_end_user = account_id is not None and self._recorded_end_user_id() is None
+        try:
+            return call()
+        except StackOneAPIError as exc:
+            # Sent with no recorded end user and refused for want of one: the account is
+            # non-shared and its end user can be looked up. Retried once, with it.
+            if not (
+                without_end_user
+                and account_id is not None
+                and self._look_up_end_user is not None
+                and self._look_up_end_user(account_id, exc)
+            ):
+                raise
+        return call()
 
 
 def _read_openai_tool_call(call: Any) -> tuple[str, str, str | JsonDict]:

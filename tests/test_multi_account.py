@@ -10,6 +10,7 @@ import logging
 import threading
 from typing import Any
 
+import httpx
 import pytest
 
 from stackone_ai import toolset as toolset_module
@@ -185,6 +186,15 @@ class TestEveryAccountFails:
         assert isinstance(cause, ExceptionGroup)
         assert list(cause.exceptions) == [unauthorised, broken]
 
+    def test_a_401_and_a_403_are_kept_rather_than_either_raised(self, monkeypatch):
+        """Differing statuses are not one cause: raising the first would hide the other."""
+        unauthorised, forbidden = StackOneAPIError("401", 401, None), StackOneAPIError("403", 403, None)
+        _Accounts(monkeypatch, a=unauthorised, b=forbidden)
+        with pytest.raises(ToolsetLoadError) as excinfo:
+            StackOneToolSet(api_key="k").fetch_tools(account_ids=["a", "b"])
+        assert str(excinfo.value) == "Every account failed to list tools: a: 401; b: 403"
+        assert excinfo.value.failures == [unauthorised, forbidden]
+
     def test_an_account_that_lists_nothing_has_not_failed(self, monkeypatch):
         _Accounts(monkeypatch, a=[], b=RuntimeError("boom"))
         assert len(StackOneToolSet(api_key="k").fetch_tools(account_ids=["a", "b"])) == 0
@@ -273,6 +283,87 @@ class TestExecuteRouting:
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
         toolset.execute("hris_list_employees", account_ids=[account])
         assert (seen["tool"], seen["account"]) == (f"hris_{account}_execute_action", account)
+
+
+def _providers(monkeypatch: pytest.MonkeyPatch, **providers: str) -> None:
+    """Answer GET /accounts with each account on its provider."""
+    body = [
+        {"id": account, "provider": provider, "status": "active"} for account, provider in providers.items()
+    ]
+    monkeypatch.setattr(
+        httpx.HTTPTransport,
+        "handle_request",
+        lambda _self, request: httpx.Response(200, json=body, request=request),
+    )
+
+
+class TestExecuteWithAFailedAccount:
+    """An account that failed to list could have served the action: running it on another
+    account instead would run it on an account the caller never chose.
+    """
+
+    def _execute(self, monkeypatch: pytest.MonkeyPatch, **accounts: list[str] | Exception) -> Any:
+        listing = _Accounts(monkeypatch, **accounts)
+        seen: dict[str, Any] = {}
+
+        def fake_execute(tool: StackOneMcpTool, arguments: Any) -> dict[str, Any]:
+            seen["account"] = tool.get_account_id()
+            return {"isError": False}
+
+        monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
+        return listing, seen
+
+    def test_an_account_on_the_actions_connector_refuses(self, monkeypatch):
+        _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
+        _providers(monkeypatch, acc1="HRIS", acc2="hris")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc2", "acc1"]})
+        toolset.fetch_accounts()
+        with pytest.raises(ToolsetLoadError) as excinfo:
+            toolset.execute("hris_list_employees")
+        assert str(excinfo.value) == (
+            "hris_list_employees may be served by an account that failed to list (acc1: boom). "
+            "Pass the account id to use, such as a search hit's account_id."
+        )
+        assert seen == {}
+
+    def test_accounts_with_no_known_provider_refuse_in_account_order(self, monkeypatch):
+        """No GET /accounts was made, so either could be on the action's connector."""
+        _, seen = self._execute(
+            monkeypatch,
+            acc3=RuntimeError("down"),
+            acc1=RuntimeError("boom"),
+            acc2=["hris_acc2_execute_action"],
+        )
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc3", "acc2", "acc1"]})
+        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc1: boom; acc3: down\)\."):
+            toolset.execute("hris_list_employees")
+        assert seen == {}
+
+    def test_an_account_on_another_provider_does_not(self, monkeypatch):
+        _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
+        _providers(monkeypatch, acc1="crm", acc2="hris")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.fetch_accounts()
+        toolset.execute("hris_list_employees")
+        assert seen == {"account": "acc2"}
+
+    def test_a_failed_account_is_listed_again_at_once_and_then_routes_as_usual(self, monkeypatch, clock):
+        listing, _ = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        # Left out of the search_execute catalog, which execute() lists in, for 30s from now.
+        assert [t.name for t in toolset.fetch_tools(mode="search_execute")] == ["hris_acc2_execute_action"]
+
+        listing.accounts["acc1"] = ["hris_acc1_execute_action"]
+        listing.listed.clear()
+        with pytest.raises(ToolsetConfigError, match="matches 2 connectors on different accounts"):
+            toolset.execute("hris_list_employees")
+        # Only the failed account, and without waiting for it to be due.
+        assert listing.listed == ["acc1"]
+
+        # Its listing is cached for the next call, like any other.
+        listing.listed.clear()
+        toolset.fetch_tools(mode="search_execute")
+        assert listing.listed == []
 
 
 class TestPinnedArgumentsGoLast:

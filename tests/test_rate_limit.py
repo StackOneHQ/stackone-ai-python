@@ -378,6 +378,56 @@ class TestAStaleThrottleMarkerDoesNotTaintALaterTimeout:
         assert tools.get_tool("acc2_tool_1") is None
 
 
+class TestA429ThenAStalledStreamIsATimeout:
+    """The retry of a 429 is answered 200, and then that response's stream stalls: the 429
+    cleared, so the deadline that ends it is an ordinary timeout, as in Node."""
+
+    @staticmethod
+    def _429_then_stall_on_list(monkeypatch: pytest.MonkeyPatch, account: str) -> None:
+        import json as _json
+
+        real = httpx.AsyncHTTPTransport.handle_async_request
+        attempts: list[int] = []
+
+        class Stalled(httpx.AsyncByteStream):
+            async def __aiter__(self) -> Any:
+                yield b"event: message\n"
+                await asyncio.sleep(60)
+                raise AssertionError("the exchange's deadline should have cancelled this")
+
+        async def handler(self: Any, request: httpx.Request) -> httpx.Response:
+            if request.headers.get("x-account-id") != account:
+                return await real(self, request)
+            if _json.loads(request.content or b"{}").get("method") != "tools/list":
+                return await real(self, request)
+            attempts.append(1)
+            if len(attempts) == 1:
+                return _429("0")
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Stalled())
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handler)
+
+    def test_listing(self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch):
+        self._429_then_stall_on_list(monkeypatch, "acc1")
+        with pytest.raises(ToolsetLoadError, match="timed out after 0.5s") as excinfo:
+            fetch_mcp_tools(
+                f"{mcp_mock_server}/mcp",
+                {"x-account-id": "acc1", "Authorization": "Basic dGVzdC1rZXk6"},
+                timeout=0.5,
+            )
+        assert not is_rate_limited(excinfo.value)
+        assert len(sleeps) == 1
+
+    def test_a_two_account_listing_skips_only_that_account(
+        self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch
+    ):
+        self._429_then_stall_on_list(monkeypatch, "acc2")
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, timeout=0.5)
+        tools = toolset.fetch_tools(account_ids=["acc1", "acc2"])
+        assert tools.get_tool("acc1_tool_1") is not None
+        assert tools.get_tool("acc2_tool_1") is None
+
+
 class TestMcpAgainstMockServer:
     """The mock answers 429 for `ratelimit-<all|call>-<n|always>-<tag>` account ids."""
 

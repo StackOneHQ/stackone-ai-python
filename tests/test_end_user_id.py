@@ -7,6 +7,8 @@ accounts it records it, and sends it on every MCP request for that account.
 
 from __future__ import annotations
 
+import concurrent.futures
+import json
 import logging
 import threading
 from typing import Any
@@ -16,7 +18,7 @@ import pytest
 
 from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
 from stackone_ai.toolset import StackOneToolSet
-from stackone_ai.types import StackOneAPIError, ToolParameters
+from stackone_ai.types import StackOneAPIError, ToolParameters, ToolsetLoadError
 
 UCA_REFUSAL = "x-end-user-id header does not match account end user id for account acc1"
 
@@ -57,7 +59,7 @@ class TestOverTheWire:
     def test_discovery_sends_it_on_every_listing_request(self, mcp_mock_server_with_end_users: str):
         base_url = mcp_mock_server_with_end_users
         _reset(base_url)
-        tools = StackOneToolSet(api_key="test-key", base_url=base_url).fetch_tools()
+        tools = StackOneToolSet(api_key="test-key", base_url=base_url, include_non_shared=True).fetch_tools()
 
         assert {"acc1_tool_1", "acc2_tool_1"} <= {t.name for t in tools}
         assert {"initialize", "tools/list"} <= _methods(base_url, "acc1")
@@ -67,7 +69,7 @@ class TestOverTheWire:
 
     def test_a_listed_tool_sends_it_on_every_call_request(self, mcp_mock_server_with_end_users: str):
         base_url = mcp_mock_server_with_end_users
-        tools = StackOneToolSet(api_key="test-key", base_url=base_url).fetch_tools()
+        tools = StackOneToolSet(api_key="test-key", base_url=base_url, include_non_shared=True).fetch_tools()
         _reset(base_url)
 
         for name in ("acc1_tool_1", "acc2_tool_1"):
@@ -81,7 +83,7 @@ class TestOverTheWire:
 
     def test_meta_tools_and_feedback_send_it(self, mcp_mock_server_with_end_users: str):
         base_url = mcp_mock_server_with_end_users
-        toolset = StackOneToolSet(api_key="test-key", base_url=base_url)
+        toolset = StackOneToolSet(api_key="test-key", base_url=base_url, include_non_shared=True)
         _reset(base_url)
 
         hits = toolset.search("list items", account_ids=None)
@@ -107,18 +109,20 @@ class TestOverTheWire:
 
         assert _end_user_ids(base_url, "acc1") == {"end-user-1"}
 
-    def test_explicit_ids_list_no_accounts_and_send_no_end_user(self, mcp_mock_server_with_end_users: str):
-        """No GET /accounts was made, so there is nothing to send: the API refuses acc1."""
+    def test_an_explicit_id_looks_its_end_user_up_when_the_api_asks(
+        self, mcp_mock_server_with_end_users: str
+    ):
+        """No GET /accounts was made, so the first request goes without; the 400 prompts one."""
         base_url = mcp_mock_server_with_end_users
         toolset = StackOneToolSet(api_key="test-key", base_url=base_url)
         _reset(base_url)
 
         assert toolset.fetch_tools(account_ids=["acc2"]).get_tool("acc2_tool_1") is not None
-        with pytest.raises(StackOneAPIError, match=UCA_REFUSAL) as excinfo:
-            toolset.fetch_tools(account_ids=["acc1"])
-        assert excinfo.value.status_code == 400
         assert _end_user_ids(base_url, "acc2") == {None}
-        assert _end_user_ids(base_url, "acc1") == {None}
+        assert toolset.fetch_tools(account_ids=["acc1"]).get_tool("acc1_tool_1") is not None
+        # Refused once without it, then listed with it.
+        assert _end_user_ids(base_url, "acc1") == {None, "end-user-1"}
+        assert toolset._end_user_id("acc1") == "end-user-1"
 
     def test_a_model_supplied_end_user_is_not_forwarded(self, mcp_mock_server_with_end_users: str):
         base_url = mcp_mock_server_with_end_users
@@ -299,7 +303,7 @@ class TestHeaders:
             [_account("a", shared=False, origin_username="user-a"), _account("b", shared=True)],
         )
         mcp = _Mcp(monkeypatch)
-        tools = StackOneToolSet(api_key="k").fetch_tools()
+        tools = StackOneToolSet(api_key="k", include_non_shared=True).fetch_tools()
         for tool in tools:
             tool.execute({})
 
@@ -421,3 +425,290 @@ class TestModelSuppliedHeader:
 
         assert called[0]["arguments"] == {"q": 1}
         assert f'Dropping header argument "{key}" from a tool call: set by the SDK' in caplog.text
+
+
+class TestRecordOrdering:
+    def test_an_older_call_records_when_a_newer_one_fails(self, monkeypatch):
+        """Ordered against the last write, not the last start: a newer call that fails must
+        not leave the older call's result unrecorded."""
+        toolset = StackOneToolSet(api_key="k")
+        first_started = threading.Event()
+        release_first = threading.Event()
+
+        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
+            if not first_started.is_set():
+                first_started.set()
+                assert release_first.wait(timeout=5)
+                body = [_account("a", shared=False, origin_username="user-a", provider="hris")]
+                return httpx.Response(200, json=body, request=request)
+            return httpx.Response(500, text="nope", request=request)
+
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+        first = threading.Thread(target=toolset.fetch_accounts)
+        first.start()
+        assert first_started.wait(timeout=5)
+
+        with pytest.raises(StackOneAPIError):
+            toolset.fetch_accounts()
+        release_first.set()
+        first.join(timeout=5)
+
+        assert not first.is_alive()
+        assert toolset._end_user_id("a") == "user-a"
+        assert toolset._providers == {"a": "hris"}
+
+
+class TestDiscoverySkipsNonSharedAccounts:
+    SKIPPED = (
+        "Discovery skipped 2 non-shared account(s) (a, c): each belongs to a single end user. "
+        "Pass their account ids, or opt in to non-shared accounts, to use them."
+    )
+
+    @pytest.fixture
+    def accounts(self, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+        return _accounts_response(
+            monkeypatch,
+            *[
+                [
+                    _account("c", shared=False, origin_username="user-c"),
+                    _account("b", shared=True),
+                    _account("a", shared=False, origin_username="user-a"),
+                    _account("d"),
+                    _account("e", shared=False, status="error"),
+                ]
+            ]
+            * 3,
+        )
+
+    def test_by_default_with_one_warning_per_discovery(self, accounts, monkeypatch, caplog):
+        mcp = _Mcp(monkeypatch)
+        toolset = StackOneToolSet(api_key="k")
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            assert sorted(t.name for t in toolset.fetch_tools()) == ["tool_b", "tool_d"]
+            toolset.fetch_tools()
+        assert [r.getMessage() for r in caplog.records] == [self.SKIPPED]
+        assert sorted(h["x-account-id"] for h in mcp.listed) == ["b", "d"]
+        # Their end users are recorded all the same, for when their ids are passed.
+        assert (toolset._end_user_id("a"), toolset._end_user_id("c")) == ("user-a", "user-c")
+
+        caplog.clear()
+        toolset.clear_catalog_cache()
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            toolset.fetch_tools()
+        assert [r.getMessage() for r in caplog.records] == [self.SKIPPED]
+        assert len(accounts) == 2
+
+    def test_passed_ids_are_used(self, accounts, monkeypatch):
+        mcp = _Mcp(monkeypatch)
+        toolset = StackOneToolSet(api_key="k")
+        toolset.fetch_tools()
+        toolset.fetch_tools(account_ids=["a"])
+        assert mcp.listed[-1] == {**mcp.listed[-1], "x-account-id": "a", "x-end-user-id": "user-a"}
+
+    def test_an_opt_in_includes_them(self, accounts, monkeypatch, caplog):
+        _Mcp(monkeypatch)
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tools = StackOneToolSet(api_key="k", include_non_shared=True).fetch_tools()
+        assert sorted(t.name for t in tools) == ["tool_a", "tool_b", "tool_c", "tool_d"]
+        assert caplog.records == []
+
+    def test_skipping_every_account_leaves_nothing_to_list(self, monkeypatch, caplog):
+        _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="user-a")])
+        mcp = _Mcp(monkeypatch)
+        toolset = StackOneToolSet(api_key="k")
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            assert len(toolset.fetch_tools()) == 0
+            assert toolset.search("anything") == []
+            with pytest.raises(ToolsetLoadError, match="did not serve stackone_submit_feedback"):
+                toolset.submit_feedback("positive", ["x"])
+        assert mcp.listed == []
+        assert [r.getMessage() for r in caplog.records] == [
+            "Discovery skipped 1 non-shared account(s) (a): each belongs to a single end user. "
+            "Pass their account ids, or opt in to non-shared accounts, to use them."
+        ]
+
+
+def _refusal(account: str) -> StackOneAPIError:
+    body = json.dumps({"statusCode": 400, "message": f"{UCA_REFUSAL[: -len('acc1')]}{account}"})
+    return StackOneAPIError(f"MCP request failed with 400 Bad Request: {body}", 400, body)
+
+
+class _GuardedMcp:
+    """A fake MCP transport that, like the API, refuses a non-shared account without its end user."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, end_users: dict[str, str]) -> None:
+        self.end_users = end_users
+        self.listed: list[dict[str, str]] = []
+        self.called: list[dict[str, str]] = []
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", self._list)
+        monkeypatch.setattr("stackone_ai.tools.call_mcp_tool", self._call)
+
+    def _guard(self, headers: dict[str, str]) -> None:
+        account = headers["x-account-id"]
+        expected = self.end_users.get(account)
+        if expected is not None and headers.get("x-end-user-id") != expected:
+            raise _refusal(account)
+
+    def _list(self, _endpoint: str, headers: dict[str, str], **_kwargs: Any) -> list[McpToolDefinition]:
+        self.listed.append(headers)
+        self._guard(headers)
+        return [McpToolDefinition(name=f"tool_{headers['x-account-id']}", description="", input_schema={})]
+
+    def _call(self, _endpoint: str, headers: dict[str, str], *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        self.called.append(headers)
+        self._guard(headers)
+        return {"isError": False}
+
+
+class TestAPassedIdLooksItsEndUserUp:
+    """An account passed by id has no end user recorded until something lists accounts; the
+    API's 400 asking for one prompts that listing, and one retry with what it recorded."""
+
+    def test_a_listing_is_retried_once_with_it(self, monkeypatch):
+        calls = _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="user-a")])
+        mcp = _GuardedMcp(monkeypatch, {"a": "user-a"})
+        tools = StackOneToolSet(api_key="k", account_id="a").fetch_tools()
+        assert [t.name for t in tools] == ["tool_a"]
+        assert [h.get("x-end-user-id") for h in mcp.listed] == [None, "user-a"]
+        assert len(calls) == 1
+
+    def test_a_call_is_retried_once_with_it(self, monkeypatch):
+        calls = _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="user-a")])
+        mcp = _GuardedMcp(monkeypatch, {})
+        tool = StackOneToolSet(api_key="k", account_id="a").fetch_tools()[0]
+        mcp.end_users["a"] = "user-a"
+
+        tool.execute({})
+        assert [h.get("x-end-user-id") for h in mcp.called] == [None, "user-a"]
+        assert len(calls) == 1
+
+    @pytest.mark.parametrize(
+        "accounts_response",
+        [
+            pytest.param([_account("a", shared=True)], id="no-end-user-listed"),
+            pytest.param(500, id="listing-fails"),
+        ],
+    )
+    def test_with_no_end_user_to_retry_with_the_400_is_raised(self, monkeypatch, accounts_response):
+        calls = _accounts_response(monkeypatch, accounts_response)
+        mcp = _GuardedMcp(monkeypatch, {"a": "user-a"})
+        with pytest.raises(StackOneAPIError) as excinfo:
+            StackOneToolSet(api_key="k", account_id="a").fetch_tools()
+        assert excinfo.value.status_code == 400
+        assert excinfo.value.response_body == _refusal("a").response_body
+        assert len(mcp.listed) == 1
+        assert len(calls) == 1
+
+    def test_a_request_sent_with_a_recorded_end_user_is_not_retried(self, monkeypatch):
+        calls = _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="stale")])
+        mcp = _GuardedMcp(monkeypatch, {"a": "user-a"})
+        toolset = StackOneToolSet(api_key="k", account_id="a")
+        toolset.fetch_accounts()
+        with pytest.raises(StackOneAPIError):
+            toolset.fetch_tools()
+        assert len(mcp.listed) == 1
+        assert len(calls) == 1
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(_refusal("a1"), id="another-account"),
+            pytest.param(
+                StackOneAPIError("400", 400, json.dumps({"message": "bad request"})), id="another-400"
+            ),
+            pytest.param(StackOneAPIError("401", 401, _refusal("a").response_body), id="not-a-400"),
+        ],
+    )
+    def test_any_other_failure_is_not_retried(self, monkeypatch, error):
+        calls = _accounts_response(monkeypatch)
+        listed: list[int] = []
+
+        def refuse(*_args: Any, **_kwargs: Any) -> list[McpToolDefinition]:
+            listed.append(1)
+            raise error
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", refuse)
+        with pytest.raises(StackOneAPIError) as excinfo:
+            StackOneToolSet(api_key="k", account_id="a").fetch_tools()
+        assert excinfo.value is error
+        assert (calls, listed) == ([], [1])
+
+    def test_requests_refused_together_share_one_accounts_listing(self, monkeypatch):
+        joined = threading.Event()
+
+        class Listing(concurrent.futures.Future):  # type: ignore[type-arg]
+            def result(self, timeout: float | None = None) -> Any:
+                # The owner waits only once its own GET /accounts is done, so a wait while it
+                # is still held is the other account's, joining it.
+                joined.set()
+                return super().result(timeout)
+
+        monkeypatch.setattr(concurrent.futures, "Future", Listing)
+        calls: list[int] = []
+
+        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            assert joined.wait(timeout=5)
+            body = [
+                _account("a", shared=False, origin_username="user-a"),
+                _account("b", shared=False, origin_username="user-b"),
+            ]
+            return httpx.Response(200, json=body, request=request)
+
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+        mcp = _GuardedMcp(monkeypatch, {"a": "user-a", "b": "user-b"})
+        tools = StackOneToolSet(api_key="k").fetch_tools(account_ids=["a", "b"])
+        assert sorted(t.name for t in tools) == ["tool_a", "tool_b"]
+        assert len(calls) == 1
+        assert sorted((h["x-account-id"], h.get("x-end-user-id", "")) for h in mcp.listed) == [
+            ("a", ""),
+            ("a", "user-a"),
+            ("b", ""),
+            ("b", "user-b"),
+        ]
+
+    def test_a_lookup_joins_the_latest_accounts_listing_still_in_flight(self, monkeypatch):
+        """An older listing finishing must not stop a lookup joining a newer one in flight."""
+        joined = threading.Event()
+
+        class Listing(concurrent.futures.Future):  # type: ignore[type-arg]
+            def result(self, timeout: float | None = None) -> Any:
+                joined.set()
+                return super().result(timeout)
+
+        monkeypatch.setattr(concurrent.futures, "Future", Listing)
+        calls: list[int] = []
+        started = [threading.Event(), threading.Event()]
+        release = [threading.Event(), threading.Event()]
+
+        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
+            index = len(calls)
+            calls.append(index)
+            if index < 2:
+                started[index].set()
+                assert release[index].wait(timeout=5)
+            body = [_account("a", shared=False, origin_username="user-a")]
+            return httpx.Response(200, json=body, request=request)
+
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+        toolset = StackOneToolSet(api_key="k")
+        older = threading.Thread(target=toolset.fetch_accounts)
+        older.start()
+        assert started[0].wait(timeout=5)
+        newer = threading.Thread(target=toolset.fetch_accounts)
+        newer.start()
+        assert started[1].wait(timeout=5)
+        release[0].set()
+        older.join(timeout=5)
+
+        found: list[bool] = []
+        lookup = threading.Thread(target=lambda: found.append(toolset._look_up_end_user("a", _refusal("a"))))
+        lookup.start()
+        assert joined.wait(timeout=5)
+        try:
+            assert len(calls) == 2
+        finally:
+            release[1].set()
+            lookup.join(timeout=5)
+            newer.join(timeout=5)
+        assert found == [True]

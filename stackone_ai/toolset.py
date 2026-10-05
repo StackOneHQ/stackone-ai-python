@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import copy
 import fnmatch
 import logging
@@ -27,6 +28,7 @@ from stackone_ai.tools import (
     _json_type,
     build_request_headers,
     fetch_mcp_tools,
+    is_end_user_refusal,
     is_rate_limited,
     is_sdk_owned_header,
 )
@@ -73,13 +75,18 @@ _clock = time.monotonic
 
 @dataclass(frozen=True)
 class _Catalog:
-    """A cached catalog: each healthy account's listing, and when each failed one failed."""
+    """A cached catalog: each healthy account's listing, and when and how each failed one failed."""
 
     listings: dict[str | None, list[_Listing]]
     failed_at: dict[str | None, float] = field(default_factory=dict)
+    errors: dict[str | None, Exception] = field(default_factory=dict)
 
     def in_order(self, account_scope: list[str | None]) -> list[_Listing]:
         return [listing for account in account_scope for listing in self.listings.get(account, [])]
+
+    def failures(self) -> dict[str | None, Exception]:
+        """Each account left out of this catalog, with the error it failed with."""
+        return {account: self.errors[account] for account in self.failed_at if account in self.errors}
 
 
 _Item = TypeVar("_Item")
@@ -151,6 +158,7 @@ class StackOneToolSet:
         timeout: float | None = None,
         tool_mode: ToolMode | None = None,
         headers: Headers | None = None,
+        include_non_shared: bool = False,
     ) -> None:
         """Initialize StackOne tools with authentication
 
@@ -176,6 +184,10 @@ class StackOneToolSet:
                 cannot be set here. ``x-end-user-id`` can: it is passed through as
                 given, unless ``GET /accounts`` reported the account's end user,
                 which then replaces it.
+            include_non_shared: Whether account discovery uses non-shared accounts
+                (``shared`` false in ``GET /accounts``). Each belongs to a single end
+                user, so by default discovery skips them, with a warning naming them;
+                pass their ids to use them without this.
 
         Raises:
             ToolsetConfigError: If no API key is provided or found in environment, or
@@ -230,6 +242,14 @@ class StackOneToolSet:
         # Replaced whole by the next one, and kept by clear_catalog_cache(): it describes
         # the accounts, not the catalog.
         self._end_user_ids: dict[str, str] = {}
+        # Each account's provider, from the same GET /accounts and replaced with it: what
+        # execute() reads to tell whether an account that failed to list could have served
+        # an action.
+        self._providers: dict[str, str] = {}
+        # The GET /accounts in flight, if any: an account's end user is looked up by joining
+        # it rather than making another.
+        self._fetching_accounts: concurrent.futures.Future[list[JsonDict]] | None = None
+        self._include_non_shared = include_non_shared
         # Bumped at the start of every fetch_accounts() call, so two overlapping calls —
         # fetch_accounts() racing discovery, say — are ordered by when they started
         # rather than when they returned: a slower, older-started response must not
@@ -317,9 +337,27 @@ class StackOneToolSet:
             without `account_ids` discovers and fetches the catalog for every active account.
             If your organization has many accounts, pass explicit `account_ids` to avoid
             excessive round trips and blowing model context limits.
+
+            Discovery skips non-shared accounts unless the toolset was built with
+            ``include_non_shared=True``.
+        """
+        mode = self._tool_mode if mode is _UNSET else mode
+        tools, _ = self._fetch_tools(account_ids, providers, actions, mode, retry_failed=False)
+        return tools
+
+    def _fetch_tools(
+        self,
+        account_ids: list[str] | None,
+        providers: list[str] | None,
+        actions: list[str] | None,
+        mode: ToolMode | None,
+        *,
+        retry_failed: bool,
+    ) -> tuple[Tools, dict[str | None, Exception]]:
+        """:meth:`fetch_tools`, and each account in scope it left out with the error it failed
+        with. ``retry_failed`` lists every account marked failed again now, not once it is due.
         """
         try:
-            mode = self._tool_mode if mode is _UNSET else mode
             # Captured before account resolution, which may discover accounts: a
             # clear_catalog_cache() landing mid-discovery must stop the catalog it
             # resolves to from being cached too, not just the discovered list itself.
@@ -332,7 +370,7 @@ class StackOneToolSet:
             # actions narrow the list in memory, so they must not force a refetch.
             # base_url and api_key belong here — leaving them out meant reassigning
             # either one kept serving the old catalog, still pointed at the old host.
-            listings = self._catalog(account_scope, mode, generation)
+            listings, failures = self._catalog(account_scope, mode, generation, retry_failed=retry_failed)
 
             all_tools = [
                 self._create_tool(tool_def, account, endpoint)
@@ -345,7 +383,7 @@ class StackOneToolSet:
             if actions:
                 all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
 
-            return Tools(all_tools)
+            return Tools(all_tools), failures
 
         except (ToolsetError, StackOneError):
             # StackOneAPIError carries the HTTP status. Re-wrapping it below would throw
@@ -394,8 +432,13 @@ class StackOneToolSet:
         return list(resolved)
 
     def _catalog(
-        self, account_scope: list[str | None], mode: ToolMode | None, generation: int
-    ) -> list[_Listing]:
+        self,
+        account_scope: list[str | None],
+        mode: ToolMode | None,
+        generation: int,
+        *,
+        retry_failed: bool = False,
+    ) -> tuple[list[_Listing], dict[str | None, Exception]]:
         """Every scoped account's catalog, from the cache where it can be.
 
         One unusable account must not cost the caller every other account's tools, so a
@@ -412,7 +455,13 @@ class StackOneToolSet:
         ``generation`` is the cache generation as of the start of the call that resolved
         ``account_scope``: a clear_catalog_cache() during account discovery must stop the
         catalog this scope resolves to from being cached, same as the discovered list.
+
+        Returned with each account left out and the error it failed with. ``retry_failed``
+        lists every account marked failed again now, without waiting for it to be due.
         """
+        if not account_scope:
+            # Discovery skipped every account: there is nothing to list.
+            return [], {}
         key = self._cache_key(account_scope, mode)
         with self._cache_lock:
             cached = self._catalog_cache.get(key)
@@ -423,10 +472,10 @@ class StackOneToolSet:
             due = [
                 account
                 for account, failed_at in cached.failed_at.items()
-                if now - failed_at >= FAILED_ACCOUNT_RETRY_SECONDS
+                if retry_failed or now - failed_at >= FAILED_ACCOUNT_RETRY_SECONDS
             ]
             if not due:
-                return cached.in_order(account_scope)
+                return cached.in_order(account_scope), cached.failures()
 
         # No param-style pin: arguments are sent verbatim and the server maps them with its
         # own reverse map, so the model sees whatever style the server serves.
@@ -437,8 +486,15 @@ class StackOneToolSet:
         def _fetch_for_account(
             account: str | None,
         ) -> list[_Listing]:
-            headers = self._build_mcp_headers(account)
-            listed = fetch_mcp_tools(endpoint, headers, timeout=self._timeout)
+            without_end_user = account is not None and self._end_user_id(account) is None
+            try:
+                listed = fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout)
+            except StackOneAPIError as exc:
+                # Refused for want of an end user it was sent without: look it up, and retry
+                # once with it.
+                if not (without_end_user and account is not None and self._look_up_end_user(account, exc)):
+                    raise
+                listed = fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout)
             return [(tool_def, account, endpoint) for tool_def in listed]
 
         def _store(catalog: _Catalog) -> None:
@@ -453,18 +509,21 @@ class StackOneToolSet:
                 if existing is not None:
                     merged_listings = {**existing.listings, **catalog.listings}
                     merged_failed_at = {**existing.failed_at, **catalog.failed_at}
+                    merged_errors = {**existing.errors, **catalog.errors}
                     for account in catalog.listings:
                         merged_failed_at.pop(account, None)
-                    catalog = _Catalog(merged_listings, merged_failed_at)
+                        merged_errors.pop(account, None)
+                    catalog = _Catalog(merged_listings, merged_failed_at, merged_errors)
                 self._catalog_cache[key] = catalog
 
         if len(account_scope) == 1:
             catalog = _Catalog({account_scope[0]: _fetch_for_account(account_scope[0])})
             _store(catalog)
-            return catalog.in_order(account_scope)
+            return catalog.in_order(account_scope), {}
 
         listings = dict(cached.listings) if cached else {}
         failed_at = dict(cached.failed_at) if cached else {}
+        errors = dict(cached.errors) if cached else {}
         failures: list[tuple[str | None, Exception]] = []
         for account, outcome in _fan_out(_fetch_for_account, due):
             if isinstance(outcome, Exception):
@@ -472,16 +531,18 @@ class StackOneToolSet:
             else:
                 listings[account] = outcome
                 failed_at.pop(account, None)
+                errors.pop(account, None)
         if not listings:
             raise _all_accounts_failed(failures)
         failed_now = _clock()
         for account, failure in failures:
             logger.warning("Skipping account that failed to list tools — %s: %s", account, failure)
             failed_at[account] = failed_now
+            errors[account] = failure
 
-        catalog = _Catalog(listings, failed_at)
+        catalog = _Catalog(listings, failed_at, errors)
         _store(catalog)
-        return catalog.in_order(account_scope)
+        return catalog.in_order(account_scope), catalog.failures()
 
     @staticmethod
     def _dedupe_global_tools(
@@ -520,8 +581,16 @@ class StackOneToolSet:
         the flipped mode partway through and cache search_execute meta tools under the
         individual-mode key, permanently, for every later caller.
         """
-        tools = self.fetch_tools(account_ids=account_ids, mode="search_execute")
-        return [tool for tool in tools if tool.name.endswith(suffix)]
+        tools, _ = self._meta_tools_and_failures(suffix, account_ids, retry_failed=False)
+        return tools
+
+    def _meta_tools_and_failures(
+        self, suffix: str, account_ids: list[str] | None, *, retry_failed: bool
+    ) -> tuple[list[StackOneTool], dict[str | None, Exception]]:
+        tools, failures = self._fetch_tools(
+            account_ids, None, None, "search_execute", retry_failed=retry_failed
+        )
+        return [tool for tool in tools if tool.name.endswith(suffix)], failures
 
     def search(
         self,
@@ -648,7 +717,12 @@ class StackOneToolSet:
             ToolsetConfigError: If ``action_id``, ``arguments`` or ``session_id`` is malformed,
                 or the action's connector is linked on more than one account in scope.
             ToolArgumentsError: If the arguments cannot be encoded as JSON.
-            ToolsetLoadError: If no connector matches.
+            ToolsetLoadError: If no connector matches, or an account in scope that could serve
+                the action failed to list. An account left out after failing is listed again
+                first, without waiting out ``FAILED_ACCOUNT_RETRY_SECONDS``; if it still
+                fails and its provider in ``GET /accounts`` is the action's connector, or no
+                ``GET /accounts`` has named its provider, the action is not run on another
+                account in its place.
             StackOneAPIError: If the action fails, including when the server rejects the
                 arguments.
         """
@@ -659,7 +733,23 @@ class StackOneToolSet:
         if session_id is not None and (not isinstance(session_id, str) or not session_id):
             raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
 
-        meta_tools = self._meta_tools("_execute_action", account_ids)
+        # Every account marked failed is listed again now: left out, it would leave the
+        # action to whichever account did list, which may be another end user's.
+        meta_tools, failed = self._meta_tools_and_failures("_execute_action", account_ids, retry_failed=True)
+        blocking = sorted(
+            (
+                (account, failure)
+                for account, failure in failed.items()
+                if account is not None and self._may_serve(account, action_id)
+            ),
+            key=lambda pair: pair[0],
+        )
+        if blocking:
+            raise ToolsetLoadError(
+                f"{action_id} may be served by an account that failed to list ("
+                + "; ".join(f"{account}: {failure}" for account, failure in blocking)
+                + "). Pass the account id to use, such as a search hit's account_id."
+            )
         matches = [
             tool
             for tool in meta_tools
@@ -749,9 +839,14 @@ class StackOneToolSet:
         # not one per action — is enough to find it.
         # The lowest id is the one a caller can predict, whatever order GET /accounts lists
         # them in.
-        first_account = min(self._resolve_account_ids(account_ids))
-        tool = self.fetch_tools(account_ids=[first_account], mode="search_execute").get_tool(
-            SUBMIT_FEEDBACK_TOOL_NAME
+        # No account at all when discovery skipped every one: then nothing serves the tool.
+        scope = self._resolve_account_ids(account_ids)
+        tool = (
+            self.fetch_tools(account_ids=[min(scope)], mode="search_execute").get_tool(
+                SUBMIT_FEEDBACK_TOOL_NAME
+            )
+            if scope
+            else None
         )
         if tool is None:
             raise ToolsetLoadError(
@@ -804,6 +899,14 @@ class StackOneToolSet:
             stem = stem[: -(len(account) + 1)]
         return stem.lower()
 
+    def _may_serve(self, account_id: str, action_id: str) -> bool:
+        """Whether an account could serve an action: its provider is the action's connector,
+        matched as a prefix as execute() routes, or no GET /accounts has named its provider.
+        """
+        with self._cache_lock:
+            provider = self._providers.get(account_id)
+        return provider is None or action_id.lower().startswith(provider.lower() + "_")
+
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Whether a tool belongs to one of the given providers (case-insensitive).
 
@@ -826,10 +929,13 @@ class StackOneToolSet:
         accounts with ``status == "active"`` can serve tools.
 
         For each account with ``shared`` false and an ``origin_username``, that username is
-        recorded as the account's end-user id, replacing the record of any call that
-        started before this one; a call that started earlier but finishes later records nothing. Every
-        MCP request this toolset's tools make for that account then carries it in
-        ``x-end-user-id``, which the API requires for a non-shared account.
+        recorded as the account's end-user id, and each account's ``provider`` as its
+        provider. The record replaces that of any call that started before this one; a call
+        that started earlier but finishes after this one records nothing. Every MCP request
+        this toolset's tools make for that account then carries it in ``x-end-user-id``,
+        which the API requires for a non-shared account. An account passed by id is listed
+        here only when the API refuses one of its requests for want of an end user: the
+        toolset then calls this once, and retries the request with the end user it recorded.
 
         Raises:
             StackOneAPIError: If the API answers with an error, including a 429 that
@@ -838,6 +944,28 @@ class StackOneToolSet:
         with self._cache_lock:
             self._accounts_sequence += 1
             sequence = self._accounts_sequence
+            fetching: concurrent.futures.Future[list[JsonDict]] = concurrent.futures.Future()
+            self._fetching_accounts = fetching
+        return self._settle_accounts(fetching, sequence)
+
+    def _settle_accounts(
+        self, fetching: concurrent.futures.Future[list[JsonDict]], sequence: int
+    ) -> list[JsonDict]:
+        """Make the GET /accounts started as ``sequence``, settling ``fetching`` with it."""
+        try:
+            accounts = self._request_accounts(sequence)
+        except BaseException as exc:
+            fetching.set_exception(exc)
+            raise
+        else:
+            fetching.set_result(accounts)
+            return accounts
+        finally:
+            with self._cache_lock:
+                if self._fetching_accounts is fetching:
+                    self._fetching_accounts = None
+
+    def _request_accounts(self, sequence: int) -> list[JsonDict]:
         url = f"{self.base_url.rstrip('/')}/accounts"
         try:
             with RateLimitRetryingClient(timeout=self._timeout, retry_within=self._timeout) as client:
@@ -889,14 +1017,52 @@ class StackOneToolSet:
             and isinstance(account.get("origin_username"), str)
             and account["origin_username"]
         }
+        providers = {
+            account["id"]: account["provider"]
+            for account in accounts
+            if isinstance(account, dict)
+            and isinstance(account.get("id"), str)
+            and account["id"]
+            and isinstance(account.get("provider"), str)
+            and account["provider"]
+        }
         with self._cache_lock:
-            # Only if no later-started call's result is already in: a call that started
-            # first but finished last is answering a question a newer call has since
-            # answered better, and must not clobber it.
-            if sequence >= self._end_user_ids_sequence:
+            # Only if newer, by start order, than the result last written: a call that
+            # started first but finished last is answering a question a newer call has
+            # since answered better, and must not clobber it. Compared with the last
+            # write rather than the last start, so a newer call that fails leaves this
+            # one to write.
+            if sequence > self._end_user_ids_sequence:
                 self._end_user_ids = end_user_ids
+                self._providers = providers
                 self._end_user_ids_sequence = sequence
         return accounts
+
+    def _look_up_end_user(self, account_id: str, refusal: Exception) -> bool:
+        """Given the API's refusal of an account's request for want of its end user, list the
+        accounts and say whether that one now has an end user recorded to retry with.
+
+        Only the API's 400 naming this account counts. A GET /accounts already in flight is
+        joined rather than another made. If it fails, there is no end user: the caller raises
+        its refusal.
+        """
+        if not is_end_user_refusal(refusal, account_id):
+            return False
+        with self._cache_lock:
+            fetching = self._fetching_accounts
+            sequence = 0
+            if fetching is None:
+                self._accounts_sequence += 1
+                sequence = self._accounts_sequence
+                fetching = self._fetching_accounts = concurrent.futures.Future()
+        if sequence:
+            with contextlib.suppress(Exception):
+                self._settle_accounts(fetching, sequence)
+        try:
+            fetching.result()
+        except Exception:
+            return False
+        return self._end_user_id(account_id) is not None
 
     def _end_user_id(self, account_id: str) -> str | None:
         """The end-user id GET /accounts recorded for an account, if it is not shared."""
@@ -914,6 +1080,9 @@ class StackOneToolSet:
         fetches the tool catalog for every account. If you have a large number of
         accounts, it is highly recommended to supply specific ``account_id`` or
         ``account_ids`` to avoid excessive API round trips and huge model contexts.
+
+        Non-shared accounts are skipped, with one warning naming them, unless the toolset was
+        built with ``include_non_shared=True``: each belongs to a single end user.
 
         Raises:
             ToolsetConfigError: If the key has no accounts, or none are usable.
@@ -966,6 +1135,21 @@ class StackOneToolSet:
                 f"None of this API key's {len(accounts)} linked accounts are active: {listed}. "
                 "Re-link them in the StackOne dashboard, or pass an account id explicitly."
             )
+
+        # Each non-shared account belongs to a single end user: discovering it would put one
+        # end user's tools in front of whoever uses this toolset.
+        if not self._include_non_shared:
+            skipped = sorted(
+                {a["id"] for a in accounts if a.get("id") in active and a.get("shared") is False}
+            )
+            if skipped:
+                logger.warning(
+                    "Discovery skipped %d non-shared account(s) (%s): each belongs to a single end "
+                    "user. Pass their account ids, or opt in to non-shared accounts, to use them.",
+                    len(skipped),
+                    ", ".join(skipped),
+                )
+                active = [account for account in active if account not in skipped]
 
         # Not kept if clear_catalog_cache() ran while the list was in flight: it may name
         # accounts the clear was meant to forget.
@@ -1021,6 +1205,7 @@ class StackOneToolSet:
             timeout=self._timeout,
         )
         tool._end_user_id_of = self._end_user_id
+        tool._look_up_end_user = self._look_up_end_user
         return tool
 
     def _normalize_schema_properties(self, schema: dict[str, Any]) -> dict[str, Any]:
