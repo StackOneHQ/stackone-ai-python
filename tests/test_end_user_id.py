@@ -8,6 +8,7 @@ accounts it records it, and sends it on every MCP request for that account.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 import httpx
@@ -234,6 +235,46 @@ class TestRecording:
         toolset.clear_catalog_cache()
         toolset.set_accounts(["a"])
         assert toolset._end_user_id("a") == "user-a"
+
+    def test_an_older_started_call_does_not_overwrite_a_newer_ones_record(self, monkeypatch):
+        """fetch_accounts() racing another, e.g. via discovery: start order wins, not finish order."""
+        toolset = StackOneToolSet(api_key="k")
+        first_started = threading.Event()
+        second_started = threading.Event()
+        release_first = threading.Event()
+        release_second = threading.Event()
+
+        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
+            if not first_started.is_set():
+                first_started.set()
+                assert release_first.wait(timeout=5)
+                body = [_account("a", shared=False, origin_username="user-a")]
+            else:
+                second_started.set()
+                assert release_second.wait(timeout=5)
+                body = [_account("b", shared=False, origin_username="user-b")]
+            return httpx.Response(200, json=body, request=request)
+
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+
+        first = threading.Thread(target=toolset.fetch_accounts)
+        first.start()
+        assert first_started.wait(timeout=5)
+
+        second = threading.Thread(target=toolset.fetch_accounts)
+        second.start()
+        assert second_started.wait(timeout=5)
+
+        # Started second, finishes first.
+        release_second.set()
+        second.join(timeout=5)
+        # Started first, finishes last: its stale response must not overwrite the
+        # newer-started call's record.
+        release_first.set()
+        first.join(timeout=5)
+
+        assert toolset._end_user_id("b") == "user-b"
+        assert toolset._end_user_id("a") is None
 
 
 class TestHeaders:

@@ -230,6 +230,12 @@ class StackOneToolSet:
         # Replaced whole by the next one, and kept by clear_catalog_cache(): it describes
         # the accounts, not the catalog.
         self._end_user_ids: dict[str, str] = {}
+        # Bumped at the start of every fetch_accounts() call, so two overlapping calls —
+        # fetch_accounts() racing discovery, say — are ordered by when they started
+        # rather than when they returned: a slower, older-started response must not
+        # overwrite a newer one that already landed.
+        self._accounts_sequence = 0
+        self._end_user_ids_sequence = 0
         self._tool_mode: ToolMode | None = tool_mode
 
         # 2.x read STACKONE_ACCOUNT_ID; 3.x never does, and without an account it uses every
@@ -828,6 +834,9 @@ class StackOneToolSet:
             StackOneAPIError: If the API answers with an error, including a 429 that
                 outlasted its retries.
         """
+        with self._cache_lock:
+            self._accounts_sequence += 1
+            sequence = self._accounts_sequence
         url = f"{self.base_url.rstrip('/')}/accounts"
         try:
             with RateLimitRetryingClient(timeout=self._timeout, retry_within=self._timeout) as client:
@@ -880,7 +889,12 @@ class StackOneToolSet:
             and account["origin_username"]
         }
         with self._cache_lock:
-            self._end_user_ids = end_user_ids
+            # Only if no later-started call's result is already in: a call that started
+            # first but finished last is answering a question a newer call has since
+            # answered better, and must not clobber it.
+            if sequence >= self._end_user_ids_sequence:
+                self._end_user_ids = end_user_ids
+                self._end_user_ids_sequence = sequence
         return accounts
 
     def _end_user_id(self, account_id: str) -> str | None:
