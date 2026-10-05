@@ -225,6 +225,10 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
   30 seconds, after which the next call lists it again. If every account fails with
   the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
   otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
+  `execute()` does not route around a failed account: it lists it again at once, and if
+  it still fails and its provider is the action's connector — or no `GET /accounts` has
+  named its provider — it raises `ToolsetLoadError` rather than run the action on another
+  account. Pass the account id to use.
 - **`providers`** — matched **case-insensitively** as a full prefix, so
   `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
   contains an underscore must be spelled in full (`["browser_linkedin"]`, not
@@ -242,16 +246,28 @@ tools = toolset.fetch_tools(providers=["linear"])
 
 ### Non-shared accounts
 
+A non-shared account (`shared: false` in `GET /accounts`) belongs to a single end user.
+Discovery skips them, so a toolset built from an API key alone never puts one end user's
+accounts in front of everyone, and logs once per discovery which it skipped. Pass their
+ids to use them, or opt in:
+
+```python
+toolset = StackOneToolSet(include_non_shared=True)  # discovery includes non-shared accounts
+```
+
 The API requires every MCP request for a non-shared account to carry that account's
 end-user id in `x-end-user-id`. Whenever the SDK calls `GET /accounts`, during discovery
 or in `fetch_accounts()`, it records the `origin_username` of each account with
-`shared: false`, and sends it as `x-end-user-id` on every request for that account,
-including from tools it built earlier. Each successful `GET /accounts` replaces the
-record, unless a later-started one has already replaced it; `clear_catalog_cache()` keeps it.
+`shared: false`, skipped or not, and sends it as `x-end-user-id` on every request for that
+account, including from tools it built earlier. Each successful `GET /accounts` replaces
+the record unless a later-started one has already been recorded; `clear_catalog_cache()`
+keeps it.
 
-With explicit account ids the SDK does not call `GET /accounts`, so it sends no
-`x-end-user-id`. To use a non-shared account by id, call `toolset.fetch_accounts()`
-once first:
+With explicit account ids the SDK does not call `GET /accounts` up front. When the API
+refuses a request for an account with no recorded end user because it needs one, the SDK
+calls `GET /accounts` once (joining one already in flight), and if that names the account's
+end user, sends the request again with it; otherwise the API's 400 is raised. Calling
+`toolset.fetch_accounts()` first saves that round trip:
 
 ```python
 toolset = StackOneToolSet(account_id="acc-123")

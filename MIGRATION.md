@@ -245,12 +245,18 @@ otherwise the SDK now falls back to `STACKONE_BASE_URL` before the default,
 accounts, pass `account_id=`, `account_ids=` or call `set_accounts()` so the SDK does
 not fetch every catalog.
 
+**Discovery skips non-shared accounts.** An account with `shared: false` belongs to a
+single end user, so discovery leaves it out and logs a warning naming it. Pass its id, or
+construct the toolset with `include_non_shared=True`, to use it.
+
 **A non-shared account's end user is sent for you.** The API requires every MCP request
 for a non-shared account to carry the account's end-user id in `x-end-user-id`. Whenever
 the SDK calls `GET /accounts` (discovery, or `fetch_accounts()`), it records the
 `origin_username` of each account with `shared: false` and sends it as `x-end-user-id` on
-every request for that account. With explicit account ids it makes no `GET /accounts` and
-sends none: call `toolset.fetch_accounts()` once first to use a non-shared account by id.
+every request for that account. With explicit account ids it makes no `GET /accounts` up
+front: the first request for a non-shared account is refused, and the SDK then calls
+`GET /accounts` once and retries it with the end user it records. Call
+`toolset.fetch_accounts()` once first to skip that round trip.
 
 **`STACKONE_ACCOUNT_ID` is not read.** Pass the account id as `account_id=` or
 `execute={"account_ids": [...]}`. A toolset constructed with neither while
@@ -289,7 +295,9 @@ the cached catalog for 30 seconds, unless every account fails: then the accounts
 `ToolsetLoadError` with each account's error in `failures`. A 429 that outlasts its retries
 is never skipped — it aborts the whole call, even when other accounts are healthy, since
 it is the key's rate limit rather than that account's failure. A single-account scope
-raises its failure rather than skipping or caching it.
+raises its failure rather than skipping or caching it. `execute()` lists an account left out
+this way again at once, and refuses to run the action on another account while it still
+fails, if its provider is the action's connector or unknown.
 
 ## Feedback
 
