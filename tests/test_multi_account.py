@@ -285,16 +285,21 @@ class TestExecuteRouting:
         assert (seen["tool"], seen["account"]) == (f"hris_{account}_execute_action", account)
 
 
-def _providers(monkeypatch: pytest.MonkeyPatch, **providers: str) -> None:
-    """Answer GET /accounts with each account on its provider."""
+def _providers(monkeypatch: pytest.MonkeyPatch, status: int = 200, **providers: str) -> list[int]:
+    """Answer GET /accounts with each account on its provider, or fail with ``status``."""
     body = [
         {"id": account, "provider": provider, "status": "active"} for account, provider in providers.items()
     ]
-    monkeypatch.setattr(
-        httpx.HTTPTransport,
-        "handle_request",
-        lambda _self, request: httpx.Response(200, json=body, request=request),
-    )
+    calls: list[int] = []
+
+    def handle(_self: Any, request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if status != 200:
+            return httpx.Response(status, text="nope", request=request)
+        return httpx.Response(200, json=body, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+    return calls
 
 
 class TestExecuteWithAFailedAccount:
@@ -327,17 +332,36 @@ class TestExecuteWithAFailedAccount:
         assert seen == {}
 
     def test_accounts_with_no_known_provider_refuse_in_account_order(self, monkeypatch):
-        """No GET /accounts was made, so either could be on the action's connector."""
+        """GET /accounts failed, so either could be on the action's connector."""
         _, seen = self._execute(
             monkeypatch,
             acc3=RuntimeError("down"),
             acc1=RuntimeError("boom"),
             acc2=["hris_acc2_execute_action"],
         )
+        calls = _providers(monkeypatch, status=403)
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc3", "acc2", "acc1"]})
         with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc1: boom; acc3: down\)\."):
             toolset.execute("hris_list_employees")
         assert seen == {}
+        assert len(calls) == 1
+
+    def test_explicit_ids_learn_their_providers_with_one_accounts_listing(self, monkeypatch, clock):
+        """With explicit ids no GET /accounts was made, so execute() makes one to learn the
+        failed account's provider before deciding."""
+        listing, seen = self._execute(
+            monkeypatch, acc1=RuntimeError("dead"), acc2=["hris_acc2_execute_action"]
+        )
+        calls = _providers(monkeypatch, acc1="crm", acc2="hris")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.execute("hris_list_employees")
+        assert seen == {"account": "acc2"}
+        assert len(calls) == 1
+
+        # Known now: the next call neither lists accounts nor re-lists the dead one.
+        listing.listed.clear()
+        toolset.execute("hris_list_employees")
+        assert (len(calls), listing.listed) == (1, [])
 
     def test_an_account_on_another_provider_does_not(self, monkeypatch):
         _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
@@ -360,6 +384,7 @@ class TestExecuteWithAFailedAccount:
 
     def test_a_failed_account_is_listed_again_at_once_and_then_routes_as_usual(self, monkeypatch, clock):
         listing, _ = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
+        _providers(monkeypatch, acc1="hris", acc2="hris")
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
         # Left out of the search_execute catalog, which execute() lists in, for 30s from now.
         assert [t.name for t in toolset.fetch_tools(mode="search_execute")] == ["hris_acc2_execute_action"]

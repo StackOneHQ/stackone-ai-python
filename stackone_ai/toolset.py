@@ -728,7 +728,9 @@ class StackOneToolSet:
                 ``GET /accounts`` is the action's connector, or whose provider no
                 ``GET /accounts`` has named, is listed again first, without waiting out
                 ``FAILED_ACCOUNT_RETRY_SECONDS``; if it still fails, the action is not run on
-                another account in its place.
+                another account in its place. When a failed account's provider is not known,
+                one ``GET /accounts`` is made first to learn it; if that fails, it stays
+                unknown.
             StackOneAPIError: If the action fails, including when the server rejects the
                 arguments.
         """
@@ -740,12 +742,21 @@ class StackOneToolSet:
             raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
 
         suffix = "_execute_action"
+        # At most one GET /accounts per call, to learn the providers of failed accounts: with
+        # explicit ids none was made, and an unknown provider could serve any action.
+        learnt = False
+
+        def _learn_providers(accounts: list[str]) -> None:
+            nonlocal learnt
+            if not learnt:
+                learnt = self._learn_providers(accounts)
 
         def _retry_failed(cached: _Catalog) -> list[str | None]:
             # An account marked failed that could serve the action is listed again now: left
             # out, it would leave the action to whichever account did list, which may be
             # another end user's. One whose provider cannot serve it is not, so it does not
             # cost every other connector's actions its timeout.
+            _learn_providers([account for account in cached.failed_at if account is not None])
             listed = [
                 self._connector_of_name(tool_def.name, account, suffix)
                 for account, listings in cached.listings.items()
@@ -759,6 +770,7 @@ class StackOneToolSet:
             ]
 
         meta_tools, failed = self._meta_tools_and_failures(suffix, account_ids, retry_failed=_retry_failed)
+        _learn_providers([account for account in failed if account is not None])
         connectors = [self._connector_of(tool, suffix) for tool in meta_tools]
         blocking = sorted(
             (
@@ -1091,6 +1103,21 @@ class StackOneToolSet:
         """
         if not is_end_user_refusal(refusal, account_id):
             return False
+        try:
+            self._join_accounts_listing()
+        except Exception as exc:
+            # A rate limit is the key's, not the account's, and stays fatal to a fan-out.
+            if is_rate_limited(exc):
+                raise
+            return False
+        return self._end_user_id(account_id) is not None
+
+    def _join_accounts_listing(self) -> None:
+        """Wait for the GET /accounts in flight, or make one: what it records is then current.
+
+        Raises:
+            Exception: Whatever that GET /accounts failed with.
+        """
         with self._cache_lock:
             fetching = self._fetching_accounts
             sequence = 0
@@ -1101,14 +1128,22 @@ class StackOneToolSet:
         if sequence:
             with contextlib.suppress(Exception):
                 self._settle_accounts(fetching, sequence)
+        fetching.result()
+
+    def _learn_providers(self, account_ids: list[str]) -> bool:
+        """If any of these accounts' providers is unknown, join or make one GET /accounts to
+        learn it, and say whether it did. If that fails the providers stay unknown, except
+        that a rate limit is raised.
+        """
+        with self._cache_lock:
+            if all(account in self._providers for account in account_ids):
+                return False
         try:
-            fetching.result()
+            self._join_accounts_listing()
         except Exception as exc:
-            # A rate limit is the key's, not the account's, and stays fatal to a fan-out.
             if is_rate_limited(exc):
                 raise
-            return False
-        return self._end_user_id(account_id) is not None
+        return True
 
     def _end_user_id(self, account_id: str) -> str | None:
         """The end-user id GET /accounts recorded for an account, if it is not shared."""
