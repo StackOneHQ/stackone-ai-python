@@ -401,6 +401,14 @@ class TestExecuteWithAFailedAccount:
         toolset.fetch_tools(mode="search_execute")
         assert listing.listed == []
 
+    def test_an_account_that_fails_during_the_call_is_not_listed_again_in_it(self, monkeypatch, clock):
+        """Listing it again at once, as Node once did, would only double the wait."""
+        listing, _ = self._execute(monkeypatch, acc1=RuntimeError("hangs"), acc2=["hris_acc2_execute_action"])
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        with pytest.raises(ToolsetLoadError):
+            toolset.execute("hris_list_employees")
+        assert sorted(listing.listed) == ["acc1", "acc2"]
+
     def test_a_failed_account_on_another_provider_is_not_listed_again(self, monkeypatch, clock):
         """A hanging crm account must not cost every hris action its timeout."""
         listing, seen = self._execute(
