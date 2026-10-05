@@ -69,7 +69,8 @@ FAILED_ACCOUNT_RETRY_SECONDS = 30.0
 
 Its healthy siblings' listings are cached all the same. A later call within this window
 serves them without the failed account, and without warning about it again; the first
-call after it lists the failed account again.
+call after it lists the failed account again. ``execute()`` does not wait: it lists one
+that could serve its action again straight away.
 """
 
 # Looked up at call time, so tests can move it on rather than wait.
@@ -197,7 +198,7 @@ class StackOneToolSet:
                 ``account_id`` is an empty string
         """
         # An empty account_id is usually an unset variable, and treating it as unset would
-        # silently widen every call to all active accounts.
+        # silently widen every call to all active shared accounts.
         if account_id == "":
             raise ToolsetConfigError("account_id must not be an empty string")
         api_key_value = api_key or os.getenv("STACKONE_API_KEY")
@@ -262,14 +263,15 @@ class StackOneToolSet:
         self._tool_mode: ToolMode | None = tool_mode
 
         # 2.x read STACKONE_ACCOUNT_ID; 3.x never does, and without an account it uses every
-        # active account on the key. Anyone upgrading with only the variable set would
+        # active shared account on the key. Anyone upgrading with only the variable set would
         # otherwise widen to other end users' accounts with no sign of it. An empty
         # account_ids list is unset too, the same as _resolve_account_ids() treats it.
         scoped = account_id is not None or bool(self._account_ids)
         if os.getenv("STACKONE_ACCOUNT_ID") and not scoped:
             logger.warning(
                 "STACKONE_ACCOUNT_ID is set, but the SDK does not read it: with no account id passed, "
-                "every active account on this API key is used. Pass an account id to scope the toolset."
+                "every active shared account on this API key is used. Pass an account id to scope the "
+                "toolset."
             )
 
     def set_accounts(self, account_ids: list[str] | None) -> StackOneToolSet:
@@ -337,7 +339,8 @@ class StackOneToolSet:
 
         Note:
             For organizations with multiple connected accounts, calling `fetch_tools()`
-            without `account_ids` discovers and fetches the catalog for every active account.
+            without `account_ids` discovers and fetches the catalog for every active shared
+            account (non-shared ones too with ``include_non_shared=True``).
             If your organization has many accounts, pass explicit `account_ids` to avoid
             excessive round trips and blowing model context limits.
 
@@ -424,7 +427,8 @@ class StackOneToolSet:
         """The accounts a call is scoped to, in the order they were given or discovered.
 
         The argument, then ``set_accounts()``, then the constructor's ``account_id``, then
-        every active account ``GET /accounts`` lists.
+        every active shared account ``GET /accounts`` lists (non-shared ones too with
+        ``include_non_shared=True``).
         """
         if account_ids is not None:
             account_ids = self._validate_account_ids(account_ids)
@@ -610,7 +614,8 @@ class StackOneToolSet:
         Args:
             query: What you want to do, e.g. "list recent comments".
             top_k: Maximum results, across every connector searched.
-            account_ids: Restrict to these accounts. Defaults to all active ones.
+            account_ids: Restrict to these accounts. Defaults to every active shared one
+                (non-shared ones too with ``include_non_shared=True``).
 
         Returns:
             At most ``top_k`` action dicts, best first across every connector, each carrying
@@ -838,7 +843,8 @@ class StackOneToolSet:
 
         Calls the server's ``stackone_submit_feedback`` tool once, through the account with
         the lowest id among those the call is scoped to: ``account_ids``, or else the
-        toolset's, or else every active one. Pass the ``session_id`` from a :meth:`search`
+        toolset's, or else every active shared one (non-shared ones too with
+        ``include_non_shared=True``). Pass the ``session_id`` from a :meth:`search`
         hit to attach the feedback to that session.
 
         Args:

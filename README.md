@@ -209,7 +209,7 @@ applied locally to one cached listing — changing a filter never refetches. Cal
 ```python
 toolset = StackOneToolSet()
 
-toolset.fetch_tools()                                    # every tool, every active account
+toolset.fetch_tools()                                    # every tool, every active shared account
 toolset.fetch_tools(providers=["linear"])                # one connector
 toolset.fetch_tools(actions=["linear_list_*"])           # one connector's list actions
 toolset.fetch_tools(actions=["linear_get_issue"])        # exactly one tool
@@ -219,16 +219,18 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 ```
 
 - **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
-  your active accounts. An empty list means "no filter", not "no accounts". A
+  your active shared accounts (non-shared ones too with `include_non_shared=True`). An empty list means "no filter", not "no accounts". A
   single failing account is logged and skipped, not fatal — unless it is rate
   limited (see [Rate limits](#rate-limits)) — and left out of the cached catalog for
   30 seconds, after which the next call lists it again. If every account fails with
   the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
   otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
-  `execute()` does not route around a failed account: it lists it again at once, and if
-  it still fails and its provider is the action's connector — or no `GET /accounts` has
-  named its provider — it raises `ToolsetLoadError` rather than run the action on another
-  account. Pass the account id to use.
+  `execute()` does not route around a failed account that could serve the action — one
+  whose provider is the action's connector, or unknown even after one `GET /accounts` to
+  learn it: it lists it again straight away rather than after 30 seconds, and if it still
+  fails it raises `ToolsetLoadError` rather than run the action on another account. Pass
+  the account id to use. A failed account on another provider is left out without
+  being listed again.
 - **`providers`** — matched **case-insensitively** as a full prefix, so
   `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
   contains an underscore must be spelled in full (`["browser_linkedin"]`, not

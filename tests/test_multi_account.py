@@ -540,7 +540,7 @@ class TestAccountIdEnvironmentVariable:
 
     WARNING = (
         "STACKONE_ACCOUNT_ID is set, but the SDK does not read it: with no account id passed, every "
-        "active account on this API key is used. Pass an account id to scope the toolset."
+        "active shared account on this API key is used. Pass an account id to scope the toolset."
     )
 
     @pytest.mark.parametrize(

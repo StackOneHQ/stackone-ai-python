@@ -241,7 +241,8 @@ otherwise the SDK now falls back to `STACKONE_BASE_URL` before the default,
 
 **With no account id, the SDK discovers your accounts.** In 2.x, calling
 `fetch_tools()` with no account listed tools without an `x-account-id`. In 3.0 it asks
-`GET /accounts` and lists the catalog of every active account. If you have many
+`GET /accounts` and lists the catalog of every active shared account (non-shared ones
+too with `include_non_shared=True`). If you have many
 accounts, pass `account_id=`, `account_ids=` or call `set_accounts()` so the SDK does
 not fetch every catalog.
 
@@ -266,7 +267,7 @@ front: the first request for a non-shared account is refused, and the SDK then c
 **An empty account id raises.** `StackOneToolSet(account_id="")` raises
 `ToolsetConfigError`, where it used to be treated as no account at all. An account id
 read from an environment variable that is set but empty now raises too, rather than
-quietly reaching every active account:
+quietly reaching every active shared account:
 
 ```python
 # Raises when STACKONE_ACCOUNT_ID is set to ""
@@ -296,9 +297,10 @@ the cached catalog for 30 seconds, unless every account fails: then the accounts
 `ToolsetLoadError` with each account's error in `failures`. A 429 that outlasts its retries
 is never skipped — it aborts the whole call, even when other accounts are healthy, since
 it is the key's rate limit rather than that account's failure. A single-account scope
-raises its failure rather than skipping or caching it. `execute()` lists an account left out
-this way again at once, and refuses to run the action on another account while it still
-fails, if its provider is the action's connector or unknown.
+raises its failure rather than skipping or caching it. `execute()` does not wait the 30
+seconds for an account that could serve the action, one whose provider is the action's
+connector or unknown after one `GET /accounts` to learn it: it lists it again straight
+away, and refuses to run the action on another account while it still fails.
 
 ## Feedback
 
