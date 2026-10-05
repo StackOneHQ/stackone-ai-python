@@ -247,7 +247,7 @@ end-user id in `x-end-user-id`. Whenever the SDK calls `GET /accounts`, during d
 or in `fetch_accounts()`, it records the `origin_username` of each account with
 `shared: false`, and sends it as `x-end-user-id` on every request for that account,
 including from tools it built earlier. Each successful `GET /accounts` replaces the
-record; `clear_catalog_cache()` keeps it.
+record, unless a later-started one has already replaced it; `clear_catalog_cache()` keeps it.
 
 With explicit account ids the SDK does not call `GET /accounts`, so it sends no
 `x-end-user-id`. To use a non-shared account by id, call `toolset.fetch_accounts()`

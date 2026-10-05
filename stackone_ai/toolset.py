@@ -826,7 +826,8 @@ class StackOneToolSet:
         accounts with ``status == "active"`` can serve tools.
 
         For each account with ``shared`` false and an ``origin_username``, that username is
-        recorded as the account's end-user id, replacing what the last call recorded. Every
+        recorded as the account's end-user id, replacing the record of any call that
+        started before this one; a call that started earlier but finishes later records nothing. Every
         MCP request this toolset's tools make for that account then carries it in
         ``x-end-user-id``, which the API requires for a non-shared account.
 
