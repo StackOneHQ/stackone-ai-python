@@ -612,6 +612,17 @@ def _no_active_accounts(mp, log) -> Emitted:
     return error, {"count": 2, "accounts": "linear (inactive), jira (error)"}
 
 
+def _no_shared_accounts(mp, log) -> Emitted:
+    accounts = [
+        {"id": "a", "provider": "linear", "status": "active", "shared": False, "origin_username": "u1"},
+        {"id": "b", "provider": "jira", "status": "active", "shared": False, "origin_username": "u2"},
+        {"id": "c", "provider": "jira", "status": "error", "shared": True},
+    ]
+    _accounts_answer(mp, lambda _r: httpx.Response(200, json=accounts))
+    error = _raised(ToolsetConfigError, StackOneToolSet(api_key="k").fetch_tools)
+    return error, {"count": 2}
+
+
 def _all_accounts_failed(mp, log) -> Emitted:
     failures = {"acc-1": StackOneAPIError("gone", 412, None), "acc-2": ToolsetLoadError("boom")}
 
@@ -789,6 +800,7 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "accounts-unexpected-shape": _accounts_unexpected_shape,
     "no-linked-accounts": _no_linked_accounts,
     "no-active-accounts": _no_active_accounts,
+    "no-shared-accounts": _no_shared_accounts,
     "all-accounts-failed": _all_accounts_failed,
     "no-connector-returned-results": _no_connector_returned_results,
     "fetch-tools-failed": _fetch_tools_failed,
