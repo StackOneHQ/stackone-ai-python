@@ -503,6 +503,32 @@ def _account_id_env_ignored(mp, log) -> Emitted:
     return warning, {}
 
 
+def _connector_account_unavailable(mp, log) -> Emitted:
+    mp.setattr(
+        "stackone_ai.toolset.fetch_mcp_tools",
+        _failing_for({"acc-2"}, ToolsetLoadError("boom"), "linear_{account}_execute_action"),
+    )
+    # Explicit ids: no GET /accounts, so acc-2's provider is unknown and it blocks.
+    error = _raised(
+        ToolsetLoadError,
+        lambda: StackOneToolSet(api_key="k").execute("linear_list_issues", account_ids=["acc-1", "acc-2"]),
+    )
+    return error, {"action_id": "linear_list_issues", "failures": "acc-2: boom"}
+
+
+def _non_shared_accounts_skipped(mp, log) -> Emitted:
+    accounts = [
+        {"id": "acc-1", "provider": "linear", "status": "active", "shared": True},
+        {"id": "acc-3", "provider": "linear", "status": "active", "shared": False, "origin_username": "u3"},
+        {"id": "acc-2", "provider": "linear", "status": "active", "shared": False, "origin_username": "u2"},
+    ]
+    mp.setattr(StackOneToolSet, "fetch_accounts", lambda _self: accounts)
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("linear_{account}_execute_action"))
+    StackOneToolSet(api_key="k").fetch_tools()
+    [warning] = _warnings(log)
+    return warning, {"count": 2, "accounts": "acc-2, acc-3"}
+
+
 def _mcp_timeout(mp, log) -> Emitted:
     return _describe_mcp_failure(TimeoutError(), ENDPOINT, 0.5), {"endpoint": ENDPOINT, "timeout": 0.5}
 
@@ -750,6 +776,8 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "duplicate-tool-names": _duplicate_tool_names,
     "ambiguous-connector": _ambiguous_connector,
     "account-id-env-ignored": _account_id_env_ignored,
+    "connector-account-unavailable": _connector_account_unavailable,
+    "non-shared-accounts-skipped": _non_shared_accounts_skipped,
     "mcp-timeout": _mcp_timeout,
     "mcp-http-failure": _mcp_http_failure,
     "mcp-failure": _mcp_failure,
