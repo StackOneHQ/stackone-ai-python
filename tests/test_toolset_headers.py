@@ -82,7 +82,7 @@ def test_sdk_owned_names_are_dropped_beneath_the_sdks_own_on_get_accounts(monkey
 
 
 def test_reaches_every_mcp_listing_and_call_request(monkeypatch: pytest.MonkeyPatch):
-    _accounts_response(monkeypatch)
+    seen = _accounts_response(monkeypatch)
     mcp = _Mcp(monkeypatch)
     toolset = StackOneToolSet(api_key="k", headers={"X-Trace": "t"})
 
@@ -90,6 +90,8 @@ def test_reaches_every_mcp_listing_and_call_request(monkeypatch: pytest.MonkeyPa
     for tool in tools:
         tool.execute({})
 
+    # Explicit ids: no account discovery, so there is nothing for the header to reach there.
+    assert seen == []
     assert all(h.get("X-Trace") == "t" for h in mcp.listed)
     assert all(h.get("X-Trace") == "t" for h in mcp.called)
 
