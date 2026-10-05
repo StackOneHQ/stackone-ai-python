@@ -18,7 +18,7 @@ import pytest
 
 from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
 from stackone_ai.toolset import StackOneToolSet
-from stackone_ai.types import StackOneAPIError, ToolParameters, ToolsetLoadError
+from stackone_ai.types import StackOneAPIError, ToolParameters, ToolsetConfigError
 
 UCA_REFUSAL = "x-end-user-id header does not match account end user id for account acc1"
 
@@ -512,20 +512,36 @@ class TestDiscoverySkipsNonSharedAccounts:
         assert sorted(t.name for t in tools) == ["tool_a", "tool_b", "tool_c", "tool_d"]
         assert caplog.records == []
 
-    def test_skipping_every_account_leaves_nothing_to_list(self, monkeypatch, caplog):
-        _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="user-a")])
+    def test_a_key_with_only_non_shared_accounts_is_refused(self, monkeypatch, caplog):
+        """Rather than serving nothing: 0 tools, no search hits and no feedback tool."""
+        _accounts_response(
+            monkeypatch,
+            *[
+                [
+                    _account("a", shared=False, origin_username="user-a"),
+                    _account("b", shared=False, origin_username="user-b"),
+                    _account("c", shared=True, status="error"),
+                ]
+            ]
+            * 3,
+        )
         mcp = _Mcp(monkeypatch)
         toolset = StackOneToolSet(api_key="k")
+        message = (
+            "None of this API key's 2 active account(s) are shared: each belongs to a single end "
+            "user. Pass their account ids, or opt in to non-shared accounts, to use them."
+        )
         with caplog.at_level(logging.WARNING, logger="stackone.tools"):
-            assert len(toolset.fetch_tools()) == 0
-            assert toolset.search("anything") == []
-            with pytest.raises(ToolsetLoadError, match="did not serve stackone_submit_feedback"):
-                toolset.submit_feedback("positive", ["x"])
+            for call in (
+                toolset.fetch_tools,
+                lambda: toolset.search("anything"),
+                lambda: toolset.submit_feedback("positive", ["x"]),
+            ):
+                with pytest.raises(ToolsetConfigError) as excinfo:
+                    call()
+                assert str(excinfo.value) == message
         assert mcp.listed == []
-        assert [r.getMessage() for r in caplog.records] == [
-            "Discovery skipped 1 non-shared account(s) (a): each belongs to a single end user. "
-            "Pass their account ids, or opt in to non-shared accounts, to use them."
-        ]
+        assert caplog.records == []
 
 
 def _refusal(account: str) -> StackOneAPIError:

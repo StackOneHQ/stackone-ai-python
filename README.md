@@ -248,8 +248,9 @@ tools = toolset.fetch_tools(providers=["linear"])
 
 A non-shared account (`shared: false` in `GET /accounts`) belongs to a single end user.
 Discovery skips them, so a toolset built from an API key alone never puts one end user's
-accounts in front of everyone, and logs once per discovery which it skipped. Pass their
-ids to use them, or opt in:
+accounts in front of everyone, and logs once per discovery which it skipped. If every
+active account on the key is non-shared, discovery raises `ToolsetConfigError` instead.
+Pass their ids to use them, or opt in:
 
 ```python
 toolset = StackOneToolSet(include_non_shared=True)  # discovery includes non-shared accounts

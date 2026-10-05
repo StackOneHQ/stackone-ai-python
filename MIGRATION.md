@@ -246,7 +246,8 @@ accounts, pass `account_id=`, `account_ids=` or call `set_accounts()` so the SDK
 not fetch every catalog.
 
 **Discovery skips non-shared accounts.** An account with `shared: false` belongs to a
-single end user, so discovery leaves it out and logs a warning naming it. Pass its id, or
+single end user, so discovery leaves it out and logs a warning naming it; when every
+active account is non-shared it raises `ToolsetConfigError` instead. Pass its id, or
 construct the toolset with `include_non_shared=True`, to use it.
 
 **A non-shared account's end user is sent for you.** The API requires every MCP request

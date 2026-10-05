@@ -464,9 +464,6 @@ class StackOneToolSet:
         given the cached catalog and picks accounts marked failed in it to list again now,
         without waiting for them to be due.
         """
-        if not account_scope:
-            # Discovery skipped every account: there is nothing to list.
-            return [], {}
         key = self._cache_key(account_scope, mode)
         with self._cache_lock:
             cached = self._catalog_cache.get(key)
@@ -875,14 +872,9 @@ class StackOneToolSet:
         # not one per action — is enough to find it.
         # The lowest id is the one a caller can predict, whatever order GET /accounts lists
         # them in.
-        # No account at all when discovery skipped every one: then nothing serves the tool.
         scope = self._resolve_account_ids(account_ids)
-        tool = (
-            self.fetch_tools(account_ids=[min(scope)], mode="search_execute").get_tool(
-                SUBMIT_FEEDBACK_TOOL_NAME
-            )
-            if scope
-            else None
+        tool = self.fetch_tools(account_ids=[min(scope)], mode="search_execute").get_tool(
+            SUBMIT_FEEDBACK_TOOL_NAME
         )
         if tool is None:
             raise ToolsetLoadError(
@@ -1167,7 +1159,8 @@ class StackOneToolSet:
         built with ``include_non_shared=True``: each belongs to a single end user.
 
         Raises:
-            ToolsetConfigError: If the key has no accounts, or none are usable.
+            ToolsetConfigError: If the key has no accounts, none are active, or every active
+                one is non-shared and skipped.
         """
         if self._discovered_account_ids is not None:
             return self._discovered_account_ids
@@ -1224,6 +1217,12 @@ class StackOneToolSet:
             skipped = sorted(
                 {a["id"] for a in accounts if a.get("id") in active and a.get("shared") is False}
             )
+            if skipped and len(skipped) == len(set(active)):
+                raise ToolsetConfigError(
+                    f"None of this API key's {len(skipped)} active account(s) are shared: each "
+                    "belongs to a single end user. Pass their account ids, or opt in to non-shared "
+                    "accounts, to use them."
+                )
             if skipped:
                 logger.warning(
                     "Discovery skipped %d non-shared account(s) (%s): each belongs to a single end "
