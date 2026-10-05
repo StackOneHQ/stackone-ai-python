@@ -1098,8 +1098,9 @@ class StackOneToolSet:
         accounts and say whether that one now has an end user recorded to retry with.
 
         Only the API's 400 naming this account counts. A GET /accounts already in flight is
-        joined rather than another made. If it fails, there is no end user: the caller raises
-        its refusal.
+        joined rather than another made. If it fails, the refusal is raised with that failure
+        as its cause: a key without the scope to list accounts would otherwise be told only
+        that the header does not match.
         """
         if not is_end_user_refusal(refusal, account_id):
             return False
@@ -1109,7 +1110,7 @@ class StackOneToolSet:
             # A rate limit is the key's, not the account's, and stays fatal to a fan-out.
             if is_rate_limited(exc):
                 raise
-            return False
+            raise refusal from exc
         return self._end_user_id(account_id) is not None
 
     def _join_accounts_listing(self) -> None:

@@ -599,6 +599,25 @@ class TestAPassedIdLooksItsEndUserUp:
         assert len(mcp.listed) == 1
         assert len(calls) == 1
 
+    def test_a_failed_lookup_is_the_400s_cause(self, monkeypatch):
+        """A key without the scope to list accounts is told so, not only that the header is wrong."""
+        _accounts_response(monkeypatch, 403, 403)
+        mcp = _GuardedMcp(monkeypatch, {})
+        tool = StackOneToolSet(api_key="k", account_id="a").fetch_tools()[0]
+        mcp.end_users["a"] = "user-a"
+        with pytest.raises(StackOneAPIError) as called:
+            tool.execute({})
+
+        toolset = StackOneToolSet(api_key="k", account_id="a")
+        with pytest.raises(StackOneAPIError) as listed:
+            toolset.fetch_tools()
+
+        for excinfo in (called, listed):
+            assert excinfo.value.status_code == 400
+            cause = excinfo.value.__cause__
+            assert isinstance(cause, StackOneAPIError)
+            assert cause.status_code == 403
+
     def test_a_request_sent_with_a_recorded_end_user_is_not_retried(self, monkeypatch):
         calls = _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="stale")])
         mcp = _GuardedMcp(monkeypatch, {"a": "user-a"})
