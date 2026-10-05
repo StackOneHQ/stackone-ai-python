@@ -12,8 +12,8 @@ importers:
         specifier: 0.1.5
         version: 0.1.5(@modelcontextprotocol/sdk@1.24.3(zod@4.1.13))(hono@4.10.7)
       '@hono/node-server':
-        specifier: ^1.13.7
-        version: 1.19.17(hono@4.10.7)
+        specifier: ^2.1.3
+        version: 2.1.3(hono@4.10.7)
       '@modelcontextprotocol/sdk':
         specifier: 1.24.3
         version: 1.24.3(zod@4.1.13)
@@ -191,9 +191,9 @@ packages:
       '@modelcontextprotocol/sdk': ^1.12.0
       hono: '>=4.0.0'
 
-  '@hono/node-server@1.19.17':
-    resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
-    engines: {node: '>=18.14.1'}
+  '@hono/node-server@2.1.3':
+    resolution: {integrity: sha512-TA//nWMqPhbfdfneACk6t5a9eqbS9lABEPyKn0/xZTah3H3U2XaVg85rJFl0/Fyit0I552YDHgXGVSf3GwqbUw==}
+    engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
 
@@ -654,7 +654,7 @@ snapshots:
       '@modelcontextprotocol/sdk': 1.24.3(zod@4.1.13)
       hono: 4.10.7
 
-  '@hono/node-server@1.19.17(hono@4.10.7)':
+  '@hono/node-server@2.1.3(hono@4.10.7)':
     dependencies:
       hono: 4.10.7
 
