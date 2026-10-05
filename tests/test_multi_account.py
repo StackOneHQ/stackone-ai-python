@@ -376,6 +376,26 @@ class TestExecuteWithAFailedAccount:
         toolset.fetch_tools(mode="search_execute")
         assert listing.listed == []
 
+    def test_a_failed_account_on_another_provider_is_not_listed_again(self, monkeypatch, clock):
+        """A hanging crm account must not cost every hris action its timeout."""
+        listing, seen = self._execute(
+            monkeypatch, acc1=RuntimeError("hangs"), acc2=["hris_acc2_execute_action"]
+        )
+        _providers(monkeypatch, acc1="crm", acc2="hris")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.fetch_accounts()
+        toolset.execute("hris_list_employees")
+
+        listing.listed.clear()
+        toolset.execute("hris_list_employees")
+        assert listing.listed == []
+        assert seen == {"account": "acc2"}
+
+        # One that could serve the action is still listed again at once.
+        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc1: hangs\)"):
+            toolset.execute("crm_list_contacts")
+        assert listing.listed == ["acc1"]
+
 
 class TestPinnedArgumentsGoLast:
     """A pinned session_id and action_id are moved to the end, as in Node."""

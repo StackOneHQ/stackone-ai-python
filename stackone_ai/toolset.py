@@ -10,7 +10,7 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -57,6 +57,9 @@ _UNSET = object()
 
 _Listing = tuple[McpToolDefinition, str | None, str]
 """A served tool, the account that listed it, and the endpoint it was listed from."""
+
+_RetryFailed = Callable[["_Catalog"], Collection[str | None]]
+"""Given a cached catalog, the accounts marked failed in it to list again now."""
 
 # The search_actions meta tool's served schema caps top_k at 50.
 _MAX_TOP_K = 50
@@ -342,7 +345,7 @@ class StackOneToolSet:
             ``include_non_shared=True``.
         """
         mode = self._tool_mode if mode is _UNSET else mode
-        tools, _ = self._fetch_tools(account_ids, providers, actions, mode, retry_failed=False)
+        tools, _ = self._fetch_tools(account_ids, providers, actions, mode, retry_failed=None)
         return tools
 
     def _fetch_tools(
@@ -352,10 +355,11 @@ class StackOneToolSet:
         actions: list[str] | None,
         mode: ToolMode | None,
         *,
-        retry_failed: bool,
+        retry_failed: _RetryFailed | None,
     ) -> tuple[Tools, dict[str | None, Exception]]:
         """:meth:`fetch_tools`, and each account in scope it left out with the error it failed
-        with. ``retry_failed`` lists every account marked failed again now, not once it is due.
+        with. ``retry_failed`` picks, from a cached catalog, the accounts marked failed to list
+        again now rather than once they are due.
         """
         try:
             # Captured before account resolution, which may discover accounts: a
@@ -437,7 +441,7 @@ class StackOneToolSet:
         mode: ToolMode | None,
         generation: int,
         *,
-        retry_failed: bool = False,
+        retry_failed: _RetryFailed | None = None,
     ) -> tuple[list[_Listing], dict[str | None, Exception]]:
         """Every scoped account's catalog, from the cache where it can be.
 
@@ -456,8 +460,9 @@ class StackOneToolSet:
         ``account_scope``: a clear_catalog_cache() during account discovery must stop the
         catalog this scope resolves to from being cached, same as the discovered list.
 
-        Returned with each account left out and the error it failed with. ``retry_failed``
-        lists every account marked failed again now, without waiting for it to be due.
+        Returned with each account left out and the error it failed with. ``retry_failed`` is
+        given the cached catalog and picks accounts marked failed in it to list again now,
+        without waiting for them to be due.
         """
         if not account_scope:
             # Discovery skipped every account: there is nothing to list.
@@ -469,10 +474,11 @@ class StackOneToolSet:
         if cached is None:
             due = account_scope
         else:
+            retried = set(retry_failed(cached)) if retry_failed else set()
             due = [
                 account
                 for account, failed_at in cached.failed_at.items()
-                if retry_failed or now - failed_at >= FAILED_ACCOUNT_RETRY_SECONDS
+                if account in retried or now - failed_at >= FAILED_ACCOUNT_RETRY_SECONDS
             ]
             if not due:
                 return cached.in_order(account_scope), cached.failures()
@@ -581,11 +587,11 @@ class StackOneToolSet:
         the flipped mode partway through and cache search_execute meta tools under the
         individual-mode key, permanently, for every later caller.
         """
-        tools, _ = self._meta_tools_and_failures(suffix, account_ids, retry_failed=False)
+        tools, _ = self._meta_tools_and_failures(suffix, account_ids, retry_failed=None)
         return tools
 
     def _meta_tools_and_failures(
-        self, suffix: str, account_ids: list[str] | None, *, retry_failed: bool
+        self, suffix: str, account_ids: list[str] | None, *, retry_failed: _RetryFailed | None
     ) -> tuple[list[StackOneTool], dict[str | None, Exception]]:
         tools, failures = self._fetch_tools(
             account_ids, None, None, "search_execute", retry_failed=retry_failed
@@ -718,11 +724,11 @@ class StackOneToolSet:
                 or the action's connector is linked on more than one account in scope.
             ToolArgumentsError: If the arguments cannot be encoded as JSON.
             ToolsetLoadError: If no connector matches, or an account in scope that could serve
-                the action failed to list. An account left out after failing is listed again
-                first, without waiting out ``FAILED_ACCOUNT_RETRY_SECONDS``; if it still
-                fails and its provider in ``GET /accounts`` is the action's connector, or no
-                ``GET /accounts`` has named its provider, the action is not run on another
-                account in its place.
+                the action failed to list. An account left out after failing whose provider in
+                ``GET /accounts`` is the action's connector, or whose provider no
+                ``GET /accounts`` has named, is listed again first, without waiting out
+                ``FAILED_ACCOUNT_RETRY_SECONDS``; if it still fails, the action is not run on
+                another account in its place.
             StackOneAPIError: If the action fails, including when the server rejects the
                 arguments.
         """
@@ -733,19 +739,32 @@ class StackOneToolSet:
         if session_id is not None and (not isinstance(session_id, str) or not session_id):
             raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
 
-        # Every account marked failed is listed again now: left out, it would leave the
-        # action to whichever account did list, which may be another end user's.
-        meta_tools, failed = self._meta_tools_and_failures("_execute_action", account_ids, retry_failed=True)
+        suffix = "_execute_action"
+
+        def _retry_failed(cached: _Catalog) -> list[str | None]:
+            # An account marked failed that could serve the action is listed again now: left
+            # out, it would leave the action to whichever account did list, which may be
+            # another end user's. One whose provider cannot serve it is not, so it does not
+            # cost every other connector's actions its timeout.
+            listed = [
+                self._connector_of_name(tool_def.name, account, suffix)
+                for account, listings in cached.listings.items()
+                for tool_def, _, _ in listings
+                if tool_def.name.endswith(suffix)
+            ]
+            return [
+                account
+                for account in cached.failed_at
+                if account is not None and self._may_serve(account, action_id, listed)
+            ]
+
+        meta_tools, failed = self._meta_tools_and_failures(suffix, account_ids, retry_failed=_retry_failed)
+        connectors = [self._connector_of(tool, suffix) for tool in meta_tools]
         blocking = sorted(
             (
                 (account, failure)
                 for account, failure in failed.items()
-                if account is not None
-                and self._may_serve(
-                    account,
-                    action_id,
-                    [self._connector_of(tool, "_execute_action") for tool in meta_tools],
-                )
+                if account is not None and self._may_serve(account, action_id, connectors)
             ),
             key=lambda pair: pair[0],
         )
@@ -898,8 +917,12 @@ class StackOneToolSet:
         made every action on that account unroutable — with an error blaming the
         caller's action id.
         """
-        stem = tool.name[: -len(suffix)] if tool.name.endswith(suffix) else tool.name
-        account = tool.get_account_id()
+        return StackOneToolSet._connector_of_name(tool.name, tool.get_account_id(), suffix)
+
+    @staticmethod
+    def _connector_of_name(name: str, account: str | None, suffix: str) -> str:
+        """:meth:`_connector_of` for a meta tool's served name and the account that listed it."""
+        stem = name[: -len(suffix)] if name.endswith(suffix) else name
         if account and stem.endswith(f"_{account}"):
             stem = stem[: -(len(account) + 1)]
         return stem.lower()
