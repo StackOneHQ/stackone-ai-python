@@ -979,7 +979,13 @@ def is_end_user_refusal(exc: BaseException, account_id: str) -> bool:
         except ValueError:
             pass
     message = body.get("message") if isinstance(body, dict) else body
-    return message == f"x-end-user-id header does not match account end user id for account {account_id}"
+    # The guard's fixed wording, ending with this account's id, quoted or not: not an exact
+    # string, so a change to how the id is written does not silently turn the lookup off.
+    if not isinstance(message, str) or not message.startswith(
+        "x-end-user-id header does not match account end user id"
+    ):
+        return False
+    return message.rstrip().rsplit(" ", 1)[-1].strip("\"'") == account_id
 
 
 def _strip_internal_keys(schema: Any) -> Any:

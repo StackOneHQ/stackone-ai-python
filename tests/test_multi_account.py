@@ -347,6 +347,17 @@ class TestExecuteWithAFailedAccount:
         toolset.execute("hris_list_employees")
         assert seen == {"account": "acc2"}
 
+    def test_a_failed_account_on_a_shorter_provider_prefix_does_not(self, monkeypatch):
+        """acc1's provider ``hris`` prefixes the action, but its connector is ``hris_beta``."""
+        _, seen = self._execute(
+            monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_beta_acc2_execute_action"]
+        )
+        _providers(monkeypatch, acc1="hris", acc2="hris_beta")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.fetch_accounts()
+        toolset.execute("hris_beta_list_employees")
+        assert seen == {"account": "acc2"}
+
     def test_a_failed_account_is_listed_again_at_once_and_then_routes_as_usual(self, monkeypatch, clock):
         listing, _ = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})

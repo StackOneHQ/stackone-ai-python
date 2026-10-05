@@ -740,7 +740,12 @@ class StackOneToolSet:
             (
                 (account, failure)
                 for account, failure in failed.items()
-                if account is not None and self._may_serve(account, action_id)
+                if account is not None
+                and self._may_serve(
+                    account,
+                    action_id,
+                    [self._connector_of(tool, "_execute_action") for tool in meta_tools],
+                )
             ),
             key=lambda pair: pair[0],
         )
@@ -899,13 +904,23 @@ class StackOneToolSet:
             stem = stem[: -(len(account) + 1)]
         return stem.lower()
 
-    def _may_serve(self, account_id: str, action_id: str) -> bool:
+    def _may_serve(self, account_id: str, action_id: str, listed_connectors: list[str]) -> bool:
         """Whether an account could serve an action: its provider is the action's connector,
-        matched as a prefix as execute() routes, or no GET /accounts has named its provider.
+        or no GET /accounts has named its provider.
+
+        The connector is the longest prefix of the action among the connectors listed and the
+        providers GET /accounts named, as execute() routes: a failed ``browser`` account cannot
+        serve ``browser_linkedin_search_people``.
         """
         with self._cache_lock:
             provider = self._providers.get(account_id)
-        return provider is None or action_id.lower().startswith(provider.lower() + "_")
+            known = [p.lower() for p in self._providers.values()]
+        if provider is None:
+            return True
+        lowered = action_id.lower()
+        matching = [c for c in [*listed_connectors, *known] if lowered.startswith(c + "_")]
+        connector = max(matching, key=len, default=None)
+        return provider.lower() == connector
 
     def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
         """Whether a tool belongs to one of the given providers (case-insensitive).
@@ -990,12 +1005,17 @@ class StackOneToolSet:
         if response.is_error:
             # Without this the catch-all in fetch_tools flattens it to a message and
             # the status is lost, so a caller cannot tell 401 from 429.
-            raise StackOneAPIError(
+            error = StackOneAPIError(
                 f"Listing accounts at {url} failed with "
                 f"{response.status_code} {response.reason_phrase}: {response.text.strip()}",
                 response.status_code,
                 response.text,
             )
+            if response.status_code == 429:
+                # Chained to the HTTP 429 so is_rate_limited() reads it as the rate limit it
+                # is: fatal to a fan-out, as a 429 over MCP is.
+                raise error from httpx.HTTPStatusError("429", request=response.request, response=response)
+            raise error
         try:
             body = response.json()
         except (ValueError, UnicodeDecodeError) as exc:
@@ -1060,7 +1080,10 @@ class StackOneToolSet:
                 self._settle_accounts(fetching, sequence)
         try:
             fetching.result()
-        except Exception:
+        except Exception as exc:
+            # A rate limit is the key's, not the account's, and stays fatal to a fan-out.
+            if is_rate_limited(exc):
+                raise
             return False
         return self._end_user_id(account_id) is not None
 

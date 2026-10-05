@@ -633,6 +633,29 @@ class TestAPassedIdLooksItsEndUserUp:
         assert excinfo.value is error
         assert (calls, listed) == ([], [1])
 
+    def test_a_rate_limited_lookup_stays_fatal_to_a_fan_out(self, monkeypatch):
+        """Skipping the account would hand back a partial catalog, so the 429 is raised."""
+        monkeypatch.setattr("stackone_ai.tools._sleep", lambda _delay: None)
+        _accounts_response(monkeypatch, 429, 429, 429, 429)
+        _GuardedMcp(monkeypatch, {"a": "user-a"})
+        with pytest.raises(StackOneAPIError) as excinfo:
+            StackOneToolSet(api_key="k").fetch_tools(account_ids=["a", "b"])
+        assert excinfo.value.status_code == 429
+
+    def test_a_refusal_quoting_the_account_id_is_still_looked_up(self, monkeypatch):
+        calls = _accounts_response(monkeypatch, [_account("a", shared=False, origin_username="user-a")])
+
+        def guarded(_endpoint: str, headers: dict[str, str], **_kwargs: Any) -> list[McpToolDefinition]:
+            if headers.get("x-end-user-id") != "user-a":
+                body = json.dumps({"statusCode": 400, "message": f'{UCA_REFUSAL[: -len("acc1")]}"a"'})
+                raise StackOneAPIError(f"MCP request failed with 400 Bad Request: {body}", 400, body)
+            return [McpToolDefinition(name="tool_a", description="", input_schema={})]
+
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", guarded)
+        tools = StackOneToolSet(api_key="k", account_id="a").fetch_tools()
+        assert [tool.name for tool in tools] == ["tool_a"]
+        assert len(calls) == 1
+
     def test_requests_refused_together_share_one_accounts_listing(self, monkeypatch):
         joined = threading.Event()
 
