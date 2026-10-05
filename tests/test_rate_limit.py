@@ -354,7 +354,8 @@ class TestAnOverlappingRequestDoesNotClearTheThrottle:
                 transport=httpx.MockTransport(handler), throttle=throttle
             ) as client:
                 listing = asyncio.create_task(client.post(URL, json={"method": "tools/list"}))
-                await client.get(URL)
+                # Bounded, so a change that never retries fails here rather than hanging the run.
+                await asyncio.wait_for(client.get(URL), timeout=5)
                 listing.cancel()
                 return throttle.response
 
