@@ -21,6 +21,7 @@ from stackone_ai.tools import (
     _buffer_error_body,
     _rate_limit_delay,
     _retry_after_seconds,
+    _Throttle,
     fetch_mcp_tools,
     is_rate_limited,
 )
@@ -322,6 +323,42 @@ class TestATimeoutAfterARetried429IsThe429:
             tool.execute({})
         assert excinfo.value.status_code == 429
         assert is_rate_limited(excinfo.value)
+
+
+class TestAnOverlappingRequestDoesNotClearTheThrottle:
+    """Another request answered while a 429's retry hangs leaves that 429 on record.
+
+    The MCP client's requests overlap, its event-stream GET with a ``tools/list`` say: if any
+    answer cleared the marker, the retry's timeout would be reported as an ordinary timeout.
+    """
+
+    def test_the_throttle_survives_another_requests_answer(self, sleeps: list[float]):
+        throttle = _Throttle()
+        list_attempts = 0
+        retry_started = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal list_attempts
+            if request.method == "GET":
+                await retry_started.wait()
+                return httpx.Response(405)
+            list_attempts += 1
+            if list_attempts == 1:
+                return _429("0")
+            retry_started.set()
+            await asyncio.sleep(60)
+            raise AssertionError("cancelled before this")
+
+        async def go() -> httpx.Response | None:
+            async with RateLimitRetryingAsyncClient(
+                transport=httpx.MockTransport(handler), throttle=throttle
+            ) as client:
+                listing = asyncio.create_task(client.post(URL, json={"method": "tools/list"}))
+                await client.get(URL)
+                listing.cancel()
+                return throttle.response
+
+        assert asyncio.run(go()) is not None
 
 
 class TestAStaleThrottleMarkerDoesNotTaintALaterTimeout:

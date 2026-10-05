@@ -548,9 +548,14 @@ class RateLimitTimeout(httpx.TimeoutException):
 
 @dataclass
 class _Throttle:
-    """The last 429 an MCP exchange retried, if any."""
+    """The last 429 an MCP exchange retried, while any request is still retrying one.
+
+    Counted per request because an exchange's requests overlap: the MCP client's event-stream
+    GET, say, answered while a ``tools/list`` retry hangs, must not clear that retry's 429.
+    """
 
     response: httpx.Response | None = None
+    retrying: int = 0
 
 
 class RateLimitRetryingAsyncClient(httpx.AsyncClient):
@@ -573,6 +578,7 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
 
     async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
         attempt = 1
+        retried = False
         response = await super().send(request, **kwargs)
         while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
             delay = _rate_limit_delay(response, attempt)
@@ -583,12 +589,17 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
             await response.aclose()
             if self._throttle is not None:
                 self._throttle.response = response
+                if not retried:
+                    retried = True
+                    self._throttle.retrying += 1
             _log_rate_limit_retry(request, attempt, delay)
             await _async_sleep(delay)
             attempt += 1
             response = await super().send(request, **kwargs)
-        if self._throttle is not None and response.status_code != 429:
-            self._throttle.response = None
+        if self._throttle is not None and retried and response.status_code != 429:
+            self._throttle.retrying -= 1
+            if self._throttle.retrying == 0:
+                self._throttle.response = None
         return response
 
 
