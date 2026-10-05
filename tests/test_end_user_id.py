@@ -257,11 +257,22 @@ class TestRecording:
 
         monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
 
-        first = threading.Thread(target=toolset.fetch_accounts)
+        failures: list[BaseException] = []
+        completed: list[str] = []
+
+        def run(name: str) -> None:
+            # Thread swallows exceptions, so a failure in either call is collected and asserted.
+            try:
+                toolset.fetch_accounts()
+                completed.append(name)
+            except BaseException as exc:  # noqa: BLE001
+                failures.append(exc)
+
+        first = threading.Thread(target=run, args=("first",))
         first.start()
         assert first_started.wait(timeout=5)
 
-        second = threading.Thread(target=toolset.fetch_accounts)
+        second = threading.Thread(target=run, args=("second",))
         second.start()
         assert second_started.wait(timeout=5)
 
@@ -273,6 +284,10 @@ class TestRecording:
         release_first.set()
         first.join(timeout=5)
 
+        assert not first.is_alive() and not second.is_alive()
+        assert failures == []
+        # Both calls returned, so the stale first one really did finish last.
+        assert completed == ["second", "first"]
         assert toolset._end_user_id("b") == "user-b"
         assert toolset._end_user_id("a") is None
 
