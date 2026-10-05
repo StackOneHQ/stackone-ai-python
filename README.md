@@ -229,8 +229,10 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
   whose provider is the action's connector, or unknown even after one `GET /accounts` to
   learn it: it lists it again straight away rather than after 30 seconds, and if it still
   fails it raises `ToolsetLoadError` rather than run the action on another account. Pass
-  the account id to use. A failed account on another provider is left out without
-  being listed again.
+  the account id to use. A failed account on another provider is not listed again
+  early, so it never costs the call a listing timeout, though learning its provider with
+  explicit ids takes one `GET /accounts`; like any account, it is listed again once its
+  30 seconds are up.
 - **`providers`** — matched **case-insensitively** as a full prefix, so
   `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
   contains an underscore must be spelled in full (`["browser_linkedin"]`, not
@@ -269,7 +271,9 @@ keeps it.
 With explicit account ids the SDK does not call `GET /accounts` up front. When the API
 refuses a request for an account with no recorded end user because it needs one, the SDK
 calls `GET /accounts` once (joining one already in flight), and if that names the account's
-end user, sends the request again with it; otherwise the API's 400 is raised. Calling
+end user, sends the request again with it; otherwise the API's 400 is raised, with the
+lookup's error as its `__cause__` if the lookup failed (a rate-limited lookup raises its
+429 `StackOneAPIError` instead). Calling
 `toolset.fetch_accounts()` first saves that round trip:
 
 ```python
