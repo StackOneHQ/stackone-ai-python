@@ -321,7 +321,7 @@ class TestExecuteWithAFailedAccount:
         with pytest.raises(ToolsetLoadError) as excinfo:
             toolset.execute("hris_list_employees")
         assert str(excinfo.value) == (
-            "hris_list_employees may be served by an account that failed to list (acc1: boom). "
+            '"hris_list_employees" may be served by an account that failed to list (acc1: boom). '
             "Pass the account id to use, such as a search hit's account_id."
         )
         assert seen == {}

@@ -746,7 +746,7 @@ class StackOneToolSet:
         )
         if blocking:
             raise ToolsetLoadError(
-                f"{action_id} may be served by an account that failed to list ("
+                f"{_json_text(action_id)} may be served by an account that failed to list ("
                 + "; ".join(f"{account}: {failure}" for account, failure in blocking)
                 + "). Pass the account id to use, such as a search hit's account_id."
             )
