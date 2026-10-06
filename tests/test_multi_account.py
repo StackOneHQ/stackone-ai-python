@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 import pytest
 
+from stackone_ai import tools as tools_module
 from stackone_ai import toolset as toolset_module
 from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, Tools
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
@@ -362,6 +363,16 @@ class TestExecuteWithAFailedAccount:
         listing.listed.clear()
         toolset.execute("hris_list_employees")
         assert (len(calls), listing.listed) == (1, [])
+
+    def test_a_rate_limited_lookup_is_raised(self, monkeypatch):
+        """The 429 is the key's: swallowed, it would read as a provider no lookup has named."""
+        monkeypatch.setattr(tools_module, "_sleep", lambda _delay: None)
+        self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
+        _providers(monkeypatch, status=429)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.execute("hris_list_employees")
+        assert excinfo.value.status_code == 429
 
     def test_an_account_on_another_provider_does_not(self, monkeypatch):
         _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
