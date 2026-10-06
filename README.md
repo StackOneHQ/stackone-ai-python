@@ -227,9 +227,10 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
   otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
   `execute()` does not route around a failed account that could serve the action — one
   whose provider is the action's connector, or unknown even after one `GET /accounts` to
-  learn it: it lists it again straight away rather than after 30 seconds, and if it still
-  fails it raises `ToolsetLoadError` rather than run the action on another account. Pass
-  the account id to use. A failed account on another provider is not listed again
+  learn it: it lists it again straight away rather than after 30 seconds (unless a lookup
+  failed to name it in the last 30 seconds, when it neither looks it up nor lists it
+  again), and if it still fails it raises `ToolsetLoadError` rather than run the action
+  on another account. Pass the account id to use. A failed account on another provider is not listed again
   early, so it never costs the call a listing timeout, though learning its provider with
   explicit ids takes one `GET /accounts`; like any account, it is listed again once its
   30 seconds are up.

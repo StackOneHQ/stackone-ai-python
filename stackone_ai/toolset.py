@@ -70,7 +70,8 @@ FAILED_ACCOUNT_RETRY_SECONDS = 30.0
 Its healthy siblings' listings are cached all the same. A later call within this window
 serves them without the failed account, and without warning about it again; the first
 call after it lists the failed account again. ``execute()`` does not wait: it lists one
-that could serve its action again straight away.
+that could serve its action again straight away, unless a provider lookup failed to name
+it within the window.
 """
 
 # Looked up at call time, so tests can move it on rather than wait.
@@ -250,6 +251,9 @@ class StackOneToolSet:
         # execute() reads to tell whether an account that failed to list could have served
         # an action.
         self._providers: dict[str, str] = {}
+        # When a provider lookup last failed to name each account, which execute() then
+        # neither looks up nor lists again early for FAILED_ACCOUNT_RETRY_SECONDS.
+        self._provider_misses: dict[str, float] = {}
         # The GET /accounts in flight, if any: an account's end user is looked up by joining
         # it rather than making another.
         self._fetching_accounts: concurrent.futures.Future[list[JsonDict]] | None = None
@@ -289,11 +293,13 @@ class StackOneToolSet:
 
         Call when linked accounts change outside of ``set_accounts`` or when
         you need to force a fresh fetch from the StackOne MCP endpoint. The end-user ids
-        recorded from GET /accounts are kept until the next one replaces them.
+        recorded from GET /accounts are kept until the next one replaces them; the accounts
+        a provider lookup failed to name are forgotten.
         """
         with self._cache_lock:
             self._cache_generation += 1
             self._catalog_cache.clear()
+            self._provider_misses.clear()
             self._discovered_account_ids = None
             self._discovering = None
 
@@ -732,7 +738,8 @@ class StackOneToolSet:
                 ``FAILED_ACCOUNT_RETRY_SECONDS``; if it still fails, the action is not run on
                 another account in its place. When a failed account's provider is not known,
                 one ``GET /accounts`` is made first to learn it; if that fails, it stays
-                unknown.
+                unknown, and is neither looked up nor listed again early for
+                ``FAILED_ACCOUNT_RETRY_SECONDS``.
             StackOneAPIError: If the action fails, including when the server rejects the
                 arguments.
         """
@@ -757,8 +764,11 @@ class StackOneToolSet:
             # An account marked failed that could serve the action is listed again now: left
             # out, it would leave the action to whichever account did list, which may be
             # another end user's. One whose provider cannot serve it is not, so it does not
-            # cost every other connector's actions its timeout.
-            _learn_providers([account for account in cached.failed_at if account is not None])
+            # cost every other connector's actions its timeout. Nor is one a lookup recently
+            # failed to name: it would pay its timeout on every call in the window.
+            failed = [account for account in cached.failed_at if account is not None]
+            missed = self._recently_missed(failed)
+            _learn_providers(failed)
             listed = [
                 self._connector_of_name(tool_def.name, account, suffix)
                 for account, listings in cached.listings.items()
@@ -767,8 +777,8 @@ class StackOneToolSet:
             ]
             return [
                 account
-                for account in cached.failed_at
-                if account is not None and self._may_serve(account, action_id, listed)
+                for account in failed
+                if account not in missed and self._may_serve(account, action_id, listed)
             ]
 
         meta_tools, failed = self._meta_tools_and_failures(suffix, account_ids, retry_failed=_retry_failed)
@@ -1130,19 +1140,41 @@ class StackOneToolSet:
         fetching.result()
 
     def _learn_providers(self, account_ids: list[str]) -> bool:
-        """If any of these accounts' providers is unknown, join or make one GET /accounts to
-        learn it, and say whether it did. If that fails the providers stay unknown, except
-        that a rate limit is raised.
+        """If any of these accounts' providers is unknown, and no lookup has missed it within
+        ``FAILED_ACCOUNT_RETRY_SECONDS``, join or make one GET /accounts to learn it, and say
+        whether it did. If that fails the providers stay unknown, except that a rate limit is
+        raised. Each one still unknown is recorded as missed.
         """
+        missed = self._recently_missed(account_ids)
         with self._cache_lock:
-            if all(account in self._providers for account in account_ids):
-                return False
+            unknown = [a for a in account_ids if a not in self._providers and a not in missed]
+        if not unknown:
+            return False
         try:
             self._join_accounts_listing()
         except Exception as exc:
             if is_rate_limited(exc):
                 raise
+        missed_at = _clock()
+        with self._cache_lock:
+            for account in unknown:
+                if account not in self._providers:
+                    self._provider_misses[account] = missed_at
         return True
+
+    def _recently_missed(self, account_ids: list[str]) -> set[str]:
+        """Those of these accounts whose provider is unknown and a lookup failed to name
+        within ``FAILED_ACCOUNT_RETRY_SECONDS``.
+        """
+        now = _clock()
+        with self._cache_lock:
+            return {
+                account
+                for account in account_ids
+                if account not in self._providers
+                and (missed_at := self._provider_misses.get(account)) is not None
+                and now - missed_at < FAILED_ACCOUNT_RETRY_SECONDS
+            }
 
     def _end_user_id(self, account_id: str) -> str | None:
         """The end-user id GET /accounts recorded for an account, if it is not shared."""

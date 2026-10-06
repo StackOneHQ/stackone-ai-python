@@ -374,6 +374,41 @@ class TestExecuteWithAFailedAccount:
             toolset.execute("hris_list_employees")
         assert excinfo.value.status_code == 429
 
+    @pytest.mark.parametrize(
+        "accounts",
+        [{"status": 403}, {"acc1": "hris"}],
+        ids=["the lookup fails", "the lookup does not list it"],
+    )
+    def test_a_lookup_that_misses_waits_out_the_failure_window(self, monkeypatch, clock, accounts):
+        """Looking up and listing it again on every call would pay a GET /accounts each
+        time, and the listing's timeout if it hangs."""
+        listing, seen = self._execute(
+            monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead")
+        )
+        calls = _providers(monkeypatch, **accounts)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        for _ in range(3):
+            with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc2: dead\)"):
+                toolset.execute("hris_list_employees")
+        assert seen == {}
+        assert (len(calls), listing.listed.count("acc2")) == (1, 1)
+
+        clock[0] += FAILED_ACCOUNT_RETRY_SECONDS
+        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc2: dead\)"):
+            toolset.execute("hris_list_employees")
+        assert (len(calls), listing.listed.count("acc2")) == (2, 2)
+
+    def test_clearing_the_cache_forgets_a_lookups_miss(self, monkeypatch, clock):
+        self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
+        calls = _providers(monkeypatch, status=403)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        with pytest.raises(ToolsetLoadError):
+            toolset.execute("hris_list_employees")
+        toolset.clear_catalog_cache()
+        with pytest.raises(ToolsetLoadError):
+            toolset.execute("hris_list_employees")
+        assert len(calls) == 2
+
     def test_an_account_on_another_provider_does_not(self, monkeypatch):
         _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
         _providers(monkeypatch, acc1="crm", acc2="hris")
