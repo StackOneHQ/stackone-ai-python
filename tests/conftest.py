@@ -9,6 +9,7 @@ import time
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,55 @@ import pytest
 def _no_account_id_in_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """A STACKONE_ACCOUNT_ID in the developer's shell would make every toolset warn."""
     monkeypatch.delenv("STACKONE_ACCOUNT_ID", raising=False)
+
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """A test that reaches a real host passes or fails on that host, not on the code.
+
+    Loopback stays open for the MCP mock server. The refusal is raised, and the test also
+    fails afterwards: code under test that swallows a failed request would otherwise hide it.
+    Yields the hosts refused so far.
+    """
+    refused: list[str] = []
+
+    def _refuse_unless_loopback(address: object) -> None:
+        host = address[0] if isinstance(address, tuple) else address
+        if isinstance(host, str) and host not in _LOOPBACK_HOSTS:
+            refused.append(host)
+            raise RuntimeError(
+                f"Tests must not reach the network: a connection to {host!r} was refused. Stub it."
+            )
+
+    connect, connect_ex, create_connection = (
+        socket.socket.connect,
+        socket.socket.connect_ex,
+        socket.create_connection,
+    )
+
+    def guarded_connect(self: socket.socket, address: Any) -> None:
+        _refuse_unless_loopback(address)
+        return connect(self, address)
+
+    def guarded_connect_ex(self: socket.socket, address: Any) -> int:
+        _refuse_unless_loopback(address)
+        return connect_ex(self, address)
+
+    def guarded_create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
+        _refuse_unless_loopback(address)
+        return create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+    monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
+    yield refused
+    if refused:
+        pytest.fail(
+            f"Tests must not reach the network: connections to {', '.join(refused)} were refused. Stub them."
+        )
 
 
 def _find_free_port() -> int:

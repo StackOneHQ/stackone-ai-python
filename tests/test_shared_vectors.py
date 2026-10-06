@@ -509,6 +509,7 @@ def _connector_account_unavailable(mp, log) -> Emitted:
         _failing_for({"acc-2"}, ToolsetLoadError("boom"), "linear_{account}_execute_action"),
     )
     # Explicit ids: no GET /accounts, so acc-2's provider is unknown and it blocks.
+    _accounts_answer(mp, lambda _r: httpx.Response(200, json=[{"id": "acc-1", "provider": "linear"}]))
     error = _raised(
         ToolsetLoadError,
         lambda: StackOneToolSet(api_key="k").execute("linear_list_issues", account_ids=["acc-1", "acc-2"]),
