@@ -1,7 +1,7 @@
 #!/usr/bin/env -S pnpm exec tsx
 /**
  * Standalone HTTP server for MCP mock testing.
- * Imports createMcpApp from stackone-ai-node vendor submodule.
+ * Serves the MCP endpoint every tool is listed from and executed on, plus /accounts.
  *
  * Usage:
  *   ./tests/mocks/serve.ts [port]
@@ -16,10 +16,44 @@ import {
   createMcpApp,
   defaultMcpTools,
   exampleBamboohrTools,
+  fileTools,
+  metaLookalikeTools,
   mixedProviderTools,
 } from "./mcp-server";
 
 const port = parseInt(process.env.PORT || process.argv[2] || "8787", 10);
+
+// On by default, as it is for a project with feedback enabled. MOCK_SUBMIT_FEEDBACK=off
+// serves a project without it, so the SDK's handling of its absence can be tested.
+const submitFeedback = process.env.MOCK_SUBMIT_FEEDBACK !== "off";
+
+// MOCK_END_USERS=on lists acc1 as a non-shared account and acc2 as a shared one, and
+// refuses an MCP request for acc1 without acc1's end-user id, as the real API does.
+const endUsers = process.env.MOCK_END_USERS === "on";
+const END_USER_IDS: Record<string, string> = { acc1: "end-user-1" };
+
+interface RecordedRequest {
+  path: "/mcp";
+  /** The query string the call was made with, e.g. "" or "?tool-mode=search_execute". */
+  search: string;
+  accountId: string | null;
+  method: string;
+  name?: string;
+  arguments?: unknown;
+}
+
+interface RecordedHeaders {
+  method: string;
+  accountId: string | null;
+  endUserId: string | null;
+}
+
+// The SDK-set headers of every JSON-RPC message, initialize and notifications included.
+const recordedHeaders: RecordedHeaders[] = [];
+
+// What actually reached the wire: each JSON-RPC payload exactly as the SDK serialised it,
+// so a test of the SDK's wire shape sees nulls and key order as sent.
+const recorded: RecordedRequest[] = [];
 
 // Create the MCP app with all test tool configurations
 const mcpApp = createMcpApp({
@@ -30,9 +64,12 @@ const mcpApp = createMcpApp({
     acc3: accountMcpTools.acc3,
     "test-account": accountMcpTools["test-account"],
     mixed: mixedProviderTools,
+    files: fileTools,
+    lookalike: metaLookalikeTools,
     "your-bamboohr-account-id": exampleBamboohrTools,
     "your-stackone-account-id": exampleBamboohrTools,
   },
+  submitFeedback,
 });
 
 // Create the main app with CORS and mount the MCP app
@@ -44,101 +81,70 @@ app.use("/*", cors());
 // Health check endpoint
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+app.get("/__requests", (c) => c.json(recorded));
+app.get("/__headers", (c) => c.json(recordedHeaders));
+app.delete("/__requests", (c) => {
+  recorded.length = 0;
+  recordedHeaders.length = 0;
+  return c.json({ cleared: true });
+});
+
+app.use("/mcp", async (c, next) => {
+  const accountId = c.req.header("x-account-id") ?? c.req.query("x-account-id") ?? null;
+  const endUserId = c.req.header("x-end-user-id") ?? null;
+  if (c.req.method === "POST") {
+    try {
+      const payload = (await c.req.raw.clone().json()) as unknown;
+      const messages = Array.isArray(payload) ? payload : [payload];
+      for (const message of messages as { method?: string; params?: Record<string, unknown> }[]) {
+        if (typeof message?.method === "string") {
+          recordedHeaders.push({ method: message.method, accountId, endUserId });
+        }
+        if (message?.method !== "tools/call" && message?.method !== "tools/list") continue;
+        recorded.push({
+          path: "/mcp",
+          search: new URL(c.req.url).search,
+          accountId,
+          method: message.method,
+          name: message.params?.name as string | undefined,
+          arguments: message.params?.arguments,
+        });
+      }
+    } catch {
+      // Not JSON: the MCP handler rejects it, so there is nothing to record.
+    }
+  }
+  const expected = endUsers && accountId ? END_USER_IDS[accountId] : undefined;
+  if (expected !== undefined && endUserId !== expected) {
+    return c.json(
+      {
+        statusCode: 400,
+        message: `x-end-user-id header does not match account end user id for account ${accountId}`,
+      },
+      400,
+    );
+  }
+  await next();
+});
+
 // The SDK discovers accounts here when none is supplied. Returned as a bare list
 // with an inactive entry, matching the shape and statuses the real API serves.
 app.get("/accounts", (c) =>
-  c.json([
-    { id: "default", provider: "testprovider", status: "active" },
-    { id: "dead", provider: "brokenprovider", status: "error" },
-  ]),
+  c.json(
+    endUsers
+      ? [
+          { id: "acc1", provider: "p", status: "active", shared: false, origin_username: "end-user-1" },
+          { id: "acc2", provider: "p", status: "active", shared: true, origin_username: "owner" },
+        ]
+      : [
+          { id: "default", provider: "testprovider", status: "active" },
+          { id: "dead", provider: "brokenprovider", status: "error" },
+        ],
+  ),
 );
 
 // Mount the MCP app (handles /mcp endpoint)
 app.route("/", mcpApp);
-
-// RPC endpoint for tool execution
-app.post("/actions/rpc", async (c) => {
-  const authHeader = c.req.header("Authorization");
-  const accountIdHeader = c.req.header("x-account-id");
-
-  // Check for authentication
-  if (!authHeader || !authHeader.startsWith("Basic ")) {
-    return c.json(
-      { error: "Unauthorized", message: "Missing or invalid authorization header" },
-      401,
-    );
-  }
-
-  // Execution is account-scoped too. This endpoint used to accept anything with a
-  // "Basic " prefix and no account at all, so the sibling of the bug that shipped —
-  // an unscoped execution request — could not be caught by any test.
-  if (!accountIdHeader) {
-    return c.json(
-      { error: "Bad Request", message: "Missing x-account-id header in request" },
-      400,
-    );
-  }
-
-  const body = (await c.req.json()) as {
-    action?: string;
-    body?: Record<string, unknown>;
-    headers?: Record<string, string>;
-    path?: Record<string, string>;
-    query?: Record<string, string>;
-  };
-
-  // Validate action is provided
-  if (!body.action) {
-    return c.json({ error: "Bad Request", message: "Action is required" }, 400);
-  }
-
-  // Test action to verify x-account-id is sent as HTTP header
-  if (body.action === "test_account_id_header") {
-    return c.json({
-      data: {
-        httpHeader: accountIdHeader,
-        bodyHeader: body.headers?.["x-account-id"],
-      },
-    });
-  }
-
-  // Return mock response based on action
-  if (body.action === "bamboohr_get_employee") {
-    return c.json({
-      data: {
-        id: body.path?.id || "test-id",
-        name: "Test Employee",
-        ...body.body,
-      },
-    });
-  }
-
-  if (body.action === "bamboohr_list_employees") {
-    return c.json({
-      data: [
-        { id: "1", name: "Employee 1" },
-        { id: "2", name: "Employee 2" },
-      ],
-    });
-  }
-
-  if (body.action === "test_error_action") {
-    return c.json({ error: "Internal Server Error", message: "Test error response" }, 500);
-  }
-
-  // Default response for other actions
-  return c.json({
-    data: {
-      action: body.action,
-      received: {
-        body: body.body,
-        headers: body.headers,
-        path: body.path,
-        query: body.query,
-      },
-    },
-  });
-});
 
 console.log(`MCP Mock Server starting on port ${port}...`);
 
@@ -148,4 +154,6 @@ console.log(`MCP Mock Server running at http://localhost:${port}`);
 console.log("Endpoints:");
 console.log(`  - GET  /health       - Health check`);
 console.log(`  - ALL  /mcp          - MCP protocol endpoint`);
-console.log(`  - POST /actions/rpc  - RPC execution endpoint`);
+console.log(`  - GET  /accounts     - Linked accounts`);
+console.log(`  - GET  /__requests  - tools/call requests received`);
+console.log(`  - GET  /__headers   - the headers of every JSON-RPC message received`);

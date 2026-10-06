@@ -199,6 +199,37 @@ class TestStackOneToolSetInit:
         toolset = StackOneToolSet(api_key="test_key", base_url="https://custom.api.com")
         assert toolset.base_url == "https://custom.api.com"
 
+    def test_base_url_argument_takes_precedence_over_env(self):
+        """The base_url argument wins over STACKONE_BASE_URL."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://env.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key", base_url="https://arg.api.com")
+            assert toolset.base_url == "https://arg.api.com"
+
+    def test_base_url_falls_back_to_env_var(self):
+        """STACKONE_BASE_URL is used when no base_url argument is given."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://env.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == "https://env.api.com"
+
+    def test_base_url_defaults_when_no_argument_or_env(self):
+        """Falls back to the default when neither is given."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("STACKONE_BASE_URL", None)
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == DEFAULT_BASE_URL
+
+    def test_base_url_empty_env_var_treated_as_unset(self):
+        """An empty STACKONE_BASE_URL falls back to the default, not a literal empty host."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": ""}):
+            toolset = StackOneToolSet(api_key="test_key")
+            assert toolset.base_url == DEFAULT_BASE_URL
+
+    def test_base_url_empty_argument_falls_back_to_env(self):
+        """An empty base_url argument is treated as unset, so the env var is used."""
+        with patch.dict(os.environ, {"STACKONE_BASE_URL": "https://env.api.com"}):
+            toolset = StackOneToolSet(api_key="test_key", base_url="")
+            assert toolset.base_url == "https://env.api.com"
+
 
 class TestStackOneToolSetNormalizeSchemaProperties:
     """Test _normalize_schema_properties method."""
@@ -286,6 +317,62 @@ def test_set_accounts():
     # Should return self for chaining
     assert result is toolset
     assert toolset._account_ids == ["acc1", "acc2"]
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda: StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", ""]}),
+        lambda: StackOneToolSet(api_key="k").set_accounts([""]),
+        lambda: StackOneToolSet(api_key="k").fetch_tools(account_ids=["acc1", ""]),
+        lambda: StackOneToolSet(api_key="k").submit_feedback("positive", ["t"], account_ids=[""]),
+    ],
+    ids=["constructor", "set_accounts", "fetch_tools", "submit_feedback"],
+)
+def test_an_empty_account_id_is_rejected(use):
+    """An empty id would be sent with no x-account-id; it fails before any request,
+    so no request error can stand in for it."""
+    with pytest.raises(ToolsetConfigError, match="empty account id"):
+        use()
+
+
+@pytest.mark.parametrize("bad", [None, 123, ["acc1"]])
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda bad: StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", bad]}),
+        lambda bad: StackOneToolSet(api_key="k").set_accounts([bad]),
+        lambda bad: StackOneToolSet(api_key="k").fetch_tools(account_ids=["acc1", bad]),
+        lambda bad: StackOneToolSet(api_key="k").submit_feedback("positive", ["t"], account_ids=[bad]),
+    ],
+    ids=["constructor", "set_accounts", "fetch_tools", "submit_feedback"],
+)
+def test_a_non_string_account_id_is_rejected(use, bad):
+    """None was accepted and sent no x-account-id at all, as in Node it is refused."""
+    with pytest.raises(ToolsetConfigError, match="account_ids must be a list of account id strings"):
+        use(bad)
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda: StackOneToolSet(api_key="k", execute={"account_ids": ("acc1", "acc2")}),
+        lambda: StackOneToolSet(api_key="k").set_accounts(("acc1", "acc2")),
+        lambda: StackOneToolSet(api_key="k").fetch_tools(account_ids=("acc1", "acc2")),
+    ],
+    ids=["constructor", "set_accounts", "fetch_tools"],
+)
+def test_a_tuple_of_account_ids_is_rejected(use):
+    """Node rejects anything that isn't an Array, so a tuple is refused too, not silently
+    accepted as a list-like."""
+    with pytest.raises(ToolsetConfigError, match="account_ids must be a list of account id strings"):
+        use()
+
+
+def test_an_empty_constructor_account_id_is_rejected():
+    """Treated as unset, it would silently widen every call to all active accounts."""
+    with pytest.raises(ToolsetConfigError, match="account_id must not be an empty string"):
+        StackOneToolSet(api_key="k", account_id="")
 
 
 def test_filter_by_provider():
