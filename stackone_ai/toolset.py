@@ -755,10 +755,13 @@ class StackOneToolSet:
         # explicit ids none was made, and an unknown provider could serve any action.
         learnt = False
 
-        def _learn_providers(accounts: list[str]) -> None:
+        def _learn_providers(accounts: list[str]) -> set[str]:
             nonlocal learnt
-            if not learnt:
-                learnt = self._learn_providers(accounts)
+            if learnt:
+                return set()
+            missed = self._learn_providers(accounts)
+            learnt = missed is not None
+            return missed or set()
 
         def _retry_failed(cached: _Catalog) -> list[str | None]:
             # An account marked failed that could serve the action is listed again now: left
@@ -767,8 +770,7 @@ class StackOneToolSet:
             # cost every other connector's actions its timeout. Nor is one a lookup recently
             # failed to name: it would pay its timeout on every call in the window.
             failed = [account for account in cached.failed_at if account is not None]
-            missed = self._recently_missed(failed)
-            _learn_providers(failed)
+            missed = self._recently_missed(failed) | _learn_providers(failed)
             listed = [
                 self._connector_of_name(tool_def.name, account, suffix)
                 for account, listings in cached.listings.items()
@@ -1139,17 +1141,19 @@ class StackOneToolSet:
                 self._settle_accounts(fetching, sequence)
         fetching.result()
 
-    def _learn_providers(self, account_ids: list[str]) -> bool:
+    def _learn_providers(self, account_ids: list[str]) -> set[str] | None:
         """If any of these accounts' providers is unknown, and no lookup has missed it within
-        ``FAILED_ACCOUNT_RETRY_SECONDS``, join or make one GET /accounts to learn it, and say
-        whether it did. If that fails the providers stay unknown, except that a rate limit is
-        raised. Each one still unknown is recorded as missed.
+        ``FAILED_ACCOUNT_RETRY_SECONDS``, join or make one GET /accounts to learn it, and return
+        those it still could not name; ``None`` if it made no lookup. If that fails the providers
+        stay unknown, except that a rate limit is raised. Each one still unknown is recorded as
+        missed, unless clear_catalog_cache() ran meanwhile, which promises to forget misses.
         """
         missed = self._recently_missed(account_ids)
         with self._cache_lock:
             unknown = [a for a in account_ids if a not in self._providers and a not in missed]
+            generation = self._cache_generation
         if not unknown:
-            return False
+            return None
         try:
             self._join_accounts_listing()
         except Exception as exc:
@@ -1157,10 +1161,11 @@ class StackOneToolSet:
                 raise
         missed_at = _clock()
         with self._cache_lock:
-            for account in unknown:
-                if account not in self._providers:
+            still_unknown = {account for account in unknown if account not in self._providers}
+            if generation == self._cache_generation:
+                for account in still_unknown:
                     self._provider_misses[account] = missed_at
-        return True
+        return still_unknown
 
     def _recently_missed(self, account_ids: list[str]) -> set[str]:
         """Those of these accounts whose provider is unknown and a lookup failed to name

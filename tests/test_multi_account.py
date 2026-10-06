@@ -409,6 +409,35 @@ class TestExecuteWithAFailedAccount:
             toolset.execute("hris_list_employees")
         assert len(calls) == 2
 
+    def test_the_call_whose_lookup_misses_does_not_list_it_again(self, monkeypatch, clock):
+        """Its own miss holds it out at once, so concurrent calls sharing the lookup don't
+        each pay its timeout."""
+        listing, _ = self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
+        _providers(monkeypatch, status=403)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.fetch_tools(mode="search_execute")
+        clock[0] += 1
+        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc2: dead\)"):
+            toolset.execute("hris_list_employees")
+        assert listing.listed.count("acc2") == 1
+
+    def test_a_miss_is_not_recorded_across_a_clear_during_its_lookup(self, monkeypatch, clock):
+        self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        calls: list[int] = []
+
+        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            if len(calls) == 1:
+                toolset.clear_catalog_cache()
+            return httpx.Response(403, text="nope", request=request)
+
+        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+        for _ in range(2):
+            with pytest.raises(ToolsetLoadError):
+                toolset.execute("hris_list_employees")
+        assert len(calls) == 2
+
     def test_an_account_on_another_provider_does_not(self, monkeypatch):
         _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
         _providers(monkeypatch, acc1="crm", acc2="hris")
