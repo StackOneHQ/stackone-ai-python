@@ -508,7 +508,8 @@ def _connector_account_unavailable(mp, log) -> Emitted:
         "stackone_ai.toolset.fetch_mcp_tools",
         _failing_for({"acc-2"}, ToolsetLoadError("boom"), "linear_{account}_execute_action"),
     )
-    # Explicit ids: no GET /accounts, so acc-2's provider is unknown and it blocks.
+    # Explicit ids, so execute() makes one GET /accounts to learn acc-2's provider. It does
+    # not list acc-2, so its provider stays unknown and it blocks.
     _accounts_answer(mp, lambda _r: httpx.Response(200, json=[{"id": "acc-1", "provider": "linear"}]))
     error = _raised(
         ToolsetLoadError,
