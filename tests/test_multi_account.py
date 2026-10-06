@@ -438,6 +438,21 @@ class TestExecuteWithAFailedAccount:
                 toolset.execute("hris_list_employees")
         assert len(calls) == 2
 
+    def test_a_miss_is_forgotten_once_get_accounts_names_the_account(self, monkeypatch, clock):
+        listing, _ = self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
+        _providers(monkeypatch, status=403)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        with pytest.raises(ToolsetLoadError):
+            toolset.execute("hris_list_employees")
+        _providers(monkeypatch, acc1="hris", acc2="hris")
+        toolset.fetch_accounts()
+
+        clock[0] += 1
+        with pytest.raises(ToolsetLoadError):
+            toolset.execute("hris_list_employees")
+        # acc2 is hris's, so it is listed again at once rather than after the window.
+        assert listing.listed.count("acc2") == 2
+
     def test_an_account_on_another_provider_does_not(self, monkeypatch):
         _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
         _providers(monkeypatch, acc1="crm", acc2="hris")
