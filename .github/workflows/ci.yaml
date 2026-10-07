@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   gitleaks:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -39,7 +39,7 @@ jobs:
         run: gitleaks detect --source . --config .gitleaks.toml
 
   ci:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -89,7 +89,7 @@ jobs:
   # Fork PRs and Dependabot runs cannot access this secret and skip this gate;
   # internal branches and PRs require the secret and fail if it is absent or expired.
   check-secret:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     outputs:
       can-skip: ${{ steps.check.outputs.can-skip }}
     steps:
@@ -110,7 +110,7 @@ jobs:
   conformance:
     needs: check-secret
     if: needs.check-secret.outputs.can-skip != 'true'
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     env:
       # Pinned to a commit on stackone-ai-node's main, not the branch, so a Node change never
       # silently changes what this job grades. Bump it deliberately.
@@ -197,7 +197,7 @@ jobs:
   ci-ok:
     if: always()
     needs: [check-secret, gitleaks, ci, conformance]
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     steps:
       - name: Require every job to have passed
         run: |
@@ -211,7 +211,7 @@ jobs:
           fi
 
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -257,7 +257,7 @@ jobs:
 
   deploy-coverage:
     needs: coverage
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     if: github.ref == 'refs/heads/main'
     permissions:
       pages: write
