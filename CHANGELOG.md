@@ -1,5 +1,105 @@
 # Changelog
 
+## [3.0.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.1...stackone-ai-v3.0.0) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* StackOneRpcTool, MCP_PARAM_STYLE, ParameterLocation, validate_method, is_json_content_type and filename_from_content_disposition are removed. Every tool fetch_tools() returns is a StackOneMcpTool that executes over MCP tools/call on the endpoint and account that listed it, with its arguments sent unchanged; nothing posts to /actions/rpc.
+* **tools:** StackOneTool.execute() no longer makes HTTP requests. On the base class it raises StackOneError, so a hand-built tool must override execute().
+* **types:** ExecuteConfig is extra="forbid" and keeps only name, headers and timeout. Passing method, url, body_type or parameter_locations raises a pydantic ValidationError.
+* **toolset:** StackOneToolSet.execute() and tool.execute() return the server's {isError, result, defenderMetadata?, policyMetadata?} object rather than the unwrapped payload or the /actions/rpc body, so result["data"] becomes result["result"]["data"].
+* **tools:** a file action returns {download_url, expires_at, file} as `result` instead of {content, content_type, status_code, headers, file_name}, and raises StackOneAPIError with status 501 when no link can be issued. Tools.execute_openai_tool_calls() no longer base64-encodes bytes.
+* **toolset:** the /mcp URL no longer carries ?param-style=flat_prefixed, so per-action tools from fetch_tools() take whichever argument style the server serves by default instead of flat, prefixed keys such as body_variables.
+* **tools:** StackOneMcpTool(headers=...) is now optional and means extra request headers, not the full header set. The SDK always sets Authorization, x-account-id and User-Agent itself, after them.
+* **tools:** to_openai_function() no longer derives `required` from the per-property nullable markers. It emits the served root `required` list verbatim, in the served order, and omits it when absent or empty, so a hand-built ToolParameters without `required` now has no required fields.
+* **toolset:** fetch_tools(), openai(), langchain() and pydantic_ai() include the stackone_submit_feedback tool, once, whenever the server serves it.
+* **tools:** a top-level `headers_<name>` argument is dropped unless the tool's schema declares that property, and always for Authorization, x-account-id and User-Agent. A declared flat `headers_<name>` property no longer admits the same name inside a nested `headers` object. An open `headers` object, as `*_execute_action` serves it, forwards any other header, so StackOneToolSet.execute(..., {"headers": {...}}) passes host-set headers through where it previously dropped them all. A top-level `headers` argument that isn't a plain object is dropped too, unless the schema declares `headers` itself as a non-object field, in which case it is an ordinary argument sent as given. A declared flat `headers_<name>` argument whose value is a list or dict is dropped as well; only a string, number or boolean can be a header value.
+* **tools:** when more than one account serves a tool name, Tools.get_tool() returns the first one listed (listings merge in sorted account order) rather than the last.
+* Python 3.10 is no longer supported. stackone-ai requires Python 3.11 or later.
+* the `stackone-ai[mcp]` extra no longer exists. mcp is a core dependency, so install plain `stackone-ai`.
+* langchain-core is no longer installed with stackone-ai. StackOneTool.to_langchain(), Tools.to_langchain() and StackOneToolSet.langchain() need the `stackone-ai[langchain]` extra, which requires langchain-core 0.3.36 or later, and raise an ImportError that names it without it.
+* stackone_ai.models, stackone_ai.constants and stackone_ai.utils no longer exist. Import StackOneTool and Tools from stackone_ai.tools; ToolParameters, ExecuteConfig, DEFAULT_BASE_URL and the errors from stackone_ai.types; or any public name from stackone_ai. ToolDefinition and DEFAULT_HYBRID_ALPHA are removed.
+* **toolset:** client-side search is removed: SearchConfig, SearchMode, SearchTool, SemanticSearchClient, SemanticSearchResult, SemanticSearchResponse and SemanticSearchError, the `search=` constructor argument, search_tools(), search_action_names(), get_search_tool(), semantic_client, the tool_search and tool_execute meta tools, and the bm25s and numpy dependencies. StackOneToolSet.search() runs the server's *_search_actions tools instead.
+* stackone_ai.integrations, with to_tool_node(), to_tool_executor(), bind_model_with_tools() and create_react_agent(), is removed. Pass tools.to_langchain() to LangGraph's own ToolNode and bind_tools().
+* **tools:** the tool_feedback tool, stackone_ai.feedback, create_feedback_tool() and the implicit feedback_* execution options are removed, and StackOneTool.execute() and call() no longer take options=. Use StackOneToolSet.submit_feedback() and a search hit's session_id instead.
+* **toolset:** StackOneToolSet.execute() takes (action_id, arguments=None, *, account_ids=None, session_id=None) instead of a meta tool name with arguments as a JSON string or dict. arguments must be a dict in the nested form an action's example_request shows, and a failure raises (ToolsetConfigError, ToolArgumentsError, ToolsetLoadError or StackOneAPIError) instead of returning {"error": ...}.
+* **tools:** to_openai_function(), to_langchain() and to_pydantic_ai_tool() give the model the served JSON Schema instead of only type, description, enum and a shallow copy of items and properties, so format, pattern, default, bounds, oneOf/anyOf and nested required reach it. to_langchain() sets that schema as args_schema instead of a pydantic model built from it.
+* **toolset:** openai(), langchain() and pydantic_ai() no longer take mode=. Set tool_mode="search_execute" on StackOneToolSet to give a model the server's search and execute tools.
+* **toolset:** StackOneToolSet(account_id="") raises ToolsetConfigError instead of being treated as no account, which now lists every active account, so an account id read from an environment variable that is set but empty raises. An empty or non-string entry in account_ids, set_accounts() or execute={"account_ids": [...]} raises too, instead of being sent with no x-account-id.
+* **toolset:** account_ids, set_accounts() and execute={"account_ids": ...} accept only a list of strings. A tuple or any other non-list, which 2.10.1 accepted, raises ToolsetConfigError; pass list(ids) instead.
+* removed StackOneTool.connector property and Tools.get_connectors().
+
+### Features
+
+* export the feedback types and StackOneMcpTool, and take any sequence of tool names ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* retry HTTP 429 on every request, honouring Retry-After, and raise a 429 that outlasts the retries or the timeout instead of skipping the account ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** add a headers option sent on every request ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** add action_run_id to submit_feedback(), and send feedback through the lowest account id ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** link calls with session_id and add submit_feedback() ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** read STACKONE_BASE_URL ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** send x-end-user-id for non-shared accounts ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** skip non-shared accounts during discovery unless include_non_shared ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** tag each search hit with its account_id and apply top_k to the merged ranking ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** warn when STACKONE_ACCOUNT_ID is set but ignored ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** raise ToolArgumentsError, a StackOneError and a ValueError, for unusable tool arguments ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+
+
+### Bug Fixes
+
+* **tools:** build every adapter from the first tool of each name ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** emit the served required list in served order ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** accept account ids only as a list ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** cache the healthy accounts when one fails, and retry a failed one after 30 seconds ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** chain a failed end-user lookup onto the 400 it was looking up for ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** hold a provider lookup's miss for the failed-account window in execute() ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** learn a failed account's provider with one GET /accounts before execute() refuses ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** look up a non-shared account's end user when the API asks for it ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** move a pinned action_id and session_id to the end of the arguments ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** name shared accounts in the STACKONE_ACCOUNT_ID warning ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** raise the shared error when every account fails, and keep each failure ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** raise when every active account on the key is non-shared and not opted in ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** re-list only the failed accounts that could serve the action in execute() ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** refuse an action whose connector is linked on more than one account ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** refuse to execute while a matching account failed to list ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** reject an empty or non-string account id ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** route stackone_submit_feedback over MCP and list it once ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** send feedback once, through the first account ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** guard every header argument by its own declaration ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** keep a retried 429 on record while another request in the exchange is answered ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** report an MCP timeout as a timeout ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** return structuredContent from a tools/call result with no text ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** return the first listing from get_tool(), as Node does ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** send tools/call without relisting the catalog first ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** write nested header values as Node writes them ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **types:** declare ToolParameters.required so a hand-built tool type-checks ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+
+
+### Code Refactoring
+
+* execute every tool over MCP tools/call ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* MCP-only toolset with account discovery, search/execute, and hardened security ([#199](https://github.com/StackOneHQ/stackone-ai-python/issues/199)) ([e53edf0](https://github.com/StackOneHQ/stackone-ai-python/commit/e53edf0c7cc1da6cc5376df9ca27c6b845597e22))
+* remove stackone_ai.integrations ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* split stackone_ai.models into stackone_ai.tools and stackone_ai.types ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** remove client-side search ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** remove mode= from openai(), langchain() and pydantic_ai() ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** return every result exactly as the server wrote it ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** run an action by id with execute() ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **toolset:** stop pinning param-style=flat_prefixed on the MCP endpoint ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** pass the served schema through to every adapter ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** remove the client-side feedback tool ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** remove the HTTP executor from the base StackOneTool ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** return a download link from file actions ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **tools:** treat StackOneMcpTool headers as extra headers ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* **types:** reduce ExecuteConfig to name, headers and timeout ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+
+
+### Build System
+
+* make langchain-core an optional dependency ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* make mcp a core dependency and remove the mcp extra ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+* require Python 3.11 or later ([049abf5](https://github.com/StackOneHQ/stackone-ai-python/commit/049abf548c7f5448a89e7999e95336980d23afc3))
+
 ## [2.10.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.0...stackone-ai-v2.10.1) (2026-07-28)
 
 
