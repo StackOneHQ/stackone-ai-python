@@ -244,14 +244,14 @@ jobs:
         run: uv run pytest --cov --cov-report=term --cov-report=json --cov-report=html
 
       - name: Create Coverage Badge
-        uses: jaywcjlove/coverage-badges-cli@4e8975aa2628e3329126e7eee36724d07ed86fda # v2.2.0
+        uses: jaywcjlove/coverage-badges-cli@998665f7962b1a3935ba8c3e786171a99436e5d1 # v2.3.0
         with:
           source: coverage/coverage.json
           output: coverage/badges.svg
           jsonPath: totals.percent_covered
 
       - name: Upload coverage artifact
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v3.0.2
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: coverage/
 
@@ -268,4 +268,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
