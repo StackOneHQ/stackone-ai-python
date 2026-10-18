@@ -95,11 +95,11 @@ names = toolset.search_action_names("time off requests", top_k=5)
 
 # 3.0
 toolset = StackOneToolSet()
-hits = toolset.search("list employees", top_k=5)   # a list of action dicts, best first
+hits = toolset.search("list employees", top_k=5)  # a list of action dicts, best first
 hit = hits[0]
 result = toolset.execute(
     hit["action_id"],
-    {"query": {"page_size": 25}},     # the nested form in hit["input_schema"]
+    {"query": {"page_size": 25}},  # the nested form in hit["input_schema"]
     account_ids=[hit["account_id"]],
     session_id=hit.get("session_id"),
 )
@@ -182,7 +182,7 @@ import httpx
 
 link = download.execute({"id": "file-id"})["result"]
 # {"download_url": ..., "expires_at": ..., "file": {"name", "content_type", "content_length"}}
-name = Path(link["file"]["name"] or "download.bin").name   # chosen by the provider: keep only the basename
+name = Path(link["file"]["name"] or "download.bin").name  # chosen by the provider: keep only the basename
 Path(name).write_bytes(httpx.get(link["download_url"]).content)
 ```
 
@@ -374,11 +374,14 @@ tool = StackOneTool(
     description="Get an employee",
     parameters=ToolParameters(type="object", properties={"id": {"type": "string"}}),
     _execute_config=ExecuteConfig(
-        name="get_employee", method="GET", url="https://api.example.com/employees/{id}",
+        name="get_employee",
+        method="GET",
+        url="https://api.example.com/employees/{id}",
         parameter_locations={"id": ParameterLocation.PATH},
     ),
     _api_key="...",
 )
+
 
 # 3.0
 class GetEmployee(StackOneTool):
@@ -392,6 +395,7 @@ class GetEmployee(StackOneTool):
     def execute(self, arguments=None):
         args = json.loads(arguments) if isinstance(arguments, str) else dict(arguments or {})
         return httpx.get(f"https://api.example.com/employees/{args['id']}").json()
+
 
 tool = GetEmployee()
 ```
@@ -422,10 +426,12 @@ directly:
 ```python
 # 2.x
 from stackone_ai.integrations import to_tool_node
+
 node = to_tool_node(tools)
 
 # 3.0
 from langgraph.prebuilt import ToolNode
+
 node = ToolNode(tools.to_langchain())
 ```
 

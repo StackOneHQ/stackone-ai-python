@@ -21,6 +21,7 @@ You can find out more about the OpenAI Function Calling API format
 from __future__ import annotations
 
 import sys
+from typing import cast
 
 try:
     from dotenv import load_dotenv
@@ -30,6 +31,11 @@ except ModuleNotFoundError:
     pass
 
 from openai import OpenAI
+from openai.types.chat import (
+    ChatCompletionFunctionToolParam,
+    ChatCompletionMessageParam,
+    ChatCompletionToolMessageParam,
+)
 
 from stackone_ai import StackOneToolSet
 from stackone_ai.types import StackOneError, ToolsetError
@@ -49,11 +55,11 @@ def openai_integration() -> None:
             "an empty catalog here means the example would prove nothing."
         )
 
-    openai_tools = tools.to_openai()[:20]
+    openai_tools = cast("list[ChatCompletionFunctionToolParam]", tools.to_openai()[:20])
     names = {t["function"]["name"] for t in openai_tools}
     print(f"Loaded {len(openai_tools)} tools, e.g. {sorted(names)[:3]}")
 
-    messages: list[dict] = [
+    messages: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": "You answer questions by calling the tools you are given."},
         {
             "role": "user",
@@ -72,14 +78,18 @@ def openai_integration() -> None:
 
     print(f"LLM made {len(tool_calls)} tool call(s):")
     for tc in tool_calls:
+        if tc.type != "function":
+            raise ValueError(f"Expected a function tool call, got {tc.type!r}")
         print(f"  - {tc.function.name}({tc.function.arguments})")
 
     # The assistant turn must come before its tool results, or OpenAI returns a 400.
-    messages.append(response.choices[0].message.model_dump(exclude_none=True))
+    messages.append(
+        cast("ChatCompletionMessageParam", response.choices[0].message.model_dump(exclude_none=True))
+    )
     tool_messages = tools.execute_openai_tool_calls(tool_calls)
     for message in tool_messages:
         print(f"  Result: {message['content'][:200]}...")
-    messages.extend(tool_messages)
+    messages.extend(cast("list[ChatCompletionToolMessageParam]", tool_messages))
 
     final_response = client.chat.completions.create(
         model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"

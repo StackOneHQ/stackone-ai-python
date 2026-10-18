@@ -106,7 +106,7 @@ from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"])
-openai_tools = tools.to_openai()[:20]   # keep the catalog inside the context window
+openai_tools = tools.to_openai()[:20]  # keep the catalog inside the context window
 
 client = OpenAI()
 messages = [{"role": "user", "content": "Use a tool to list a few records, then summarise them."}]
@@ -115,7 +115,7 @@ response = client.chat.completions.create(
 )
 
 message = response.choices[0].message
-messages.append(message.model_dump(exclude_none=True))   # the assistant turn comes first
+messages.append(message.model_dump(exclude_none=True))  # the assistant turn comes first
 messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 ```
 
@@ -209,12 +209,11 @@ applied locally to one cached listing — changing a filter never refetches. Cal
 ```python
 toolset = StackOneToolSet()
 
-toolset.fetch_tools()                                    # every tool, every active shared account
-toolset.fetch_tools(providers=["linear"])                # one connector
-toolset.fetch_tools(actions=["linear_list_*"])           # one connector's list actions
-toolset.fetch_tools(actions=["linear_get_issue"])        # exactly one tool
-toolset.fetch_tools(providers=["linear"],
-                    actions=["*_get_*"])                 # both filters, AND-ed
+toolset.fetch_tools()  # every tool, every active shared account
+toolset.fetch_tools(providers=["linear"])  # one connector
+toolset.fetch_tools(actions=["linear_list_*"])  # one connector's list actions
+toolset.fetch_tools(actions=["linear_get_issue"])  # exactly one tool
+toolset.fetch_tools(providers=["linear"], actions=["*_get_*"])  # both filters, AND-ed
 toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 ```
 

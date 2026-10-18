@@ -19,7 +19,7 @@ import re
 import threading
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -630,7 +630,7 @@ def is_rate_limited(exc: BaseException) -> bool:
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float, throttle: _Throttle | None = None
-) -> AsyncIterator[tuple[Any, Any, Any]]:
+) -> AsyncGenerator[tuple[Any, Any, Any]]:
     """Open the streamable-HTTP transport with the caller's timeout on every leg.
 
     The client's own defaults are a 30s connect and a 300s SSE read, and neither was
@@ -643,7 +643,7 @@ async def _mcp_transport(
     than headers and timeouts. It retries a 429, so the MCP client never sees one that
     a retry got past.
     """
-    from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
+    from mcp.client.streamable_http import streamable_http_client
 
     async with RateLimitRetryingAsyncClient(
         throttle=throttle,
@@ -664,8 +664,8 @@ def fetch_mcp_tools(
     ``timeout`` bounds the whole exchange, handshake included.
     """
     try:
-        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+        from mcp import types as mcp_types
+        from mcp.client.session import ClientSession
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ToolsetConfigError(
             "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
@@ -693,7 +693,7 @@ def fetch_mcp_tools(
                 cursor: str | None = None
                 collected: list[McpToolDefinition] = []
                 while True:
-                    result = await session.list_tools(cursor)
+                    result = await session.list_tools(params=mcp_types.PaginatedRequestParams(cursor=cursor))
                     for tool in result.tools:
                         input_schema = tool.inputSchema or {}
                         collected.append(
@@ -934,8 +934,8 @@ def call_mcp_tool(
 
     ``arguments`` are sent exactly as given; the server maps them onto the action.
     """
-    from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-    from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+    from mcp import types as mcp_types
+    from mcp.client.session import ClientSession
 
     throttle = _Throttle()
 
@@ -1293,10 +1293,14 @@ class StackOneTool(BaseModel):
 
         parent_tool = self
 
+        class StackOneLangChainError(ToolException):
+            status_code: int | None
+            response_body: Any
+
         class StackOneLangChainTool(BaseTool):
             name: str = parent_tool.name
             description: str = parent_tool.description
-            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-assignment]
+            args_schema: dict[str, Any] = args_json_schema
 
             def _run(self, **kwargs: Any) -> Any:
                 # Drop unsupplied optionals. pydantic materialises every optional field
@@ -1318,9 +1322,9 @@ class StackOneTool(BaseModel):
                     # Without it the agent retries blind, which is the whole point of
                     # handing the error back.
                     body = getattr(exc, "response_body", None)
-                    failure = ToolException(f"{exc}: {body}" if body else str(exc))
-                    failure.status_code = getattr(exc, "status_code", None)  # type: ignore[attr-defined]
-                    failure.response_body = getattr(exc, "response_body", None)  # type: ignore[attr-defined]
+                    failure = StackOneLangChainError(f"{exc}: {body}" if body else str(exc))
+                    failure.status_code = getattr(exc, "status_code", None)
+                    failure.response_body = getattr(exc, "response_body", None)
                     raise failure from exc
 
         return StackOneLangChainTool()
