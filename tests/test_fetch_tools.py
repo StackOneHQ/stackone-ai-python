@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -595,12 +596,12 @@ class TestFetchMcpToolsInternal:
     def test_fetch_mcp_tools_single_page(self):
         """Test fetching tools with single page response."""
         # Create mock tool response
-        mock_tool = MagicMock()
+        mock_tool = SimpleNamespace()
         mock_tool.name = "test_tool"
         mock_tool.description = "Test description"
         mock_tool.inputSchema = {"type": "object", "properties": {"id": {"type": "string"}}}
 
-        mock_result = MagicMock()
+        mock_result = SimpleNamespace()
         mock_result.tools = [mock_tool]
         mock_result.nextCursor = None
 
@@ -635,7 +636,13 @@ class TestFetchMcpToolsInternal:
             # The caller's headers and timeout reach the HTTP client, on every leg.
             [client] = seen_clients
             assert client.headers["Authorization"] == "Basic test"
-            assert client.timeout == httpx.Timeout(7)
+            assert (
+                client.timeout.connect
+                == client.timeout.read
+                == client.timeout.write
+                == client.timeout.pool
+                == 7
+            )
             assert client.follow_redirects is True
 
             assert len(result) == 1
@@ -646,22 +653,22 @@ class TestFetchMcpToolsInternal:
     def test_fetch_mcp_tools_with_pagination(self):
         """Test fetching tools with multiple pages."""
         # First page
-        mock_tool1 = MagicMock()
+        mock_tool1 = SimpleNamespace()
         mock_tool1.name = "tool_1"
         mock_tool1.description = "Tool 1"
         mock_tool1.inputSchema = {}
 
-        mock_result1 = MagicMock()
+        mock_result1 = SimpleNamespace()
         mock_result1.tools = [mock_tool1]
         mock_result1.nextCursor = "cursor_page_2"
 
         # Second page
-        mock_tool2 = MagicMock()
+        mock_tool2 = SimpleNamespace()
         mock_tool2.name = "tool_2"
         mock_tool2.description = "Tool 2"
         mock_tool2.inputSchema = None  # Test None inputSchema
 
-        mock_result2 = MagicMock()
+        mock_result2 = SimpleNamespace()
         mock_result2.tools = [mock_tool2]
         mock_result2.nextCursor = None
 
@@ -691,6 +698,8 @@ class TestFetchMcpToolsInternal:
             assert result[1].name == "tool_2"
             assert result[1].input_schema == {}  # None should become empty dict
             assert mock_session.list_tools.call_count == 2
+            assert mock_session.list_tools.call_args_list[0].kwargs["params"] is None
+            assert mock_session.list_tools.call_args_list[1].kwargs["params"].cursor == "cursor_page_2"
 
 
 class TestCatalogCache:
