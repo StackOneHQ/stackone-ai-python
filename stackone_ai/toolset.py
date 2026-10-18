@@ -1,1098 +1,307 @@
+"""The StackOne toolset: fetches the served tool catalog and exposes it to agent frameworks."""
+
 from __future__ import annotations
 
-import asyncio
-import base64
 import concurrent.futures
+import contextlib
+import copy
 import fnmatch
-import json
 import logging
 import os
 import threading
-from collections.abc import Coroutine, Sequence
-from dataclasses import dataclass
-from importlib import metadata
-from typing import Any, Literal, TypedDict, TypeVar
+import time
+from collections.abc import Callable, Collection, Sequence
+from dataclasses import dataclass, field
+from typing import Any, TypeVar
 
-from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
+import httpx
 
-from stackone_ai.constants import DEFAULT_BASE_URL
-from stackone_ai.models import (
-    ExecuteConfig,
-    JsonDict,
-    ParameterLocation,
-    StackOneAPIError,
+from stackone_ai.tools import (
+    McpToolDefinition,
+    RateLimitRetryingClient,
+    RateLimitTimeout,
+    StackOneMcpTool,
     StackOneTool,
-    ToolParameters,
     Tools,
+    _js_number,
+    _json_text,
+    _json_type,
+    build_request_headers,
+    fetch_mcp_tools,
+    is_end_user_refusal,
+    is_rate_limited,
+    is_sdk_owned_header,
 )
-from stackone_ai.semantic_search import (
-    SemanticSearchClient,
-    SemanticSearchError,
-    SemanticSearchResult,
+from stackone_ai.types import (
+    DEFAULT_BASE_URL,
+    SUBMIT_FEEDBACK_TOOL_NAME,
+    ExecuteToolsConfig,
+    FeedbackCategory,
+    FeedbackRating,
+    FeedbackSource,
+    Headers,
+    JsonDict,
+    StackOneAPIError,
+    StackOneError,
+    ToolMode,
+    ToolParameters,
+    ToolsetConfigError,
+    ToolsetError,
+    ToolsetLoadError,
 )
-from stackone_ai.utils.normalize import _normalize_action_name
 
 logger = logging.getLogger("stackone.tools")
 
-SearchMode = Literal["auto", "semantic", "local"]
+_UNSET = object()
+"""Sentinel: `mode=None` is a real mode (individual), so it cannot mean "use the default"."""
+
+_Listing = tuple[McpToolDefinition, str | None, str]
+"""A served tool, the account that listed it, and the endpoint it was listed from."""
+
+_RetryFailed = Callable[["_Catalog"], Collection[str | None]]
+"""Given a cached catalog, the accounts marked failed in it to list again now."""
+
+# The search_actions meta tool's served schema caps top_k at 50.
+_MAX_TOP_K = 50
+
+FAILED_ACCOUNT_RETRY_SECONDS = 30.0
+"""How long an account that failed to list tools is left out of a cached catalog.
+
+Its healthy siblings' listings are cached all the same. A later call within this window
+serves them without the failed account, and without warning about it again; the first
+call after it lists the failed account again. ``execute()`` does not wait: it lists one
+that could serve its action again straight away, unless a provider lookup failed to name
+it within the window.
+"""
+
+# Looked up at call time, so tests can move it on rather than wait.
+_clock = time.monotonic
 
 
-class SearchConfig(TypedDict, total=False):
-    """Search configuration for the StackOneToolSet constructor.
+@dataclass(frozen=True)
+class _Catalog:
+    """A cached catalog: each healthy account's listing, and when and how each failed one failed."""
 
-    When provided as a dict, sets default search options that flow through
-    to ``search_tools()``, ``get_search_tool()``, and ``search_action_names()``.
-    Per-call options override these defaults.
+    listings: dict[str | None, list[_Listing]]
+    failed_at: dict[str | None, float] = field(default_factory=dict)
+    errors: dict[str | None, Exception] = field(default_factory=dict)
 
-    When set to ``None``, search is disabled entirely.
-    When omitted, defaults to ``{"method": "auto"}``.
+    def in_order(self, account_scope: list[str | None]) -> list[_Listing]:
+        return [listing for account in account_scope for listing in self.listings.get(account, [])]
+
+    def failures(self) -> dict[str | None, Exception]:
+        """Each account left out of this catalog, with the error it failed with."""
+        return {account: self.errors[account] for account in self.failed_at if account in self.errors}
+
+
+_Item = TypeVar("_Item")
+_Result = TypeVar("_Result")
+
+
+def _fan_out(
+    fn: Callable[[_Item], _Result], items: Sequence[_Item]
+) -> list[tuple[_Item, _Result | Exception]]:
+    """Run ``fn`` over ``items`` concurrently; each item's result or failure, in item order.
+
+    A 429 that outlasted its retries is raised at once instead of being returned: the
+    caller would skip it like any other failure and hand back a partial result. Work not
+    yet started is cancelled; calls already running finish in the background, unread.
     """
-
-    method: SearchMode
-    """Search backend to use. Defaults to ``"auto"``."""
-    top_k: int
-    """Maximum number of tools to return."""
-    min_similarity: float
-    """Minimum similarity score threshold 0-1."""
-
-
-class ExecuteToolsConfig(TypedDict, total=False):
-    """Execution configuration for the StackOneToolSet constructor.
-
-    Controls default account scoping for tool execution.
-
-    When set to ``None`` (default), no account scoping is applied.
-    When provided, ``account_ids`` flow through to ``openai(mode="search_and_execute")``
-    and ``fetch_tools()`` as defaults.
-    """
-
-    account_ids: list[str]
-    """Account IDs to scope tool discovery and execution."""
-
-
-_SEARCH_DEFAULT: SearchConfig = {"method": "auto"}
-
-try:
-    _SDK_VERSION = metadata.version("stackone-ai")
-except metadata.PackageNotFoundError:  # pragma: no cover - best-effort fallback when running from source
-    _SDK_VERSION = "dev"
-_RPC_PARAMETER_LOCATIONS = {
-    "action": ParameterLocation.BODY,
-    "body": ParameterLocation.BODY,
-    "headers": ParameterLocation.BODY,
-    "path": ParameterLocation.BODY,
-    "query": ParameterLocation.BODY,
-}
-_USER_AGENT = f"stackone-ai-python/{_SDK_VERSION}"
-
-
-# --- Internal tool_search + tool_execute ---
-
-
-class _SearchInput(BaseModel):
-    """Input validation for tool_search."""
-
-    query: str = Field(..., min_length=1)
-    connector: str | None = None
-    top_k: int | None = Field(default=None, ge=1, le=50)
-
-    @field_validator("query")
-    @classmethod
-    def validate_query(cls, v: str) -> str:
-        trimmed = v.strip()
-        if not trimmed:
-            raise ValueError("query must be a non-empty string")
-        return trimmed
-
-
-class _SearchTool(StackOneTool):
-    """LLM-callable tool that searches for available StackOne tools."""
-
-    _toolset: Any = PrivateAttr(default=None)
-
-    def execute(
-        self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
-    ) -> JsonDict:
-        try:
-            if isinstance(arguments, str):
-                raw_params = json.loads(arguments)
-            else:
-                raw_params = arguments or {}
-
-            parsed = _SearchInput(**raw_params)
-
-            search_config = self._toolset._search_config or {}
-            results = self._toolset.search_tools(
-                parsed.query,
-                connector=parsed.connector or search_config.get("connector"),
-                top_k=parsed.top_k or search_config.get("top_k") or 5,
-                min_similarity=search_config.get("min_similarity"),
-                search=search_config.get("method"),
-                account_ids=self._toolset._account_ids,
-            )
-
-            return {
-                "tools": [
-                    {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.parameters.properties,
-                    }
-                    for t in results
-                ],
-                "total": len(results),
-                "query": parsed.query,
-            }
-        except (json.JSONDecodeError, ValidationError) as exc:
-            return {"error": f"Invalid input: {exc}", "query": raw_params if "raw_params" in dir() else None}
-
-
-class _ExecuteInput(BaseModel):
-    """Input validation for tool_execute."""
-
-    tool_name: str = Field(..., min_length=1)
-    parameters: dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("tool_name")
-    @classmethod
-    def validate_tool_name(cls, v: str) -> str:
-        trimmed = v.strip()
-        if not trimmed:
-            raise ValueError("tool_name must be a non-empty string")
-        return trimmed
-
-
-class _ExecuteTool(StackOneTool):
-    """LLM-callable tool that executes a StackOne tool by name."""
-
-    _toolset: Any = PrivateAttr(default=None)
-    _cached_tools: Any = PrivateAttr(default=None)
-
-    def execute(
-        self, arguments: str | JsonDict | None = None, *, options: JsonDict | None = None
-    ) -> JsonDict:
-        tool_name = "unknown"
-        try:
-            if isinstance(arguments, str):
-                raw_params = json.loads(arguments)
-            else:
-                raw_params = arguments or {}
-
-            parsed = _ExecuteInput(**raw_params)
-            tool_name = parsed.tool_name
-
-            if self._cached_tools is None:
-                self._cached_tools = self._toolset.fetch_tools(account_ids=self._toolset._account_ids)
-
-            target = self._cached_tools.get_tool(parsed.tool_name)
-
-            if target is None:
-                return {
-                    "error": (
-                        f'Tool "{parsed.tool_name}" not found. Use tool_search to find available tools.'
-                    ),
-                }
-
-            return target.execute(parsed.parameters, options=options)
-        except StackOneAPIError as exc:
-            return {
-                "error": str(exc),
-                "status_code": exc.status_code,
-                "response_body": exc.response_body,
-                "tool_name": tool_name,
-            }
-        except (json.JSONDecodeError, ValidationError) as exc:
-            return {"error": f"Invalid input: {exc}", "tool_name": tool_name}
-
-
-def _create_search_tool(api_key: str) -> _SearchTool:
-    name = "tool_search"
-    description = (
-        "Search for available tools by describing what you need. "
-        "Returns matching tool names, descriptions, and parameter schemas. "
-        "Use the returned parameter schemas to know exactly what to pass "
-        "when calling tool_execute."
-    )
-    parameters = ToolParameters(
-        type="object",
-        properties={
-            "query": {
-                "type": "string",
-                "description": (
-                    "Natural language description of what you need "
-                    '(e.g. "create an employee", "list time off requests")'
-                ),
-            },
-            "connector": {
-                "type": "string",
-                "description": 'Optional connector filter (e.g. "bamboohr")',
-                "nullable": True,
-            },
-            "top_k": {
-                "type": "integer",
-                "description": "Max results to return (1-50, default 5)",
-                "minimum": 1,
-                "maximum": 50,
-                "nullable": True,
-            },
-        },
-    )
-    execute_config = ExecuteConfig(
-        name=name,
-        method="POST",
-        url="local://meta/search",
-        parameter_locations={
-            "query": ParameterLocation.BODY,
-            "connector": ParameterLocation.BODY,
-            "top_k": ParameterLocation.BODY,
-        },
-    )
-
-    tool = _SearchTool.__new__(_SearchTool)
-    StackOneTool.__init__(
-        tool,
-        description=description,
-        parameters=parameters,
-        _execute_config=execute_config,
-        _api_key=api_key,
-    )
-    return tool
-
-
-def _create_execute_tool(api_key: str) -> _ExecuteTool:
-    name = "tool_execute"
-    description = (
-        "Execute a tool by name with the given parameters. "
-        "Use tool_search first to find available tools. "
-        "The parameters field must match the parameter schema returned "
-        "by tool_search. Pass parameters as a nested object matching "
-        "the schema structure."
-    )
-    parameters = ToolParameters(
-        type="object",
-        properties={
-            "tool_name": {
-                "type": "string",
-                "description": "Exact tool name from tool_search results",
-            },
-            "parameters": {
-                "type": "object",
-                "description": "Parameters for the tool, matching the schema from tool_search.",
-                "nullable": True,
-            },
-        },
-    )
-    execute_config = ExecuteConfig(
-        name=name,
-        method="POST",
-        url="local://meta/execute",
-        parameter_locations={
-            "tool_name": ParameterLocation.BODY,
-            "parameters": ParameterLocation.BODY,
-        },
-    )
-
-    tool = _ExecuteTool.__new__(_ExecuteTool)
-    StackOneTool.__init__(
-        tool,
-        description=description,
-        parameters=parameters,
-        _execute_config=execute_config,
-        _api_key=api_key,
-    )
-    return tool
-
-
-T = TypeVar("T")
-
-
-@dataclass
-class _McpToolDefinition:
-    name: str
-    description: str | None
-    input_schema: dict[str, Any]
-
-
-class ToolsetError(Exception):
-    """Base exception for toolset errors"""
-
-    pass
-
-
-class ToolsetConfigError(ToolsetError):
-    """Raised when there is an error in the toolset configuration"""
-
-    pass
-
-
-class ToolsetLoadError(ToolsetError):
-    """Raised when there is an error loading tools"""
-
-    pass
-
-
-def _run_async(awaitable: Coroutine[Any, Any, T]) -> T:
-    """Run a coroutine, even when called from an existing event loop."""
-
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=min(len(items), 10))
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(awaitable)
-
-    result: dict[str, T] = {}
-    error: dict[str, BaseException] = {}
-
-    def runner() -> None:
-        try:
-            result["value"] = asyncio.run(awaitable)
-        except BaseException as exc:  # pragma: no cover - surfaced in caller context
-            error["error"] = exc
-
-    thread = threading.Thread(target=runner, daemon=True)
-    thread.start()
-    thread.join()
-
-    if "error" in error:
-        raise error["error"]
-
-    return result["value"]
+        futures = {pool.submit(fn, item): index for index, item in enumerate(items)}
+        outcomes: dict[int, _Result | Exception] = {}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                outcomes[futures[future]] = future.result()
+            except Exception as exc:
+                if is_rate_limited(exc):
+                    raise
+                outcomes[futures[future]] = exc
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return [(item, outcomes[index]) for index, item in enumerate(items)]
 
 
-def _build_auth_header(api_key: str) -> str:
-    token = base64.b64encode(f"{api_key}:".encode()).decode()
-    return f"Basic {token}"
+def _all_accounts_failed(failures: list[tuple[str | None, Exception]]) -> Exception:
+    """The error for a listing in which every account failed, in account order.
 
-
-def _fetch_mcp_tools(endpoint: str, headers: dict[str, str]) -> list[_McpToolDefinition]:
-    try:
-        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
-        from mcp.client.streamable_http import streamablehttp_client  # ty: ignore[unresolved-import]
-    except ImportError as exc:  # pragma: no cover - depends on optional extra
-        raise ToolsetConfigError(
-            "MCP dependencies are required for fetch_tools. Install with 'pip install \"stackone-ai[mcp]\"'."
-        ) from exc
-
-    async def _list() -> list[_McpToolDefinition]:
-        async with streamablehttp_client(endpoint, headers=headers) as (read_stream, write_stream, _):
-            session = ClientSession(
-                read_stream,
-                write_stream,
-                client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
-            )
-            async with session:
-                await session.initialize()
-                cursor: str | None = None
-                collected: list[_McpToolDefinition] = []
-                while True:
-                    result = await session.list_tools(cursor)
-                    for tool in result.tools:
-                        input_schema = tool.inputSchema or {}
-                        collected.append(
-                            _McpToolDefinition(
-                                name=tool.name,
-                                description=tool.description,
-                                input_schema=dict(input_schema),
-                            )
-                        )
-                    cursor = result.nextCursor
-                    if cursor is None:
-                        break
-                return collected
-
-    return _run_async(_list())
-
-
-class _StackOneRpcTool(StackOneTool):
-    """RPC-backed tool wired to the StackOne actions RPC endpoint."""
-
-    def __init__(
-        self,
-        *,
-        name: str,
-        description: str,
-        parameters: ToolParameters,
-        api_key: str,
-        base_url: str,
-        account_id: str | None,
-    ) -> None:
-        execute_config = ExecuteConfig(
-            method="POST",
-            url=f"{base_url.rstrip('/')}/actions/rpc",
-            name=name,
-            headers={},
-            body_type="json",
-            parameter_locations=dict(_RPC_PARAMETER_LOCATIONS),
-        )
-        super().__init__(
-            description=description,
-            parameters=parameters,
-            _execute_config=execute_config,
-            _api_key=api_key,
-            _account_id=account_id,
-        )
-
-    def execute(
-        self, arguments: str | dict[str, Any] | None = None, *, options: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        parsed_arguments = self._parse_arguments(arguments)
-
-        body_payload = self._extract_record(parsed_arguments.pop("body", None))
-        headers_payload = self._extract_record(parsed_arguments.pop("headers", None))
-        path_payload = self._extract_record(parsed_arguments.pop("path", None))
-        query_payload = self._extract_record(parsed_arguments.pop("query", None))
-
-        rpc_body: dict[str, Any] = dict(body_payload or {})
-        for key, value in parsed_arguments.items():
-            rpc_body[key] = value
-
-        payload: dict[str, Any] = {
-            "action": self.name,
-            "body": rpc_body,
-            "headers": self._build_action_headers(headers_payload),
-        }
-        if path_payload:
-            payload["path"] = path_payload
-        if query_payload:
-            payload["query"] = query_payload
-
-        return super().execute(payload, options=options)
-
-    def _parse_arguments(self, arguments: str | dict[str, Any] | None) -> dict[str, Any]:
-        if arguments is None:
-            return {}
-        if isinstance(arguments, str):
-            parsed = json.loads(arguments)
-        else:
-            parsed = arguments
-        if not isinstance(parsed, dict):
-            raise ValueError("Tool arguments must be a JSON object")
-        return dict(parsed)
-
-    @staticmethod
-    def _extract_record(value: Any) -> dict[str, Any] | None:
-        if isinstance(value, dict):
-            return dict(value)
-        return None
-
-    def _build_action_headers(self, additional_headers: dict[str, Any] | None) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        account_id = self.get_account_id()
-        if account_id:
-            headers["x-account-id"] = account_id
-
-        if additional_headers:
-            for key, value in additional_headers.items():
-                if value is None:
-                    continue
-                headers[str(key)] = str(value)
-
-        headers.pop("Authorization", None)
-        return headers
-
-
-class SearchTool:
-    """Callable search tool that wraps StackOneToolSet.search_tools().
-
-    Designed for agent loops — call it with a query to get Tools back.
-
-    Example::
-
-        toolset = StackOneToolSet()
-        search_tool = toolset.get_search_tool()
-        tools = search_tool("manage employee records", account_ids=["acc-123"])
+    When every failure is a StackOneAPIError with the same status, the first of them: two
+    accounts answering 401 are a revoked key, and a caller must be able to tell that from a
+    429 as it can with one account. Otherwise a ToolsetLoadError, caused by an
+    ExceptionGroup of the failures and keeping them in ``failures`` too.
     """
-
-    def __init__(self, toolset: StackOneToolSet, config: SearchConfig | None = None) -> None:
-        self._toolset = toolset
-        self._config: SearchConfig = config or {}
-
-    def __call__(
-        self,
-        query: str,
-        *,
-        connector: str | None = None,
-        top_k: int | None = None,
-        min_similarity: float | None = None,
-        account_ids: list[str] | None = None,
-        search: SearchMode | None = None,
-    ) -> Tools:
-        """Search for tools using natural language.
-
-        Args:
-            query: Natural language description of needed functionality
-            connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
-            top_k: Maximum number of tools to return. Overrides constructor default.
-            min_similarity: Minimum similarity score threshold 0-1. Overrides constructor default.
-            account_ids: Optional account IDs (uses set_accounts() if not provided)
-            search: Override the default search mode for this call
-
-        Returns:
-            Tools collection with matched tools
-        """
-        effective_top_k = top_k if top_k is not None else self._config.get("top_k")
-        effective_min_sim = (
-            min_similarity if min_similarity is not None else self._config.get("min_similarity")
-        )
-        effective_search = search if search is not None else self._config.get("method", "auto")
-        return self._toolset.search_tools(
-            query,
-            connector=connector,
-            top_k=effective_top_k,
-            min_similarity=effective_min_sim,
-            account_ids=account_ids,
-            search=effective_search,
-        )
+    errors = [failure for _, failure in failures]
+    first = errors[0]
+    if isinstance(first, StackOneAPIError) and all(
+        isinstance(error, StackOneAPIError) and error.status_code == first.status_code for error in errors
+    ):
+        return first
+    error = ToolsetLoadError(
+        "Every account failed to list tools: "
+        + "; ".join(f"{account}: {failure}" for account, failure in failures),
+        failures=errors,
+    )
+    error.__cause__ = ExceptionGroup("Every account failed to list tools", errors)
+    return error
 
 
 class StackOneToolSet:
-    """Main class for accessing StackOne tools"""
+    """Main class for accessing StackOne tools.
+
+    The toolset is a thin client over the served catalog: it lists tools from the
+    MCP endpoint and executes each one over MCP ``tools/call`` on the endpoint, and
+    with the account, that listed it. It does not rewrite, filter or invent schemas.
+    """
 
     def __init__(
         self,
         api_key: str | None = None,
         account_id: str | None = None,
         base_url: str | None = None,
-        search: SearchConfig | None = None,
         execute: ExecuteToolsConfig | None = None,
+        timeout: float | None = None,
+        tool_mode: ToolMode | None = None,
+        headers: Headers | None = None,
+        include_non_shared: bool = False,
     ) -> None:
         """Initialize StackOne tools with authentication
 
         Args:
             api_key: Optional API key. If not provided, will try to get from STACKONE_API_KEY env var
             account_id: Optional account ID
-            base_url: Optional base URL override for API requests
-            search: Search configuration. Controls default search behavior.
-                Pass ``None`` (default) to disable search — ``toolset.openai()``
-                will return all regular tools.
-                Pass ``{}`` or ``{"method": "auto"}`` to enable search with defaults.
-                Pass ``{"method": "semantic", "top_k": 5}`` for custom defaults.
-                Per-call options always override these defaults.
+            base_url: Optional base URL override for API requests. Falls back to
+                STACKONE_BASE_URL, then to the default, https://api.stackone.com. An
+                empty string, whether passed here or read from the environment, is
+                treated as not set rather than as a literal empty host.
             execute: Execution configuration. Controls default account scoping
                 for tool execution. Pass ``{"account_ids": ["acc-1"]}`` to scope
-                meta tools to specific accounts.
+                tools to specific accounts.
+            timeout: Request timeout in seconds for tool listing and execution.
+                Default: 60. Takes precedence over ``execute.timeout`` if set.
+                Increase for slow providers (e.g. Workday).
+            tool_mode: How the endpoint lists tools. ``"search_execute"`` returns
+                two meta tools per connector instead of one tool per action,
+                keeping the catalog small enough for a model's context.
+            headers: Extra HTTP headers sent with every request this toolset makes
+                (``GET /accounts`` and every MCP request). ``Authorization``,
+                ``x-account-id`` and ``User-Agent`` are always the SDK's own and
+                cannot be set here. ``x-end-user-id`` can: it is passed through as
+                given, unless ``GET /accounts`` reported the account's end user,
+                which then replaces it.
+            include_non_shared: Whether account discovery uses non-shared accounts
+                (``shared`` false in ``GET /accounts``). Each belongs to a single end
+                user, so by default discovery skips them, with a warning naming them;
+                pass their ids to use them without this.
 
         Raises:
-            ToolsetConfigError: If no API key is provided or found in environment
+            ToolsetConfigError: If no API key is provided or found in environment, or
+                ``account_id`` is an empty string
         """
+        # An empty account_id is usually an unset variable, and treating it as unset would
+        # silently widen every call to all active shared accounts.
+        if account_id == "":
+            raise ToolsetConfigError("account_id must not be an empty string")
         api_key_value = api_key or os.getenv("STACKONE_API_KEY")
         if not api_key_value:
             raise ToolsetConfigError(
-                "API key must be provided either through api_key parameter or "
-                "STACKONE_API_KEY environment variable"
+                "An API key must be provided, either to the toolset or in the STACKONE_API_KEY "
+                "environment variable"
             )
+        ignored_headers = [name for name in (headers or {}) if is_sdk_owned_header(name)]
+        if ignored_headers:
+            logger.warning(
+                "Ignoring headers %s: the SDK sets them itself. Pass the API key and account ids "
+                "through their own options instead.",
+                ", ".join(_json_text(name) for name in ignored_headers),
+            )
+
         self.api_key: str = api_key_value
         self.account_id = account_id
-        self.base_url = base_url or DEFAULT_BASE_URL
-        self._account_ids: list[str] = []
-        self._semantic_client: SemanticSearchClient | None = None
-        self._search_config: SearchConfig | None = search
+        self.base_url = base_url or os.getenv("STACKONE_BASE_URL") or DEFAULT_BASE_URL
+        self._headers: Headers = dict(headers or {})
+        self._account_ids: list[str] = self._validate_account_ids(
+            execute.get("account_ids") if execute else None
+        )
         self._execute_config: ExecuteToolsConfig | None = execute
-        self._tools_cache: Tools | None = None
+        execute_timeout = execute.get("timeout") if execute else None
+        self._timeout: float = (
+            timeout if timeout is not None else (execute_timeout if execute_timeout is not None else 60.0)
+        )
+        # Cache the listing, not the Tools wrapper. StackOneTool objects are mutable
+        # (Tools.set_account_id rebinds them), so handing the same instances back on a
+        # cache hit let one caller silently rescope every later caller's tools.
+        self._catalog_cache: dict[tuple[Any, ...], _Catalog] = {}
+        self._discovered_account_ids: list[str] | None = None
+        # Shared while in flight, so concurrent fetch_tools() and search() calls on a
+        # fresh toolset make one GET /accounts between them rather than one each.
+        self._discovering: concurrent.futures.Future[list[str]] | None = None
+        # Bumped by clear_catalog_cache(). A listing already in flight when the cache is
+        # cleared captured the generation it started under, and refuses to write back if
+        # it has moved — otherwise the stale catalog lands *after* the clear and is
+        # served for the life of the process, which is the one thing the clear exists
+        # to prevent.
+        self._cache_generation = 0
+        self._cache_lock = threading.Lock()
+        # Each non-shared account's end-user id, from the last successful GET /accounts.
+        # Replaced whole by the next one, and kept by clear_catalog_cache(): it describes
+        # the accounts, not the catalog.
+        self._end_user_ids: dict[str, str] = {}
+        # Each account's provider, from the same GET /accounts and replaced with it: what
+        # execute() reads to tell whether an account that failed to list could have served
+        # an action.
+        self._providers: dict[str, str] = {}
+        # When a provider lookup last failed to name each account, which execute() then
+        # neither looks up nor lists again early for FAILED_ACCOUNT_RETRY_SECONDS.
+        self._provider_misses: dict[str, float] = {}
+        # The GET /accounts in flight, if any: an account's end user is looked up by joining
+        # it rather than making another.
+        self._fetching_accounts: concurrent.futures.Future[list[JsonDict]] | None = None
+        self._include_non_shared = include_non_shared
+        # Bumped at the start of every fetch_accounts() call, so two overlapping calls —
+        # fetch_accounts() racing discovery, say — are ordered by when they started
+        # rather than when they returned: a slower, older-started response must not
+        # overwrite a newer one that already landed.
+        self._accounts_sequence = 0
+        self._end_user_ids_sequence = 0
+        self._tool_mode: ToolMode | None = tool_mode
 
-    def set_accounts(self, account_ids: list[str]) -> StackOneToolSet:
+        # 2.x read STACKONE_ACCOUNT_ID; 3.x never does, and without an account it uses every
+        # active shared account on the key. Anyone upgrading with only the variable set would
+        # otherwise widen to other end users' accounts with no sign of it. An empty
+        # account_ids list is unset too, the same as _resolve_account_ids() treats it.
+        scoped = account_id is not None or bool(self._account_ids)
+        if os.getenv("STACKONE_ACCOUNT_ID") and not scoped:
+            logger.warning(
+                "STACKONE_ACCOUNT_ID is set, but the SDK does not read it: with no account id passed, "
+                "every active shared account on this API key is used. Pass an account id to scope the "
+                "toolset."
+            )
+
+    def set_accounts(self, account_ids: list[str] | None) -> StackOneToolSet:
         """Set account IDs for filtering tools
-
-        Args:
-            account_ids: List of account IDs to filter tools by
 
         Returns:
             This toolset instance for chaining
         """
-        self._account_ids = account_ids
+        self._account_ids = self._validate_account_ids(account_ids)
+        self.clear_catalog_cache()
         return self
 
-    def get_search_tool(self, *, search: SearchMode | None = None) -> SearchTool:
-        """Get a callable search tool that returns Tools collections.
+    def clear_catalog_cache(self) -> None:
+        """Invalidate the cached tool catalog.
 
-        Returns a callable that wraps :meth:`search_tools` for use in agent loops.
-        The returned tool is directly callable: ``search_tool("query")`` returns
-        :class:`Tools`.
-
-        Uses the constructor's search config as defaults. Per-call options override.
-
-        Args:
-            search: Override the default search mode. If not provided, uses
-                the constructor's search config.
-
-        Returns:
-            SearchTool instance
-
-        Example::
-
-            toolset = StackOneToolSet()
-            search_tool = toolset.get_search_tool()
-            tools = search_tool("manage employee records", account_ids=["acc-123"])
+        Call when linked accounts change outside of ``set_accounts`` or when
+        you need to force a fresh fetch from the StackOne MCP endpoint. The end-user ids
+        recorded from GET /accounts are kept until the next one replaces them; the accounts
+        a provider lookup failed to name are forgotten.
         """
-        if self._search_config is None:
-            raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
-            )
-
-        config: SearchConfig = {**self._search_config}
-        if search is not None:
-            config["method"] = search
-
-        return SearchTool(self, config=config)
-
-    def _build_tools(self, account_ids: list[str] | None = None) -> Tools:
-        """Build tool_search + tool_execute tools scoped to this toolset."""
-        if self._search_config is None:
-            raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
-            )
-
-        if account_ids:
-            self._account_ids = account_ids
-
-        search_tool = _create_search_tool(self.api_key)
-        search_tool._toolset = self
-
-        execute_tool = _create_execute_tool(self.api_key)
-        execute_tool._toolset = self
-
-        return Tools([search_tool, execute_tool])
-
-    def openai(
-        self,
-        *,
-        mode: Literal["search_and_execute"] | None = None,
-        account_ids: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Get tools in OpenAI function calling format.
-
-        Args:
-            mode: Tool mode.
-                ``None`` (default): fetch all tools and convert to OpenAI format.
-                ``"search_and_execute"``: return two meta tools (tool_search + tool_execute)
-                that let the LLM discover and execute tools on-demand.
-            account_ids: Account IDs to scope tools. Overrides the ``execute``
-                config from the constructor.
-
-        Returns:
-            List of tool definitions in OpenAI function format.
-
-        Examples::
-
-            # All tools
-            toolset = StackOneToolSet()
-            tools = toolset.openai()
-
-            # Meta tools for agent-driven discovery
-            toolset = StackOneToolSet()
-            tools = toolset.openai(mode="search_and_execute")
-        """
-        effective_account_ids = account_ids or (
-            self._execute_config.get("account_ids") if self._execute_config else None
-        )
-
-        if mode == "search_and_execute":
-            return self._build_tools(account_ids=effective_account_ids).to_openai()
-
-        return self.fetch_tools(account_ids=effective_account_ids).to_openai()
-
-    def langchain(
-        self,
-        *,
-        mode: Literal["search_and_execute"] | None = None,
-        account_ids: list[str] | None = None,
-    ) -> Sequence[Any]:
-        """Get tools in LangChain format.
-
-        Args:
-            mode: Tool mode.
-                ``None`` (default): fetch all tools and convert to LangChain format.
-                ``"search_and_execute"``: return two tools (tool_search + tool_execute)
-                that let the LLM discover and execute tools on-demand.
-                The framework handles tool execution automatically.
-            account_ids: Account IDs to scope tools. Overrides the ``execute``
-                config from the constructor.
-
-        Returns:
-            List of LangChain tool objects.
-        """
-        effective_account_ids = account_ids or (
-            self._execute_config.get("account_ids") if self._execute_config else None
-        )
-
-        if mode == "search_and_execute":
-            return self._build_tools(account_ids=effective_account_ids).to_langchain()
-
-        return self.fetch_tools(account_ids=effective_account_ids).to_langchain()
-
-    def execute(
-        self,
-        tool_name: str,
-        arguments: str | dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Execute a tool by name.
-
-        Use with ``openai(mode="search_and_execute")`` in manual agent loops —
-        pass the tool name and arguments from the LLM's tool call directly.
-
-        Tools are cached after the first call.
-
-        Args:
-            tool_name: The tool name from the LLM's tool call
-                (e.g. ``"tool_search"`` or ``"tool_execute"``).
-            arguments: The arguments from the LLM's tool call,
-                as a JSON string or dict.
-
-        Returns:
-            Tool execution result as a dict.
-        """
-        if self._tools_cache is None:
-            self._tools_cache = self._build_tools()
-
-        tool = self._tools_cache.get_tool(tool_name)
-        if tool is None:
-            return {"error": f'Tool "{tool_name}" not found.'}
-        return tool.execute(arguments)
-
-    @property
-    def semantic_client(self) -> SemanticSearchClient:
-        """Lazy initialization of semantic search client.
-
-        Returns:
-            SemanticSearchClient instance configured with the toolset's API key and base URL
-        """
-        if self._semantic_client is None:
-            self._semantic_client = SemanticSearchClient(
-                api_key=self.api_key,
-                base_url=self.base_url,
-            )
-        return self._semantic_client
-
-    def _local_search(
-        self,
-        query: str,
-        all_tools: Tools,
-        *,
-        connector: str | None = None,
-        top_k: int | None = None,
-        min_similarity: float | None = None,
-    ) -> Tools:
-        """Run local BM25+TF-IDF search over already-fetched tools."""
-        from stackone_ai.local_search import ToolIndex
-
-        available_connectors = all_tools.get_connectors()
-        if not available_connectors:
-            return Tools([])
-
-        index = ToolIndex(list(all_tools))
-        results = index.search(
-            query,
-            limit=top_k if top_k is not None else 5,
-            min_score=min_similarity if min_similarity is not None else 0.0,
-        )
-        matched_names = [r.name for r in results]
-        tool_map = {t.name: t for t in all_tools}
-        filter_connectors = {connector.lower()} if connector else available_connectors
-        matched_tools = [
-            tool_map[name]
-            for name in matched_names
-            if name in tool_map and name.split("_")[0].lower() in filter_connectors
-        ]
-        return Tools(matched_tools[:top_k] if top_k is not None else matched_tools)
-
-    def search_tools(
-        self,
-        query: str,
-        *,
-        connector: str | None = None,
-        top_k: int | None = None,
-        min_similarity: float | None = None,
-        account_ids: list[str] | None = None,
-        search: SearchMode | None = None,
-    ) -> Tools:
-        """Search for and fetch tools using semantic or local search.
-
-        This method discovers relevant tools based on natural language queries.
-        Constructor search config provides defaults; per-call args override.
-
-        Args:
-            query: Natural language description of needed functionality
-                (e.g., "create employee", "send a message")
-            connector: Optional provider/connector filter (e.g., "bamboohr", "slack")
-            top_k: Maximum number of tools to return. Overrides constructor default.
-            min_similarity: Minimum similarity score threshold 0-1. Overrides constructor default.
-            account_ids: Optional account IDs (uses set_accounts() if not provided)
-            search: Search backend to use. Overrides constructor default.
-                - ``"auto"`` (default): try semantic search first, fall back to local
-                  BM25+TF-IDF if the API is unavailable.
-                - ``"semantic"``: use only the semantic search API; raises
-                  ``SemanticSearchError`` on failure.
-                - ``"local"``: use only local BM25+TF-IDF search (no API call to the
-                  semantic search endpoint).
-
-        Returns:
-            Tools collection with matched tools from linked accounts
-
-        Raises:
-            ToolsetConfigError: If search is disabled (``search=None`` in constructor)
-            SemanticSearchError: If the API call fails and search is ``"semantic"``
-
-        Examples:
-            # Semantic search (default with local fallback)
-            tools = toolset.search_tools("manage employee records", top_k=5)
-
-            # Explicit semantic search
-            tools = toolset.search_tools("manage employees", search="semantic")
-
-            # Local BM25+TF-IDF search
-            tools = toolset.search_tools("manage employees", search="local")
-
-            # Filter by connector
-            tools = toolset.search_tools(
-                "create time off request",
-                connector="bamboohr",
-                search="semantic",
-            )
-        """
-        if self._search_config is None:
-            raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with a search config to enable."
-            )
-
-        # Merge constructor defaults with per-call overrides
-        effective_search: SearchMode = (
-            search if search is not None else self._search_config.get("method", "auto")
-        )
-        effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
-        effective_min_sim = (
-            min_similarity if min_similarity is not None else self._search_config.get("min_similarity")
-        )
-
-        all_tools = self.fetch_tools(account_ids=account_ids)
-        available_connectors = all_tools.get_connectors()
-
-        if not available_connectors:
-            return Tools([])
-
-        # Local-only search — skip semantic API entirely
-        if effective_search == "local":
-            return self._local_search(
-                query, all_tools, connector=connector, top_k=effective_top_k, min_similarity=effective_min_sim
-            )
-
-        try:
-            # Determine which connectors to search
-            if connector:
-                connectors_to_search = {connector.lower()} & available_connectors
-                if not connectors_to_search:
-                    return Tools([])
-            else:
-                connectors_to_search = available_connectors
-
-            # Search each connector in parallel
-            def _search_one(c: str) -> list[SemanticSearchResult]:
-                resp = self.semantic_client.search(
-                    query=query, connector=c, top_k=effective_top_k, min_similarity=effective_min_sim
-                )
-                return list(resp.results)
-
-            all_results: list[SemanticSearchResult] = []
-            last_error: SemanticSearchError | None = None
-            max_workers = min(len(connectors_to_search), 10)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-                futures = {pool.submit(_search_one, c): c for c in connectors_to_search}
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        all_results.extend(future.result())
-                    except SemanticSearchError as e:
-                        last_error = e
-
-            # If ALL connector searches failed, re-raise to trigger fallback
-            if not all_results and last_error is not None:
-                raise last_error
-
-            # Sort by score, apply top_k
-            all_results.sort(key=lambda r: r.similarity_score, reverse=True)
-            if effective_top_k is not None:
-                all_results = all_results[:effective_top_k]
-
-            if not all_results:
-                return Tools([])
-
-            # 1. Parse composite IDs to MCP-format action names, deduplicate
-            seen_names: set[str] = set()
-            action_names: list[str] = []
-            for result in all_results:
-                name = _normalize_action_name(result.id)
-                if name in seen_names:
-                    continue
-                seen_names.add(name)
-                action_names.append(name)
-
-            if not action_names:
-                return Tools([])
-
-            # 2. Use MCP tools (already fetched) — schemas come from the source of truth
-            # 3. Filter to only the tools search found, preserving search relevance order
-            action_order = {name: i for i, name in enumerate(action_names)}
-            matched_tools = [t for t in all_tools if t.name in seen_names]
-            matched_tools.sort(key=lambda t: action_order.get(t.name, float("inf")))
-
-            # Auto mode: if semantic returned results but none matched MCP tools, fall back to local
-            if effective_search == "auto" and len(matched_tools) == 0:
-                logger.warning(
-                    "Semantic search returned %d results but none matched MCP tools, "
-                    "falling back to local search",
-                    len(all_results),
-                )
-                return self._local_search(
-                    query,
-                    all_tools,
-                    connector=connector,
-                    top_k=effective_top_k,
-                    min_similarity=effective_min_sim,
-                )
-
-            return Tools(matched_tools)
-
-        except SemanticSearchError as e:
-            if effective_search == "semantic":
-                raise
-
-            logger.warning("Semantic search failed (%s), falling back to local BM25+TF-IDF search", e)
-            return self._local_search(
-                query, all_tools, connector=connector, top_k=effective_top_k, min_similarity=effective_min_sim
-            )
-
-    def search_action_names(
-        self,
-        query: str,
-        *,
-        connector: str | None = None,
-        account_ids: list[str] | None = None,
-        top_k: int | None = None,
-        min_similarity: float | None = None,
-    ) -> list[SemanticSearchResult]:
-        """Search for action names without fetching tools.
-
-        Useful when you need to inspect search results before fetching,
-        or when building custom filtering logic.
-
-        Args:
-            query: Natural language description of needed functionality
-            connector: Optional provider/connector filter (single connector)
-            account_ids: Optional account IDs to scope results to connectors
-                available in those accounts (uses set_accounts() if not provided).
-                When provided, results are filtered to only matching connectors.
-            top_k: Maximum number of results. If None, uses the backend default.
-            min_similarity: Minimum similarity score threshold 0-1. If not provided,
-                the server uses its default.
-
-        Returns:
-            List of SemanticSearchResult with action names, scores, and metadata.
-            Versioned API names are normalized to MCP format but results are NOT
-            deduplicated — multiple API versions of the same action may appear
-            with their individual scores.
-
-        Examples:
-            # Lightweight: inspect results before fetching
-            results = toolset.search_action_names("manage employees")
-            for r in results:
-                print(f"{r.id}: {r.similarity_score:.2f}")
-
-            # Account-scoped: only results for connectors in linked accounts
-            results = toolset.search_action_names(
-                "create employee",
-                account_ids=["acc-123"],
-                top_k=5
-            )
-        """
-        if self._search_config is None:
-            raise ToolsetConfigError(
-                "Search is disabled. Initialize StackOneToolSet with search config to enable."
-            )
-
-        # Merge constructor defaults with per-call overrides
-        effective_top_k = top_k if top_k is not None else self._search_config.get("top_k")
-        effective_min_sim = (
-            min_similarity if min_similarity is not None else self._search_config.get("min_similarity")
-        )
-
-        # Resolve available connectors from account_ids (same pattern as search_tools)
-        available_connectors: set[str] | None = None
-        effective_account_ids = account_ids or self._account_ids
-        if effective_account_ids:
-            all_tools = self.fetch_tools(account_ids=effective_account_ids)
-            available_connectors = all_tools.get_connectors()
-            if not available_connectors:
-                return []
-
-        try:
-            if available_connectors:
-                # Parallel per-connector search (only user's connectors)
-                if connector:
-                    connectors_to_search = {connector.lower()} & available_connectors
-                else:
-                    connectors_to_search = available_connectors
-
-                def _search_one(c: str) -> list[SemanticSearchResult]:
-                    try:
-                        resp = self.semantic_client.search(
-                            query=query,
-                            connector=c,
-                            top_k=effective_top_k,
-                            min_similarity=effective_min_sim,
-                        )
-                        return list(resp.results)
-                    except SemanticSearchError:
-                        return []
-
-                all_results: list[SemanticSearchResult] = []
-                if connectors_to_search:
-                    max_workers = min(len(connectors_to_search), 10)
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-                        futures = [pool.submit(_search_one, c) for c in connectors_to_search]
-                        for future in concurrent.futures.as_completed(futures):
-                            all_results.extend(future.result())
-            else:
-                # No account filtering — single global search
-                response = self.semantic_client.search(
-                    query=query,
-                    connector=connector,
-                    top_k=effective_top_k,
-                    min_similarity=effective_min_sim,
-                )
-                all_results = list(response.results)
-
-        except SemanticSearchError as e:
-            logger.warning("Semantic search failed: %s", e)
-            return []
-
-        # Sort by score
-        all_results.sort(key=lambda r: r.similarity_score, reverse=True)
-        return all_results[:effective_top_k] if effective_top_k is not None else all_results
-
-    def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
-        """Check if a tool name matches any of the provider filters
-
-        Args:
-            tool_name: Name of the tool to check
-            providers: List of provider names (case-insensitive)
-
-        Returns:
-            True if the tool matches any provider, False otherwise
-        """
-        # Extract provider from tool name (assuming format: provider_action)
-        provider = tool_name.split("_")[0].lower()
-        provider_set = {p.lower() for p in providers}
-        return provider in provider_set
-
-    def _filter_by_action(self, tool_name: str, actions: list[str]) -> bool:
-        """Check if a tool name matches any of the action patterns
-
-        Args:
-            tool_name: Name of the tool to check
-            actions: List of action patterns (supports glob patterns)
-
-        Returns:
-            True if the tool matches any action pattern, False otherwise
-        """
-        return any(fnmatch.fnmatch(tool_name, pattern) for pattern in actions)
+        with self._cache_lock:
+            self._cache_generation += 1
+            self._catalog_cache.clear()
+            self._provider_misses.clear()
+            self._discovered_account_ids = None
+            self._discovering = None
 
     def fetch_tools(
         self,
@@ -1100,6 +309,7 @@ class StackOneToolSet:
         account_ids: list[str] | None = None,
         providers: list[str] | None = None,
         actions: list[str] | None = None,
+        mode: Any = _UNSET,
     ) -> Tools:
         """Fetch tools with optional filtering by account IDs, providers, and actions
 
@@ -1115,47 +325,70 @@ class StackOneToolSet:
             Collection of tools matching the filter criteria
 
         Raises:
-            ToolsetLoadError: If there is an error loading the tools
+            ToolsetLoadError: If there is an error loading the tools. When every account
+                fails for differing reasons, its ``failures`` holds each account's error,
+                and its ``__cause__`` is an ExceptionGroup of them.
+            StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
+                after retries, even when only one of several accounts is; or with the API's
+                status when every account fails with that same status, so a caller can tell
+                a revoked key's 401 from a 429. Other per-account failures skip that account
+                with a warning, and leave it out for ``FAILED_ACCOUNT_RETRY_SECONDS``.
+
+        A 429 is retried up to three times, after the server's ``Retry-After`` (capped at
+        30 seconds) or else a 1s, 2s, 4s backoff with jitter. A wait that would not end
+        within ``timeout`` is not started, and the 429 is raised instead.
 
         Examples:
-            # Filter by account IDs
             tools = toolset.fetch_tools(account_ids=['123', '456'])
-
-            # Filter by providers
             tools = toolset.fetch_tools(providers=['hibob', 'bamboohr'])
-
-            # Filter by actions with glob patterns
             tools = toolset.fetch_tools(actions=['*_list_employees'])
 
-            # Combine filters
-            tools = toolset.fetch_tools(
-                account_ids=['123'],
-                providers=['hibob'],
-                actions=['*_list_*']
-            )
+        Note:
+            For organizations with multiple connected accounts, calling `fetch_tools()`
+            without `account_ids` discovers and fetches the catalog for every active shared
+            account (non-shared ones too with ``include_non_shared=True``).
+            If your organization has many accounts, pass explicit `account_ids` to avoid
+            excessive round trips and blowing model context limits.
 
-            # Use set_accounts() for account filtering
-            toolset.set_accounts(['123', '456'])
-            tools = toolset.fetch_tools()
+            Discovery skips non-shared accounts unless the toolset was built with
+            ``include_non_shared=True``.
+        """
+        mode = self._tool_mode if mode is _UNSET else mode
+        tools, _ = self._fetch_tools(account_ids, providers, actions, mode, retry_failed=None)
+        return tools
+
+    def _fetch_tools(
+        self,
+        account_ids: list[str] | None,
+        providers: list[str] | None,
+        actions: list[str] | None,
+        mode: ToolMode | None,
+        *,
+        retry_failed: _RetryFailed | None,
+    ) -> tuple[Tools, dict[str | None, Exception]]:
+        """:meth:`fetch_tools`, and each account in scope it left out with the error it failed
+        with. ``retry_failed`` picks, from a cached catalog, the accounts marked failed to list
+        again now rather than once they are due.
         """
         try:
-            effective_account_ids = account_ids or self._account_ids
-            if not effective_account_ids and self.account_id:
-                effective_account_ids = [self.account_id]
+            # Captured before account resolution, which may discover accounts: a
+            # clear_catalog_cache() landing mid-discovery must stop the catalog it
+            # resolves to from being cached too, not just the discovered list itself.
+            generation = self._cache_generation
+            account_scope: list[str | None] = sorted(
+                dict.fromkeys(self._resolve_account_ids(account_ids)), key=lambda a: (a is None, a)
+            )
 
-            if effective_account_ids:
-                account_scope: list[str | None] = list(dict.fromkeys(effective_account_ids))
-            else:
-                account_scope = [None]
+            # Keyed on what was fetched, not on how it is filtered: providers and
+            # actions narrow the list in memory, so they must not force a refetch.
+            # base_url and api_key belong here — leaving them out meant reassigning
+            # either one kept serving the old catalog, still pointed at the old host.
+            listings, failures = self._catalog(account_scope, mode, generation, retry_failed=retry_failed)
 
-            endpoint = f"{self.base_url.rstrip('/')}/mcp"
-            all_tools: list[StackOneTool] = []
-
-            for account in account_scope:
-                headers = self._build_mcp_headers(account)
-                catalog = _fetch_mcp_tools(endpoint, headers)
-                for tool_def in catalog:
-                    all_tools.append(self._create_rpc_tool(tool_def, account))
+            all_tools = [
+                self._create_tool(tool_def, account, endpoint)
+                for tool_def, account, endpoint in self._dedupe_global_tools(listings)
+            ]
 
             if providers:
                 all_tools = [tool for tool in all_tools if self._filter_by_provider(tool.name, providers)]
@@ -1163,56 +396,972 @@ class StackOneToolSet:
             if actions:
                 all_tools = [tool for tool in all_tools if self._filter_by_action(tool.name, actions)]
 
-            return Tools(all_tools)
+            return Tools(all_tools), failures
 
-        except ToolsetError:
+        except (ToolsetError, StackOneError):
+            # StackOneAPIError carries the HTTP status. Re-wrapping it below would throw
+            # that away, so a caller could not tell a 401 from a 429.
             raise
         except Exception as exc:  # pragma: no cover - unexpected runtime errors
             raise ToolsetLoadError(f"Error fetching tools: {exc}") from exc
 
-    def _build_mcp_headers(self, account_id: str | None) -> dict[str, str]:
-        headers = {
-            "Authorization": _build_auth_header(self.api_key),
-            "User-Agent": _USER_AGENT,
-        }
-        if account_id:
-            headers["x-account-id"] = account_id
-        return headers
+    @staticmethod
+    def _validate_account_ids(account_ids: Any) -> list[str]:
+        """A copy of the account ids, refusing a bare string, a non-list, a non-string id or
+        an empty id. ``None`` means not given: no ids.
 
-    def _create_rpc_tool(self, tool_def: _McpToolDefinition, account_id: str | None) -> StackOneTool:
-        schema = tool_def.input_schema or {}
-        parameters = ToolParameters(
-            type=str(schema.get("type") or "object"),
-            properties=self._normalize_schema_properties(schema),
+        An empty or ``None`` id would be sent with no ``x-account-id``, so it is rejected
+        rather than letting the server answer for an account nobody chose, as in Node. A
+        dict is refused rather than iterated, which read ``{"id": "acc-1"}`` as the account
+        ``"id"``.
+        """
+        if account_ids is None:
+            return []
+        if isinstance(account_ids, str):
+            raise ToolsetConfigError(
+                "account_ids must be a list of account ids, not a string. "
+                f"Did you mean [{_json_text(account_ids)}]?"
+            )
+        if not isinstance(account_ids, list) or not all(isinstance(i, str) for i in account_ids):
+            raise ToolsetConfigError("account_ids must be a list of account id strings")
+        ids = list(account_ids)
+        if "" in ids:
+            raise ToolsetConfigError("account_ids must not contain an empty account id")
+        return ids
+
+    def _resolve_account_ids(self, account_ids: list[str] | None) -> list[str]:
+        """The accounts a call is scoped to, in the order they were given or discovered.
+
+        The argument, then ``set_accounts()``, then the constructor's ``account_id``, then
+        every active shared account ``GET /accounts`` lists (non-shared ones too with
+        ``include_non_shared=True``).
+        """
+        if account_ids is not None:
+            account_ids = self._validate_account_ids(account_ids)
+        resolved = account_ids or self._account_ids
+        if not resolved and self.account_id:
+            resolved = [self.account_id]
+        if not resolved:
+            resolved = self._discover_account_ids()
+        return list(resolved)
+
+    def _catalog(
+        self,
+        account_scope: list[str | None],
+        mode: ToolMode | None,
+        generation: int,
+        *,
+        retry_failed: _RetryFailed | None = None,
+    ) -> tuple[list[_Listing], dict[str | None, Exception]]:
+        """Every scoped account's catalog, from the cache where it can be.
+
+        One unusable account must not cost the caller every other account's tools, so a
+        failing account is skipped with a warning. The healthy accounts' listings are cached
+        all the same, and the failed account is left out, silently, until
+        ``FAILED_ACCOUNT_RETRY_SECONDS`` have passed, when the next call lists it again. Not
+        caching at all made every call re-list every account, and wait out the full timeout
+        on one that hangs.
+
+        A 429 that outlasts its retries is raised, not skipped: it is the key's, not the
+        account's, and skipping it would hand back a catalog missing whichever accounts
+        happened to be throttled. When every account fails, see :func:`_all_accounts_failed`.
+
+        ``generation`` is the cache generation as of the start of the call that resolved
+        ``account_scope``: a clear_catalog_cache() during account discovery must stop the
+        catalog this scope resolves to from being cached, same as the discovered list.
+
+        Returned with each account left out and the error it failed with. ``retry_failed`` is
+        given the cached catalog and picks accounts marked failed in it to list again now,
+        without waiting for them to be due.
+        """
+        key = self._cache_key(account_scope, mode)
+        with self._cache_lock:
+            cached = self._catalog_cache.get(key)
+        now = _clock()
+        if cached is None:
+            due = account_scope
+        else:
+            retried = set(retry_failed(cached)) if retry_failed else set()
+            due = [
+                account
+                for account, failed_at in cached.failed_at.items()
+                if account in retried or now - failed_at >= FAILED_ACCOUNT_RETRY_SECONDS
+            ]
+            if not due:
+                return cached.in_order(account_scope), cached.failures()
+
+        # No param-style pin: arguments are sent verbatim and the server maps them with its
+        # own reverse map, so the model sees whatever style the server serves.
+        endpoint = f"{self.base_url.rstrip('/')}/mcp"
+        if mode:
+            endpoint = f"{endpoint}?tool-mode={mode}"
+
+        def _fetch_for_account(
+            account: str | None,
+        ) -> list[_Listing]:
+            without_end_user = account is not None and self._end_user_id(account) is None
+            try:
+                listed = fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout)
+            except StackOneAPIError as exc:
+                # Refused for want of an end user it was sent without: look it up, and retry
+                # once with it.
+                if not (without_end_user and account is not None and self._look_up_end_user(account, exc)):
+                    raise
+                listed = fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout)
+            return [(tool_def, account, endpoint) for tool_def in listed]
+
+        def _store(catalog: _Catalog) -> None:
+            # Merged with whatever is cached now, not overwritten: a concurrent call for the
+            # same key may have stored a healthier catalog since this call read it, and a
+            # wholesale overwrite would hide its successes behind this call's failures for
+            # FAILED_ACCOUNT_RETRY_SECONDS. A listing wins over a failure for the same account.
+            with self._cache_lock:
+                if generation != self._cache_generation:
+                    return
+                existing = self._catalog_cache.get(key)
+                if existing is not None:
+                    merged_listings = {**existing.listings, **catalog.listings}
+                    merged_failed_at = {**existing.failed_at, **catalog.failed_at}
+                    merged_errors = {**existing.errors, **catalog.errors}
+                    for account in catalog.listings:
+                        merged_failed_at.pop(account, None)
+                        merged_errors.pop(account, None)
+                    catalog = _Catalog(merged_listings, merged_failed_at, merged_errors)
+                self._catalog_cache[key] = catalog
+
+        if len(account_scope) == 1:
+            catalog = _Catalog({account_scope[0]: _fetch_for_account(account_scope[0])})
+            _store(catalog)
+            return catalog.in_order(account_scope), {}
+
+        listings = dict(cached.listings) if cached else {}
+        failed_at = dict(cached.failed_at) if cached else {}
+        errors = dict(cached.errors) if cached else {}
+        failures: list[tuple[str | None, Exception]] = []
+        for account, outcome in _fan_out(_fetch_for_account, due):
+            if isinstance(outcome, Exception):
+                failures.append((account, outcome))
+            else:
+                listings[account] = outcome
+                failed_at.pop(account, None)
+                errors.pop(account, None)
+        if not listings:
+            raise _all_accounts_failed(failures)
+        failed_now = _clock()
+        for account, failure in failures:
+            logger.warning("Skipping account that failed to list tools — %s: %s", account, failure)
+            failed_at[account] = failed_now
+            errors[account] = failure
+
+        catalog = _Catalog(listings, failed_at, errors)
+        _store(catalog)
+        return catalog.in_order(account_scope), catalog.failures()
+
+    @staticmethod
+    def _dedupe_global_tools(
+        listings: list[_Listing],
+    ) -> list[_Listing]:
+        """Keep only the first listing of the feedback tool.
+
+        It is global rather than account-scoped, so every account's listing carries an
+        identical copy. Left in, N accounts meant N same-named tools and a duplicate-name
+        warning about a clash that cannot misroute anything — noise that teaches callers
+        to ignore the warning that does matter.
+        """
+        seen_feedback = False
+        kept: list[_Listing] = []
+        for listing in listings:
+            if listing[0].name == SUBMIT_FEEDBACK_TOOL_NAME:
+                if seen_feedback:
+                    continue
+                seen_feedback = True
+            kept.append(listing)
+        return kept
+
+    def _cache_key(self, account_scope: list[str | None], mode: ToolMode | None) -> tuple[Any, ...]:
+        return (
+            tuple(sorted(account_scope, key=lambda a: (a is None, a))),
+            mode,
+            self.base_url,
+            self.api_key,
         )
-        return _StackOneRpcTool(
+
+    def _meta_tools(self, suffix: str, account_ids: list[str] | None = None) -> list[StackOneTool]:
+        """The server's per-connector meta tools, regardless of this toolset's mode.
+
+        The mode is passed down rather than assigned to ``self``. Flipping instance
+        state here raced with any concurrent ``fetch_tools()``: that call could read
+        the flipped mode partway through and cache search_execute meta tools under the
+        individual-mode key, permanently, for every later caller.
+        """
+        tools, _ = self._meta_tools_and_failures(suffix, account_ids, retry_failed=None)
+        return tools
+
+    def _meta_tools_and_failures(
+        self, suffix: str, account_ids: list[str] | None, *, retry_failed: _RetryFailed | None
+    ) -> tuple[list[StackOneTool], dict[str | None, Exception]]:
+        tools, failures = self._fetch_tools(
+            account_ids, None, None, "search_execute", retry_failed=retry_failed
+        )
+        return [tool for tool in tools if tool.name.endswith(suffix)], failures
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 10,
+        account_ids: list[str] | None = None,
+    ) -> list[JsonDict]:
+        """Find actions matching a natural-language query.
+
+        Searches every linked connector and merges the results, so the catalog
+        never has to be loaded into a model's context.
+
+        Args:
+            query: What you want to do, e.g. "list recent comments".
+            top_k: Maximum results, across every connector searched.
+            account_ids: Restrict to these accounts. Defaults to every active shared one
+                (non-shared ones too with ``include_non_shared=True``).
+
+        Returns:
+            At most ``top_k`` action dicts, best first across every connector, each carrying
+            at least ``action_id`` and ``description``, the ``account_id`` of the account
+            whose connector found it, and the ``session_id`` of the search when the server
+            issued one. The same action linked on two accounts is two hits. Pass
+            ``session_id`` to :meth:`execute` and :meth:`submit_feedback` to link the calls,
+            and ``account_id`` in ``account_ids`` to run the action on that account.
+
+        Raises:
+            StackOneAPIError: With ``status_code`` 429 if the API is still rate limiting
+                after retries, for any account or connector. A 429 is retried as in
+                :meth:`fetch_tools`; other per-connector failures are skipped with a
+                warning.
+        """
+        # The server rejects anything outside 1..50, but only after a round trip per
+        # connector — and reports it as a load failure, which reads like an outage
+        # rather than a typo. Fail here instead, where the caller can see why.
+        if not isinstance(top_k, int) or isinstance(top_k, bool) or not 1 <= top_k <= _MAX_TOP_K:
+            raise ToolsetConfigError(
+                f"top_k must be an integer between 1 and {_MAX_TOP_K}, got {_json_text(top_k)}"
+            )
+
+        tools = self._meta_tools("_search_actions", account_ids)
+        if not tools:
+            return []
+
+        def _search_one(tool: StackOneTool) -> list[JsonDict]:
+            found = tool.execute({"query": query, "top_k": top_k})
+            actions = list(found.get("actions", []))
+            # The server returns session_id once per search, beside the actions. Results
+            # from every connector are merged and re-ranked below, so this is the last
+            # point at which a hit can still be traced to the search, and the account,
+            # that produced it.
+            session_id = found.get("session_id")
+            traced: JsonDict = {}
+            if isinstance(session_id, str) and session_id:
+                traced["session_id"] = session_id
+            account_id = tool.get_account_id()
+            if account_id:
+                traced["account_id"] = account_id
+            return [{**action, **traced} for action in actions]
+
+        results: list[JsonDict] = []
+        failures: list[str] = []
+        # Fan out the way fetch_tools() does. Serially, a customer with a dozen
+        # connectors pays the sum of every connector's latency on the headline call.
+        for tool, outcome in _fan_out(_search_one, tools):
+            if isinstance(outcome, Exception):
+                # Skip everything but a rate limit, as fetch_tools() does. Catching only
+                # StackOneError let a transport failure — which _describe_mcp_failure
+                # reports as a ToolsetLoadError — abort the whole search, which is
+                # precisely the flakiness this guard exists to absorb.
+                failures.append(f"{tool.name}: {outcome}")
+            else:
+                results.extend(outcome)
+
+        if failures and not results:
+            raise ToolsetLoadError("No connector returned results. " + " | ".join(failures))
+        for failure in failures:
+            logger.warning("Skipping connector that failed to search — %s", failure)
+
+        # Concatenating per-connector results leaves the list grouped by connector, so
+        # results[0] would be the best hit of whichever connector answered first rather
+        # than the best hit overall. Rank globally; the server scores every action on the
+        # same scale. Actions without a score sort last rather than raising.
+        def _score(action: JsonDict) -> float:
+            raw = action.get("similarity_score")
+            if isinstance(raw, bool) or not isinstance(raw, int | float):
+                return 0.0
+            return float(raw)
+
+        # Then cut to top_k: each connector was asked for top_k, so the merged list can
+        # hold many more.
+        results.sort(key=_score, reverse=True)
+        return results[:top_k]
+
+    def execute(
+        self,
+        action_id: str,
+        arguments: JsonDict | None = None,
+        *,
+        account_ids: list[str] | None = None,
+        session_id: str | None = None,
+    ) -> JsonDict:
+        """Execute an action by id, as returned by :meth:`search`.
+
+        Always runs through the connector's ``_execute_action`` meta tool, so
+        ``arguments`` is the nested form every action's ``example_request``
+        shows — ``{"query": {...}, "path": {...}, "body": {...}}``. A
+        ``fetch_tools()`` tool takes the keys its own served schema names instead;
+        routing by whether an id happened to be in the catalog would make the
+        argument shape depend on something the caller cannot see.
+
+        ``arguments["headers"]`` is forwarded to the action: ``*_execute_action`` serves an
+        open ``headers`` object, so any header name is accepted except Authorization,
+        x-account-id, User-Agent and x-end-user-id, which the SDK sets itself and which are
+        dropped.
+
+        ``session_id`` is the value a :meth:`search` hit carries. Passing it links
+        this call to that search server-side.
+
+        ``account_ids`` restricts routing to these accounts. Pass a search hit's
+        ``account_id`` to run the action on the account that found it.
+
+        Raises:
+            ToolsetConfigError: If ``action_id``, ``arguments`` or ``session_id`` is malformed,
+                or the action's connector is linked on more than one account in scope.
+            ToolArgumentsError: If the arguments cannot be encoded as JSON.
+            ToolsetLoadError: If no connector matches, or an account in scope that could serve
+                the action failed to list. An account left out after failing whose provider in
+                ``GET /accounts`` is the action's connector, or whose provider no
+                ``GET /accounts`` has named, is listed again first, without waiting out
+                ``FAILED_ACCOUNT_RETRY_SECONDS``; if it still fails, the action is not run on
+                another account in its place. When a failed account's provider is not known,
+                one ``GET /accounts`` is made first to learn it; if that fails, it stays
+                unknown, and is neither looked up nor listed again early for
+                ``FAILED_ACCOUNT_RETRY_SECONDS``.
+            StackOneAPIError: If the action fails, including when the server rejects the
+                arguments.
+        """
+        if not isinstance(action_id, str) or not action_id:
+            raise ToolsetConfigError(f"action_id must be a non-empty string, got {_json_text(action_id)}")
+        if arguments is not None and not isinstance(arguments, dict):
+            raise ToolsetConfigError(f"arguments must be a JSON object, got {_json_type(arguments)}")
+        if session_id is not None and (not isinstance(session_id, str) or not session_id):
+            raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
+
+        suffix = "_execute_action"
+        # At most one GET /accounts per call, to learn the providers of failed accounts: with
+        # explicit ids none was made, and an unknown provider could serve any action.
+        learnt = False
+
+        def _learn_providers(accounts: list[str]) -> set[str]:
+            nonlocal learnt
+            if learnt:
+                return set()
+            missed = self._learn_providers(accounts)
+            learnt = missed is not None
+            return missed or set()
+
+        def _retry_failed(cached: _Catalog) -> list[str | None]:
+            # An account marked failed that could serve the action is listed again now: left
+            # out, it would leave the action to whichever account did list, which may be
+            # another end user's. One whose provider cannot serve it is not, so it does not
+            # cost every other connector's actions its timeout. Nor is one a lookup recently
+            # failed to name: it would pay its timeout on every call in the window.
+            failed = [account for account in cached.failed_at if account is not None]
+            missed = self._recently_missed(failed) | _learn_providers(failed)
+            listed = [
+                self._connector_of_name(tool_def.name, account, suffix)
+                for account, listings in cached.listings.items()
+                for tool_def, _, _ in listings
+                if tool_def.name.endswith(suffix)
+            ]
+            return [
+                account
+                for account in failed
+                if account not in missed and self._may_serve(account, action_id, listed)
+            ]
+
+        meta_tools, failed = self._meta_tools_and_failures(suffix, account_ids, retry_failed=_retry_failed)
+        _learn_providers([account for account in failed if account is not None])
+        connectors = [self._connector_of(tool, suffix) for tool in meta_tools]
+        blocking = sorted(
+            (
+                (account, failure)
+                for account, failure in failed.items()
+                if account is not None and self._may_serve(account, action_id, connectors)
+            ),
+            key=lambda pair: pair[0],
+        )
+        if blocking:
+            raise ToolsetLoadError(
+                f"{_json_text(action_id)} may be served by an account that failed to list ("
+                + "; ".join(f"{account}: {failure}" for account, failure in blocking)
+                + "). Pass the account id to use, such as a search hit's account_id."
+            )
+        matches = [
+            tool
+            for tool in meta_tools
+            if action_id.lower().startswith(self._connector_of(tool, "_execute_action") + "_")
+        ]
+        if matches:
+            # Longest connector wins: with both `browser` and `browser_linkedin` linked,
+            # the first token alone would route every browser_linkedin action to browser.
+            best = max(len(self._connector_of(t, "_execute_action")) for t in matches)
+            finalists = [t for t in matches if len(self._connector_of(t, "_execute_action")) == best]
+            if len(finalists) > 1:
+                # The same provider linked twice, which discovery makes common. Picking one
+                # would run the action against an account the caller never chose — another
+                # end user's, possibly.
+                ordered = sorted(finalists, key=lambda t: t.get_account_id() or "")
+                raise ToolsetConfigError(
+                    f"{_json_text(action_id)} matches {len(finalists)} connectors on different accounts "
+                    f"({', '.join(f'{t.name} on {t.get_account_id()}' for t in ordered)}). "
+                    "Pass the account id to use, such as a search hit's account_id."
+                )
+            tool = finalists[0]
+            # action_id LAST, removed first so it is last in key order too, as in Node.
+            # Spreading arguments over it let a model-supplied "action_id" silently replace
+            # the action the caller pinned — the exact thing a host app pins it for.
+            # session_id only when given: the served schema makes it an optional string, so
+            # an absent key is valid and a null is not.
+            call_arguments: JsonDict = dict(arguments or {})
+            call_arguments.pop("action_id", None)
+            if session_id is not None:
+                call_arguments.pop("session_id", None)
+                call_arguments["session_id"] = session_id
+            call_arguments["action_id"] = action_id
+            # Returned as the server wrote it, the same shape tool.execute() returns.
+            return tool.execute(call_arguments)
+
+        raise ToolsetLoadError(
+            f"No connector found for {_json_text(action_id)}. Use search() to discover valid action ids."
+        )
+
+    def submit_feedback(
+        self,
+        rating: FeedbackRating,
+        tool_names: Sequence[str],
+        *,
+        feedback: str | None = None,
+        category: FeedbackCategory | None = None,
+        session_id: str | None = None,
+        source: FeedbackSource = "model",
+        account_ids: list[str] | None = None,
+        action_run_id: str | None = None,
+    ) -> JsonDict:
+        """Record a verdict on how well the tools served this session.
+
+        Calls the server's ``stackone_submit_feedback`` tool once, through the account with
+        the lowest id among those the call is scoped to: ``account_ids``, or else the
+        toolset's, or else every active shared one (non-shared ones too with
+        ``include_non_shared=True``). Pass the ``session_id`` from a :meth:`search`
+        hit to attach the feedback to that session.
+
+        Args:
+            rating: ``"positive"``, ``"negative"`` or ``"neutral"``.
+            tool_names: The tools or action ids the feedback is about.
+            feedback: An optional one-line reason.
+            category: What the feedback is about, e.g. ``"search"`` or ``"execute"``.
+            session_id: The session to link this feedback to.
+            source: Who produced the feedback.
+            account_ids: Accounts to choose from; only the lowest id is used. Defaults to
+                the toolset's own.
+            action_run_id: The action run the feedback is about. Sent only when given.
+
+        Raises:
+            ToolsetConfigError: If ``tool_names`` is a string or ``session_id`` is empty or
+                not a string.
+            ToolsetLoadError: If feedback is not enabled for this project.
+        """
+        if isinstance(tool_names, str):
+            raise ToolsetConfigError(
+                "tool_names must be a list of tool names, not a string. "
+                f"Did you mean [{_json_text(tool_names)}]?"
+            )
+        if session_id is not None and (not isinstance(session_id, str) or not session_id):
+            raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
+
+        # Found in the served catalog, never built here: the server only serves the tool
+        # when the org flag and the project setting are both on, and a client-side stand-in
+        # would report success for feedback that went nowhere. It is global and served in
+        # every mode, so one account's search_execute listing — two tools per connector,
+        # not one per action — is enough to find it.
+        # The lowest id is the one a caller can predict, whatever order GET /accounts lists
+        # them in.
+        scope = self._resolve_account_ids(account_ids)
+        tool = self.fetch_tools(account_ids=[min(scope)], mode="search_execute").get_tool(
+            SUBMIT_FEEDBACK_TOOL_NAME
+        )
+        if tool is None:
+            raise ToolsetLoadError(
+                f"The server did not serve {SUBMIT_FEEDBACK_TOOL_NAME}: feedback is not enabled "
+                "for this project."
+            )
+
+        # Unset optionals are omitted, never sent as null: the served schema declares them
+        # as optional strings, so a null is a present key of the wrong type and fails
+        # validation where an absent one would not.
+        arguments: JsonDict = {"rating": rating, "tool_names": list(tool_names)}
+        optional = {
+            "feedback": feedback,
+            "category": category,
+            "session_id": session_id,
+            "action_run_id": action_run_id,
+            "source": source,
+        }
+        arguments.update({key: value for key, value in optional.items() if value is not None})
+        return tool.execute(arguments)
+
+    def openai(self, *, account_ids: list[str] | None = None) -> list[JsonDict]:
+        """Get tools in OpenAI function calling format."""
+        return self.fetch_tools(account_ids=account_ids).to_openai()
+
+    def langchain(self, *, account_ids: list[str] | None = None) -> Any:
+        """Get tools in LangChain format."""
+        return self.fetch_tools(account_ids=account_ids).to_langchain()
+
+    def pydantic_ai(self, *, account_ids: list[str] | None = None) -> list[Any]:
+        """Get tools as Pydantic AI ``Tool`` instances.
+
+        Requires ``stackone-ai[pydantic-ai]`` (installs ``pydantic-ai-slim``).
+        """
+        return self.fetch_tools(account_ids=account_ids).to_pydantic_ai()
+
+    @staticmethod
+    def _connector_of(tool: StackOneTool, suffix: str) -> str:
+        """The connector a meta tool belongs to: its name minus the account id and suffix.
+
+        The account id is stripped by identity, not by splitting on the last underscore.
+        Account ids are nanoid-shaped and nanoid's default alphabet includes ``_``, so
+        splitting turned ``mock_acc_1_execute_action`` into connector ``mock_acc`` and
+        made every action on that account unroutable — with an error blaming the
+        caller's action id.
+        """
+        return StackOneToolSet._connector_of_name(tool.name, tool.get_account_id(), suffix)
+
+    @staticmethod
+    def _connector_of_name(name: str, account: str | None, suffix: str) -> str:
+        """:meth:`_connector_of` for a meta tool's served name and the account that listed it."""
+        stem = name[: -len(suffix)] if name.endswith(suffix) else name
+        if account and stem.endswith(f"_{account}"):
+            stem = stem[: -(len(account) + 1)]
+        return stem.lower()
+
+    def _may_serve(self, account_id: str, action_id: str, listed_connectors: list[str]) -> bool:
+        """Whether an account could serve an action: its provider is the action's connector,
+        or no GET /accounts has named its provider.
+
+        The connector is the longest prefix of the action among the connectors listed and the
+        providers GET /accounts named, as execute() routes: a failed ``browser`` account cannot
+        serve ``browser_linkedin_search_people``.
+        """
+        with self._cache_lock:
+            provider = self._providers.get(account_id)
+            known = [p.lower() for p in self._providers.values()]
+        if provider is None:
+            return True
+        lowered = action_id.lower()
+        matching = [c for c in [*listed_connectors, *known] if lowered.startswith(c + "_")]
+        connector = max(matching, key=len, default=None)
+        return provider.lower() == connector
+
+    def _filter_by_provider(self, tool_name: str, providers: list[str]) -> bool:
+        """Whether a tool belongs to one of the given providers (case-insensitive).
+
+        Matched as a full prefix rather than on the first underscore-separated token:
+        splitting on "_" reads `browser_linkedin_search_people` as provider `browser`,
+        so asking for `browser_linkedin` returned nothing at all — silently, since an
+        empty result is indistinguishable from a provider with no tools.
+        """
+        lowered = tool_name.lower()
+        return any(lowered.startswith(provider.lower() + "_") for provider in providers)
+
+    def _filter_by_action(self, tool_name: str, actions: list[str]) -> bool:
+        """Whether a tool name matches any of the given glob patterns."""
+        return any(fnmatch.fnmatch(tool_name, pattern) for pattern in actions)
+
+    def fetch_accounts(self) -> list[JsonDict]:
+        """List the accounts linked to this API key.
+
+        Each entry carries at least ``id``, ``provider`` and ``status``. Only
+        accounts with ``status == "active"`` can serve tools.
+
+        For each account with ``shared`` false and an ``origin_username``, that username is
+        recorded as the account's end-user id, and each account's ``provider`` as its
+        provider. The record replaces that of any call that started before this one; a call
+        that started earlier but finishes after this one records nothing. Every MCP request
+        this toolset's tools make for that account then carries it in ``x-end-user-id``,
+        which the API requires for a non-shared account. An account passed by id is listed
+        here only when the API refuses one of its requests for want of an end user: the
+        toolset then calls this once, and retries the request with the end user it recorded.
+
+        Raises:
+            StackOneAPIError: If the API answers with an error, including a 429 that
+                outlasted its retries.
+        """
+        with self._cache_lock:
+            self._accounts_sequence += 1
+            sequence = self._accounts_sequence
+            fetching: concurrent.futures.Future[list[JsonDict]] = concurrent.futures.Future()
+            self._fetching_accounts = fetching
+        return self._settle_accounts(fetching, sequence)
+
+    def _settle_accounts(
+        self, fetching: concurrent.futures.Future[list[JsonDict]], sequence: int
+    ) -> list[JsonDict]:
+        """Make the GET /accounts started as ``sequence``, settling ``fetching`` with it."""
+        try:
+            accounts = self._request_accounts(sequence)
+        except BaseException as exc:
+            fetching.set_exception(exc)
+            raise
+        else:
+            fetching.set_result(accounts)
+            return accounts
+        finally:
+            with self._cache_lock:
+                if self._fetching_accounts is fetching:
+                    self._fetching_accounts = None
+
+    def _request_accounts(self, sequence: int) -> list[JsonDict]:
+        url = f"{self.base_url.rstrip('/')}/accounts"
+        try:
+            with RateLimitRetryingClient(timeout=self._timeout, retry_within=self._timeout) as client:
+                response = client.get(
+                    url,
+                    headers=build_request_headers(api_key=self.api_key, extra_headers=self._headers),
+                )
+        except RateLimitTimeout as exc:
+            # Timing out while a 429 is retried is still the rate limit, as it is over MCP.
+            raise StackOneAPIError(
+                f"Listing accounts at {url} was rate limited (429) and timed out after "
+                f"{_js_number(self._timeout)}s while retrying",
+                429,
+                None,
+            ) from exc
+        except httpx.HTTPError as exc:
+            # The only public method with no error handling at all: a dead host, a bad
+            # scheme or a timeout leaked httpx's own exception type straight out of the
+            # SDK, outside the documented hierarchy.
+            raise ToolsetLoadError(f"Could not reach {url}: {exc}") from exc
+
+        if response.is_error:
+            # Without this the catch-all in fetch_tools flattens it to a message and
+            # the status is lost, so a caller cannot tell 401 from 429.
+            error = StackOneAPIError(
+                f"Listing accounts at {url} failed with "
+                f"{response.status_code} {response.reason_phrase}: {response.text.strip()}",
+                response.status_code,
+                response.text,
+            )
+            if response.status_code == 429:
+                # Chained to the HTTP 429 so is_rate_limited() reads it as the rate limit it
+                # is: fatal to a fan-out, as a 429 over MCP is.
+                raise error from httpx.HTTPStatusError("429", request=response.request, response=response)
+            raise error
+        try:
+            body = response.json()
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ToolsetLoadError(f"Invalid JSON returned by {url}: {exc}") from exc
+        accounts = body.get("data", body) if isinstance(body, dict) else body
+        if not isinstance(accounts, list):
+            # list(dict) yields the KEYS, so coercing here turned an unexpected wrapper
+            # into a list of strings that blew up much later as an AttributeError.
+            raise ToolsetLoadError(
+                f"Unexpected /accounts response shape: expected a list, got {_json_type(accounts)}"
+            )
+        end_user_ids = {
+            account["id"]: account["origin_username"]
+            for account in accounts
+            if isinstance(account, dict)
+            and isinstance(account.get("id"), str)
+            and account["id"]
+            and account.get("shared") is False
+            and isinstance(account.get("origin_username"), str)
+            and account["origin_username"]
+        }
+        providers = {
+            account["id"]: account["provider"]
+            for account in accounts
+            if isinstance(account, dict)
+            and isinstance(account.get("id"), str)
+            and account["id"]
+            and isinstance(account.get("provider"), str)
+            and account["provider"]
+        }
+        with self._cache_lock:
+            # Only if newer, by start order, than the result last written: a call that
+            # started first but finished last is answering a question a newer call has
+            # since answered better, and must not clobber it. Compared with the last
+            # write rather than the last start, so a newer call that fails leaves this
+            # one to write.
+            if sequence > self._end_user_ids_sequence:
+                self._end_user_ids = end_user_ids
+                self._providers = providers
+                self._end_user_ids_sequence = sequence
+        return accounts
+
+    def _look_up_end_user(self, account_id: str, refusal: Exception) -> bool:
+        """Given the API's refusal of an account's request for want of its end user, list the
+        accounts and say whether that one now has an end user recorded to retry with.
+
+        Only the API's 400 naming this account counts. A GET /accounts already in flight is
+        joined rather than another made. If it fails, the refusal is raised with that failure
+        as its cause: a key without the scope to list accounts would otherwise be told only
+        that the header does not match.
+        """
+        if not is_end_user_refusal(refusal, account_id):
+            return False
+        try:
+            self._join_accounts_listing()
+        except Exception as exc:
+            # A rate limit is the key's, not the account's, and stays fatal to a fan-out.
+            if is_rate_limited(exc):
+                raise
+            raise refusal from exc
+        return self._end_user_id(account_id) is not None
+
+    def _join_accounts_listing(self) -> None:
+        """Wait for the GET /accounts in flight, or make one: what it records is then current.
+
+        Raises:
+            Exception: Whatever that GET /accounts failed with.
+        """
+        with self._cache_lock:
+            fetching = self._fetching_accounts
+            sequence = 0
+            if fetching is None:
+                self._accounts_sequence += 1
+                sequence = self._accounts_sequence
+                fetching = self._fetching_accounts = concurrent.futures.Future()
+        if sequence:
+            with contextlib.suppress(Exception):
+                self._settle_accounts(fetching, sequence)
+        fetching.result()
+
+    def _learn_providers(self, account_ids: list[str]) -> set[str] | None:
+        """If any of these accounts' providers is unknown, and no lookup has missed it within
+        ``FAILED_ACCOUNT_RETRY_SECONDS``, join or make one GET /accounts to learn it, and return
+        those it still could not name; ``None`` if it made no lookup. If that fails the providers
+        stay unknown, except that a rate limit is raised. Each one still unknown is recorded as
+        missed, unless clear_catalog_cache() ran meanwhile, which promises to forget misses.
+        """
+        missed = self._recently_missed(account_ids)
+        with self._cache_lock:
+            unknown = [a for a in account_ids if a not in self._providers and a not in missed]
+            generation = self._cache_generation
+        if not unknown:
+            return None
+        try:
+            self._join_accounts_listing()
+        except Exception as exc:
+            if is_rate_limited(exc):
+                raise
+        missed_at = _clock()
+        with self._cache_lock:
+            still_unknown = {account for account in unknown if account not in self._providers}
+            if generation == self._cache_generation:
+                for account in still_unknown:
+                    self._provider_misses[account] = missed_at
+        return still_unknown
+
+    def _recently_missed(self, account_ids: list[str]) -> set[str]:
+        """Those of these accounts whose provider is unknown and a lookup failed to name
+        within ``FAILED_ACCOUNT_RETRY_SECONDS``.
+        """
+        now = _clock()
+        with self._cache_lock:
+            return {
+                account
+                for account in account_ids
+                if account not in self._providers
+                and (missed_at := self._provider_misses.get(account)) is not None
+                and now - missed_at < FAILED_ACCOUNT_RETRY_SECONDS
+            }
+
+    def _end_user_id(self, account_id: str) -> str | None:
+        """The end-user id GET /accounts recorded for an account, if it is not shared."""
+        with self._cache_lock:
+            return self._end_user_ids.get(account_id)
+
+    def _discover_account_ids(self) -> list[str]:
+        """List the linked accounts this API key can use.
+
+        The MCP endpoint requires an ``x-account-id`` on every request, so an API
+        key on its own is not enough to list tools. Rather than make every caller
+        supply one, ask the API which accounts the key has.
+
+        Warning: For organizations with many connected accounts, relying on discovery
+        fetches the tool catalog for every account. If you have a large number of
+        accounts, it is highly recommended to supply specific ``account_id`` or
+        ``account_ids`` to avoid excessive API round trips and huge model contexts.
+
+        Non-shared accounts are skipped, with one warning naming them, unless the toolset was
+        built with ``include_non_shared=True``: each belongs to a single end user.
+
+        Raises:
+            ToolsetConfigError: If the key has no accounts, none are active, or every active
+                one is non-shared and skipped.
+        """
+        if self._discovered_account_ids is not None:
+            return self._discovered_account_ids
+
+        with self._cache_lock:
+            if self._discovered_account_ids is not None:
+                return self._discovered_account_ids
+            future = self._discovering
+            owner = future is None
+            if owner:
+                future = self._discovering = concurrent.futures.Future()
+
+        if future is None:
+            raise RuntimeError("account discovery future was not initialized")
+        if not owner:
+            # A discovery already in flight: wait for it rather than issue a second
+            # GET /accounts. Its result, or its exception, is shared with every waiter.
+            return future.result()
+
+        try:
+            active = self._fetch_active_account_ids()
+        except BaseException as exc:
+            with self._cache_lock:
+                if self._discovering is future:
+                    self._discovering = None
+            future.set_exception(exc)
+            raise
+        with self._cache_lock:
+            if self._discovering is future:
+                self._discovering = None
+        future.set_result(active)
+        return active
+
+    def _fetch_active_account_ids(self) -> list[str]:
+        generation = self._cache_generation
+        accounts = self.fetch_accounts()
+
+        active = [a["id"] for a in accounts if a.get("status") == "active" and a.get("id")]
+        if not active:
+            if not accounts:
+                raise ToolsetConfigError(
+                    "This API key has no linked accounts. Link one in the StackOne "
+                    "dashboard, or pass an account id explicitly."
+                )
+            listed = ", ".join(f"{a.get('provider')} ({a.get('status')})" for a in accounts)
+            raise ToolsetConfigError(
+                f"None of this API key's {len(accounts)} linked accounts are active: {listed}. "
+                "Re-link them in the StackOne dashboard, or pass an account id explicitly."
+            )
+
+        # Each non-shared account belongs to a single end user: discovering it would put one
+        # end user's tools in front of whoever uses this toolset.
+        if not self._include_non_shared:
+            skipped = sorted(
+                {a["id"] for a in accounts if a.get("id") in active and a.get("shared") is False}
+            )
+            if skipped and len(skipped) == len(set(active)):
+                raise ToolsetConfigError(
+                    f"None of this API key's {len(skipped)} active account(s) are shared: each "
+                    "belongs to a single end user. Pass their account ids, or opt in to non-shared "
+                    "accounts, to use them."
+                )
+            if skipped:
+                logger.warning(
+                    "Discovery skipped %d non-shared account(s) (%s): each belongs to a single end "
+                    "user. Pass their account ids, or opt in to non-shared accounts, to use them.",
+                    len(skipped),
+                    ", ".join(skipped),
+                )
+                active = [account for account in active if account not in skipped]
+
+        # Not kept if clear_catalog_cache() ran while the list was in flight: it may name
+        # accounts the clear was meant to forget.
+        with self._cache_lock:
+            if generation == self._cache_generation:
+                self._discovered_account_ids = active
+        return active
+
+    def _build_mcp_headers(self, account_id: str | None) -> dict[str, str]:
+        end_user_id = self._end_user_id(account_id) if account_id else None
+        return build_request_headers(
+            api_key=self.api_key,
+            account_id=account_id,
+            end_user_id=end_user_id,
+            extra_headers=self._headers,
+        )
+
+    def _create_tool(
+        self,
+        tool_def: McpToolDefinition,
+        account_id: str | None,
+        endpoint: str,
+    ) -> StackOneTool:
+        """Build an executable tool from a served catalog entry.
+
+        Every tool, in every mode, executes over MCP ``tools/call`` on the endpoint that
+        listed it, with the ``x-account-id`` of the account that listed it, and the
+        ``x-end-user-id`` recorded for that account when the request is made.
+        """
+        schema = tool_def.input_schema or {}
+        # Pop keys we explicitly override to avoid "multiple values for keyword argument"
+        rest = dict(schema)
+        # A string type is passed through; anything else, such as ["object", "null"], is
+        # "object", as in Node. str() handed the model "['object', 'null']".
+        served_type = rest.pop("type", "object")
+        schema_type = served_type if isinstance(served_type, str) else "object"
+        rest.pop("properties", None)
+        schema_properties = self._normalize_schema_properties(schema)
+
+        parameters = ToolParameters(
+            **rest,
+            type=schema_type,
+            properties=schema_properties,
+        )
+        tool = StackOneMcpTool(
             name=tool_def.name,
             description=tool_def.description or "",
             parameters=parameters,
             api_key=self.api_key,
-            base_url=self.base_url,
+            endpoint=endpoint,
             account_id=account_id,
+            headers=self._headers,
+            timeout=self._timeout,
         )
+        tool._end_user_id_of = self._end_user_id
+        tool._look_up_end_user = self._look_up_end_user
+        return tool
 
     def _normalize_schema_properties(self, schema: dict[str, Any]) -> dict[str, Any]:
+        """Mirror the served schema's properties, recording requiredness per property.
+
+        The served schema expresses requiredness as a top-level ``required`` list.
+        The SDK carries it per-property as ``nullable`` so each property is
+        self-describing; everything else in the property is preserved verbatim.
+        """
         properties = schema.get("properties")
         if not isinstance(properties, dict):
             return {}
 
-        required_fields = {str(name) for name in schema.get("required", [])}
+        raw_required = schema.get("required")
+        # A string `required` would iterate as characters and mark every real property
+        # optional; a null would raise and fail the whole catalog over one bad tool. A
+        # non-string entry is dropped, as to_openai_function() drops it, so the marker and
+        # the `required` a model is shown cannot disagree.
+        served_required = raw_required if isinstance(raw_required, list) else []
+        required_fields = {name for name in served_required if isinstance(name, str)}
         normalized: dict[str, Any] = {}
 
         for name, details in properties.items():
             if isinstance(details, dict):
-                prop = dict(details)
+                prop = copy.deepcopy(details)
             else:
                 prop = {"description": str(details)}
 
-            if name in required_fields:
-                prop.setdefault("nullable", False)
-            else:
-                prop.setdefault("nullable", True)
-
+            # Assign, never setdefault: a served `nullable` (OpenAPI 3.0 style) means
+            # "accepts null", not "optional". Letting it stand would drop the field
+            # from `required` and the model would omit it.
+            prop["nullable"] = name not in required_fields
             normalized[str(name)] = prop
 
         return normalized

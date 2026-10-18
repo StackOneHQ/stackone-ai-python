@@ -1,93 +1,96 @@
 """
-This example demonstrates how to use StackOne tools with OpenAI's function calling.
+Use StackOne tools with OpenAI function calling.
 
 This example is runnable with the following command:
 ```bash
 uv run examples/openai_integration.py
 ```
 
-You can find out more about the OpenAI Function Calling API format [here](https://platform.openai.com/docs/guides/function-calling).
+Prerequisites: STACKONE_API_KEY and OPENAI_API_KEY in .env, and at least one
+active linked account. No specific provider is required — the example discovers
+what your key can reach.
+
+Expected output: the number of tools loaded, the tool call the model chose, the
+result of running it, and the model's final answer. It exits non-zero if your
+key reaches no tools, rather than pretending to succeed with an empty toolbox.
+
+You can find out more about the OpenAI Function Calling API format
+[here](https://platform.openai.com/docs/guides/function-calling).
 """
 
-from dotenv import load_dotenv
+from __future__ import annotations
+
+import sys
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
+
 from openai import OpenAI
 
 from stackone_ai import StackOneToolSet
-
-load_dotenv()
-
-account_id = "45072196112816593343"
-employee_id = "c28xIQaWQ6MzM5MzczMDA2NzMzMzkwNzIwNA"
-
-
-def handle_tool_calls(tools, tool_calls) -> list[dict]:
-    results = []
-    for tool_call in tool_calls:
-        tool = tools.get_tool(tool_call.function.name)
-        if tool:
-            results.append(tool.execute(tool_call.function.arguments))
-    return results
+from stackone_ai.types import StackOneError, ToolsetError
 
 
 def openai_integration() -> None:
     client = OpenAI()
     toolset = StackOneToolSet()
 
-    # Filter tools to only the ones we need to avoid context window limits
-    tools = toolset.fetch_tools(
-        actions=[
-            "bamboohr_get_employee",
-            "bamboohr_list_employee_employments",
-            "bamboohr_get_employee_employment",
-        ],
-        account_ids=[account_id],
-    )
-    openai_tools = tools.to_openai()
+    # Read-only list actions, whichever provider this key happens to reach. Keeping
+    # the filter narrow matters: an unfiltered catalog is hundreds of tools and will
+    # not fit a model's context.
+    tools = toolset.fetch_tools(actions=["*_list_*"])
+    if not tools:
+        raise SystemExit(
+            "No tools matched. Check your linked accounts with toolset.fetch_accounts() — "
+            "an empty catalog here means the example would prove nothing."
+        )
 
-    messages = [
-        {"role": "system", "content": "You are a helpful HR assistant."},
+    openai_tools = tools.to_openai()[:20]
+    names = {t["function"]["name"] for t in openai_tools}
+    print(f"Loaded {len(openai_tools)} tools, e.g. {sorted(names)[:3]}")
+
+    messages: list[dict] = [
+        {"role": "system", "content": "You answer questions by calling the tools you are given."},
         {
             "role": "user",
-            "content": f"Can you get me information about employee with ID: {employee_id}?",
+            "content": "Use one of your tools to list a few records, then summarise them.",
         },
     ]
 
     response = client.chat.completions.create(
-        model="gpt-5.4",
-        messages=messages,
-        tools=openai_tools,
-        tool_choice="auto",
+        model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
     )
 
-    # Verify we got a response with tool calls
-    assert response.choices[0].message.tool_calls is not None, "Expected tool calls in response"
+    tool_calls = response.choices[0].message.tool_calls
+    if not tool_calls:
+        print("No tool calls were made by the model.")
+        return
 
-    # Handle the tool calls and verify results
-    results = handle_tool_calls(tools, response.choices[0].message.tool_calls)
-    assert results is not None and len(results) > 0, "Expected tool call results"
-    assert "data" in results[0], "Expected data in tool call result"
+    print(f"LLM made {len(tool_calls)} tool call(s):")
+    for tc in tool_calls:
+        print(f"  - {tc.function.name}({tc.function.arguments})")
 
-    # Verify we can continue the conversation with the results
-    messages.extend(
-        [
-            {"role": "assistant", "content": None, "tool_calls": response.choices[0].message.tool_calls},
-            {
-                "role": "tool",
-                "tool_call_id": response.choices[0].message.tool_calls[0].id,
-                "content": str(results[0]),
-            },
-        ]
-    )
+    # The assistant turn must come before its tool results, or OpenAI returns a 400.
+    messages.append(response.choices[0].message.model_dump(exclude_none=True))
+    tool_messages = tools.execute_openai_tool_calls(tool_calls)
+    for message in tool_messages:
+        print(f"  Result: {message['content'][:200]}...")
+    messages.extend(tool_messages)
 
-    # Verify the final response
     final_response = client.chat.completions.create(
-        model="gpt-5.4",
-        messages=messages,
-        tools=openai_tools,
-        tool_choice="auto",
+        model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
     )
-    assert final_response.choices[0].message.content is not None, "Expected final response content"
+    print(f"Final response:\n{final_response.choices[0].message.content}")
 
 
 if __name__ == "__main__":
-    openai_integration()
+    try:
+        openai_integration()
+    except ToolsetError as exc:
+        sys.exit(f"Could not load tools: {exc}")
+    except StackOneError as exc:
+        sys.exit(f"StackOne API error: {exc}")

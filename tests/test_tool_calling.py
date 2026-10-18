@@ -1,107 +1,83 @@
 """Tests for tool calling functionality"""
 
-import json
+import logging
+from typing import Any
 
-import httpx
 import pytest
-import respx
 
-from stackone_ai import StackOneTool
-from stackone_ai.models import ExecuteConfig, ToolParameters
-from stackone_ai.toolset import _StackOneRpcTool
-from tests.conftest import TEST_BASE_URL
+from stackone_ai import StackOneError, StackOneTool, ToolArgumentsError
+from stackone_ai.tools import StackOneMcpTool, _header_text
+from stackone_ai.types import ExecuteConfig, ToolParameters
+
+
+def _mcp_tool(properties: dict[str, Any] | None = None, account_id: str | None = "real-account"):
+    return StackOneMcpTool(
+        name="linear_acct_execute_action",
+        description="Execute",
+        parameters=ToolParameters(type="object", properties=properties or {}),
+        api_key="test_key",
+        endpoint="https://api.example.com/mcp",
+        account_id=account_id,
+    )
+
+
+@pytest.fixture
+def seen(monkeypatch) -> dict[str, Any]:
+    """Replace the MCP transport and record what each call would have sent."""
+    captured: dict[str, Any] = {}
+
+    def fake_call(endpoint, headers, name, arguments, **_kwargs):
+        captured.update(endpoint=endpoint, headers=headers, name=name, arguments=arguments)
+        return {"success": True, "result": "test_result"}
+
+    monkeypatch.setattr("stackone_ai.tools.call_mcp_tool", fake_call)
+    return captured
 
 
 @pytest.fixture
 def mock_tool():
-    """Create a mock tool for testing"""
-    execute_config = ExecuteConfig(
+    """An MCP tool with two declared parameters"""
+    return StackOneMcpTool(
         name="test_tool",
-        method="POST",
-        url="https://api.example.com/test",
-        headers={"Content-Type": "application/json"},
-    )
-
-    parameters = ToolParameters(
-        type="object",
-        properties={
-            "name": {"type": "string", "description": "Name parameter"},
-            "value": {"type": "number", "description": "Value parameter"},
-        },
-    )
-
-    tool = StackOneTool(
         description="Test tool",
-        parameters=parameters,
-        _execute_config=execute_config,
-        _api_key="test_api_key",
+        parameters=ToolParameters(
+            type="object",
+            properties={
+                "name": {"type": "string", "description": "Name parameter"},
+                "value": {"type": "number", "description": "Value parameter"},
+            },
+        ),
+        api_key="test_api_key",
+        endpoint="https://api.example.com/mcp",
+        account_id="acc1",
     )
-
-    return tool
 
 
 class TestToolCalling:
     """Test tool calling functionality"""
 
-    @respx.mock
-    def test_call_with_kwargs(self, mock_tool):
+    def test_call_with_kwargs(self, mock_tool, seen):
         """Test calling a tool with keyword arguments"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
-        )
-
-        # Call the tool with kwargs
         result = mock_tool.call(name="test", value=42)
 
-        # Verify the result
         assert result == {"success": True, "result": "test_result"}
+        assert seen["name"] == "test_tool"
+        assert seen["endpoint"] == "https://api.example.com/mcp"
+        assert seen["arguments"] == {"name": "test", "value": 42}
 
-        # Verify the request was made correctly
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        assert json.loads(request.content) == {"name": "test", "value": 42}
-
-    @respx.mock
-    def test_call_with_dict_arg(self, mock_tool):
+    def test_call_with_dict_arg(self, mock_tool, seen):
         """Test calling a tool with a dictionary argument"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
-        )
-
-        # Call the tool with a dict
         result = mock_tool.call({"name": "test", "value": 42})
 
-        # Verify the result
         assert result == {"success": True, "result": "test_result"}
+        assert seen["arguments"] == {"name": "test", "value": 42}
 
-        # Verify the request
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        assert json.loads(request.content) == {"name": "test", "value": 42}
-
-    @respx.mock
-    def test_call_with_json_string(self, mock_tool):
+    def test_call_with_json_string(self, mock_tool, seen):
         """Test calling a tool with a JSON string argument"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "test_result"})
-        )
-
-        # Call the tool with a JSON string
         result = mock_tool.call('{"name": "test", "value": 42}')
 
-        # Verify the result
         assert result == {"success": True, "result": "test_result"}
-
-        # Verify the request
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        assert json.loads(request.content) == {"name": "test", "value": 42}
+        assert seen["arguments"] == {"name": "test", "value": 42}
 
     def test_call_with_both_args_and_kwargs_raises_error(self, mock_tool):
         """Test that providing both args and kwargs raises an error"""
@@ -113,222 +89,271 @@ class TestToolCalling:
         with pytest.raises(ValueError, match="Only one positional argument is allowed"):
             mock_tool.call({"name": "test"}, {"value": 42})
 
-    @respx.mock
-    def test_call_without_arguments(self, mock_tool):
-        """Test calling a tool without any arguments"""
-        # Mock the API response
-        route = respx.post("https://api.example.com/test").mock(
-            return_value=httpx.Response(200, json={"success": True, "result": "no_args"})
-        )
+    def test_call_without_arguments(self, mock_tool, seen):
+        """Test calling a tool without any arguments sends an empty object"""
+        mock_tool.call()
+        assert seen["arguments"] == {}
 
-        # Call the tool without arguments
-        result = mock_tool.call()
+    def test_execute_with_none_arguments(self, mock_tool, seen):
+        mock_tool.execute(None)
+        assert seen["arguments"] == {}
 
-        # Verify the result
-        assert result == {"success": True, "result": "no_args"}
+    def test_parse_arguments_invalid_json(self, mock_tool):
+        """Test that invalid JSON raises ValueError"""
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            mock_tool._parse_arguments("not valid json")
 
-        # Verify the request body is empty or contains empty JSON
-        assert route.called
-        assert route.call_count == 1
-        request = route.calls[0].request
-        # Handle case where body might be None for empty POST
-        if request.content:
-            assert json.loads(request.content) == {}
-        else:
-            assert request.content == b""
+    def test_parse_arguments_non_dict(self, mock_tool):
+        """Test that non-dict JSON raises ValueError"""
+        with pytest.raises(ValueError, match=r'^Tool arguments for "[^"]+" must be a JSON object$'):
+            mock_tool._parse_arguments("[1, 2, 3]")
+
+    def test_arguments_are_not_split_or_renamed(self, seen):
+        """No envelope splitting, no prefix routing: the server maps arguments itself."""
+        tool = _mcp_tool({"path_id": {"type": "string"}, "path_to_file": {"type": "string"}})
+        arguments = {
+            "path_id": "1",
+            "path_to_file": "/tmp/x",
+            "query": {"limit": 5},
+            "body_foo": 1,
+            "foo": 2,
+            "body": {"foo": 9},
+        }
+        tool.execute(arguments)
+        assert seen["arguments"] == arguments
+
+    def test_the_callers_arguments_are_not_mutated(self, seen):
+        tool = _mcp_tool({"headers": {"type": "object", "properties": {}}})
+        arguments = {"headers": {"Authorization": "Bearer stolen"}}
+        tool.execute(arguments)
+        assert arguments == {"headers": {"Authorization": "Bearer stolen"}}
+        assert seen["arguments"] == {"headers": {}}
 
 
-class TestStackOneRpcTool:
-    """Test _StackOneRpcTool functionality"""
+class TestBaseToolHasNoExecutor:
+    """The base class describes a tool; only a subclass can run one (mirrors Node's BaseTool)."""
 
     @pytest.fixture
-    def rpc_tool(self):
-        """Create a mock RPC tool for testing"""
-        parameters = ToolParameters(
-            type="object",
-            properties={
-                "employee_id": {"type": "string", "description": "Employee ID"},
-            },
-        )
-        return _StackOneRpcTool(
-            name="hibob_get_employee",
-            description="Get employee details",
-            parameters=parameters,
-            api_key="test_api_key",
-            base_url=TEST_BASE_URL,
-            account_id="test_account",
+    def base_tool(self):
+        """No API key: the base class cannot execute, so it has nothing to authenticate."""
+        return StackOneTool(
+            description="Hand-built",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(name="hand_built"),
         )
 
-    @respx.mock
-    def test_execute_basic(self, rpc_tool):
-        """Test basic RPC tool execution"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"data": {"id": "123", "name": "John"}})
+    def test_execute_raises_a_stackone_error_naming_the_fix(self, base_tool):
+        with pytest.raises(StackOneError, match=r'Tool "hand_built" has no executor\. Override execute\(\)'):
+            base_tool.execute({})
+
+    def test_call_raises_too(self, base_tool):
+        with pytest.raises(StackOneError, match="has no executor"):
+            base_tool.call()
+
+    def test_an_override_runs(self):
+        class EchoTool(StackOneTool):
+            def execute(self, arguments=None):
+                return {"echo": self._parse_arguments(arguments)}
+
+        tool = EchoTool(
+            description="",
+            parameters=ToolParameters(type="object", properties={}),
+            _execute_config=ExecuteConfig(name="echo"),
+            _api_key="k",
+        )
+        assert tool.call(a=1) == {"echo": {"a": 1}}
+        # Still accepted and kept, for overrides that authenticate with it.
+        assert tool._api_key == "k"
+
+
+class TestMcpToolHeaderGuard:
+    """The guard on a nested ``headers`` argument, which the model controls."""
+
+    def test_undeclared_headers_are_all_dropped(self, seen):
+        """An allowlist, not a denylist: a two-name denylist let Proxy-Authorization,
+        x-stackone-account-id, Cookie and X-Api-Key through."""
+        _mcp_tool().execute(
+            {
+                "action_id": "linear_list_issues",
+                "headers": {
+                    "Authorization": "Bearer stolen",
+                    "Proxy-Authorization": "Basic stolen",
+                    "x-account-id": "victim-account",
+                    "x-stackone-account-id": "victim-account",
+                    "Cookie": "session=x",
+                    "X-Api-Key": "stolen",
+                    "X-Anything": "nope",
+                },
+            }
+        )
+        assert seen["arguments"]["headers"] == {}
+
+    def test_a_nested_declared_header_survives(self, seen):
+        """The allowlist is the schema itself, so a future action needing a header
+        works with no SDK release."""
+        tool = _mcp_tool({"headers": {"type": "object", "properties": {"x-trace": {"type": "string"}}}})
+        tool.execute({"headers": {"X-Trace": "abc", "X-Other": "no"}})
+        assert seen["arguments"]["headers"] == {"X-Trace": "abc"}
+
+    def test_a_flat_declaration_does_not_declare_a_nested_header(self, seen):
+        """Each form is declared on its own: `headers_x-trace` allows only the flat argument."""
+        tool = _mcp_tool({"headers_x-trace": {"type": "string"}})
+        tool.execute({"action_id": "a", "headers": {"X-Trace": "abc"}})
+        assert seen["arguments"] == {"action_id": "a", "headers": {}}
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            pytest.param({"type": "object", "additionalProperties": False}, id="closed-object"),
+            pytest.param({}, id="no-type"),
+            pytest.param({"additionalProperties": True}, id="no-type-additional-allowed"),
+        ],
+    )
+    def test_any_other_schema_without_properties_declares_no_header(self, seen, schema):
+        """Only `type: "object"` not closed by `additionalProperties: false` is open, as in Node."""
+        _mcp_tool({"headers": schema}).execute({"headers": {"x-custom": "dropped"}})
+        assert seen["arguments"]["headers"] == {}
+
+    def test_a_non_object_declared_type_is_an_ordinary_field(self, seen):
+        """`type: "string"` makes `headers` an ordinary field, forwarded unchanged whatever
+        the value actually is, not filtered as a header container."""
+        _mcp_tool({"headers": {"type": "string"}}).execute({"headers": {"x-custom": "a"}})
+        assert seen["arguments"]["headers"] == {"x-custom": "a"}
+
+    @pytest.mark.parametrize("name", ["Authorization", "x-account-id", "User-Agent"])
+    def test_sdk_owned_headers_are_refused_even_when_declared(self, seen, name):
+        tool = _mcp_tool({"headers": {"type": "object", "properties": {name.lower(): {"type": "string"}}}})
+        tool.execute({"headers": {name: "stolen"}})
+        assert seen["arguments"]["headers"] == {}
+
+    def test_a_value_json_cannot_hold_is_an_argument_error(self, seen):
+        with pytest.raises(ValueError, match="could not be encoded"):
+            _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-set": [{"a"}]}})
+        assert seen == {}
+
+    def test_a_self_referential_header_value_is_an_argument_error(self, seen):
+        """A cycle would otherwise recurse forever in _header_text, raising RecursionError."""
+        cyclic: dict[str, Any] = {}
+        cyclic["self"] = cyclic
+        with pytest.raises(ToolArgumentsError, match="could not be encoded"):
+            _mcp_tool({"headers": {"type": "object"}}).execute({"headers": {"x-cyclic": cyclic}})
+        assert seen == {}
+
+    def test_a_list_headers_argument_is_dropped(self, seen, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _mcp_tool().execute({"headers": ["a"], "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert 'Dropping header argument "headers" from a tool call: not an object' in caplog.text
+
+    def test_the_request_is_scoped_to_the_tools_account(self, seen):
+        tool = _mcp_tool({"headers": {"type": "object"}, "headers_x-account-id": {"type": "string"}})
+        tool.execute({"headers": {"x-account-id": "victim"}, "headers_x-account-id": "victim"})
+        assert seen["headers"]["x-account-id"] == "real-account"
+        assert seen["arguments"] == {"headers": {}}
+
+    def test_no_account_sends_no_account_header(self, seen):
+        """A tool built with no account scopes nothing; the server refuses such a call."""
+        _mcp_tool(account_id=None).execute({})
+        assert "x-account-id" not in seen["headers"]
+
+
+@pytest.mark.parametrize(
+    ("value", "text"),
+    [
+        ("as is", "as is"),
+        (False, "false"),
+        (7, "7"),
+        (-0.0, "0"),
+        (0.1, "0.1"),
+        (1e-7, "1e-7"),
+        (1.5e-7, "1.5e-7"),
+        (0.000001, "0.000001"),
+        (1e20, "100000000000000000000"),
+        (1e21, "1e+21"),
+        (1.5e300, "1.5e+300"),
+        (float("nan"), "NaN"),
+        (float("-inf"), "-Infinity"),
+        ({"k": [1.0, 2.5e-7, None, "é\n"]}, '{"k":[1,2.5e-7,null,"é\\n"]}'),
+        ({"k": float("nan")}, '{"k":null}'),
+    ],
+)
+def test_header_text_matches_node(value, text):
+    """Expected values are what Node's headerText returns for the same input."""
+    assert _header_text(value) == text
+
+
+class TestFlatHeaderArguments:
+    """A top-level `headers_<name>` is a header argument too, and gets the same guard."""
+
+    @pytest.mark.parametrize("name", ["headers_x-account-id", "headers_Authorization", "headers_ user-agent"])
+    def test_sdk_owned_headers_are_refused_even_when_declared(self, seen, name, caplog):
+        tool = _mcp_tool({name: {"type": "string"}})
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tool.execute({name: "stolen", "q": 1})
+        assert seen["arguments"] == {"q": 1}
+        assert "from a tool call: set by the SDK" in caplog.text
+
+    def test_non_header_arguments_are_untouched(self, seen):
+        """Only `headers` and `headers_<name>` are header arguments; bare lookalikes are not."""
+        arguments = {
+            "x-account-id": "not-a-header",
+            "authorization": "not-a-header",
+            "header_foo": 1,
+            "Headers_foo": 2,
+            "path": {"headers_x": "y"},
+            "query": {"limit": 5},
+        }
+        _mcp_tool().execute(arguments)
+        assert seen["arguments"] == arguments
+
+
+class TestDeclaredHeaderValuesAreStillValidated:
+    """The allowlist runs first, so the value grammar is only reached for a DECLARED
+    header — which is exactly where a model-supplied value needs checking."""
+
+    @pytest.fixture
+    def tool(self):
+        return _mcp_tool(
+            {"headers": {"type": "object", "properties": {"x-trace": {"type": "string"}}}}, account_id="acct"
         )
 
-        result = rpc_tool.execute({"employee_id": "123"})
+    @pytest.mark.parametrize("value", ["trailing\n", "a\r\nInjected: 1", "bad\rvalue"])
+    def test_crlf_in_a_declared_header_is_dropped(self, tool, value):
+        """`$` matches before a trailing newline, so this needs fullmatch, not match."""
+        assert tool._sanitise_headers({"X-Trace": value}) == {}
 
-        assert result == {"data": {"id": "123", "name": "John"}}
-        assert route.called
-        request = route.calls[0].request
-        body = json.loads(request.content)
-        assert body["action"] == "hibob_get_employee"
-        assert body["body"]["employee_id"] == "123"
-        assert body["headers"]["x-account-id"] == "test_account"
+    def test_a_clean_declared_header_survives(self, tool):
+        assert tool._sanitise_headers({"X-Trace": "abc-123"}) == {"X-Trace": "abc-123"}
 
-    @respx.mock
-    def test_execute_with_json_string(self, rpc_tool):
-        """Test RPC tool execution with JSON string arguments"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
 
-        result = rpc_tool.execute('{"employee_id": "456"}')
+@pytest.mark.parametrize(
+    "value", ["half an emoji \ud83d", {"a", "set"}, b"bytes", float("nan"), float("inf"), float("-inf")]
+)
+def test_unencodable_arguments_raise_value_error(value, seen):
+    """These would otherwise fail inside the MCP client and surface as a transport error.
 
-        assert result == {"success": True}
-        assert route.called
-        body = json.loads(route.calls[0].request.content)
-        assert body["body"]["employee_id"] == "456"
+    NaN and Infinity are not JSON: the MCP client would send them as null.
+    """
+    with pytest.raises(ValueError, match="could not be encoded"):
+        _mcp_tool().execute({"q": value})
+    assert seen == {}
 
-    @respx.mock
-    def test_execute_with_body_payload(self, rpc_tool):
-        """Test RPC tool execution with nested body payload"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
 
-        result = rpc_tool.execute({"body": {"name": "Jane", "email": "jane@example.com"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["body"]["name"] == "Jane"
-        assert body["body"]["email"] == "jane@example.com"
-
-    @respx.mock
-    def test_execute_with_path_payload(self, rpc_tool):
-        """Test RPC tool execution with path parameters"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"path": {"id": "emp123"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["path"] == {"id": "emp123"}
-
-    @respx.mock
-    def test_execute_with_query_payload(self, rpc_tool):
-        """Test RPC tool execution with query parameters"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"query": {"limit": "10", "offset": "0"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["query"] == {"limit": "10", "offset": "0"}
-
-    @respx.mock
-    def test_execute_with_headers_payload(self, rpc_tool):
-        """Test RPC tool execution with custom headers"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"headers": {"X-Custom-Header": "custom_value"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["X-Custom-Header"] == "custom_value"
-        assert body["headers"]["x-account-id"] == "test_account"
-
-    @respx.mock
-    def test_execute_headers_strips_authorization(self, rpc_tool):
-        """Test that Authorization header is stripped from action headers"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"headers": {"Authorization": "Bearer token", "X-Other": "value"}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert "Authorization" not in body["headers"]
-        assert body["headers"]["X-Other"] == "value"
-
-    @respx.mock
-    def test_execute_headers_skips_none_values(self, rpc_tool):
-        """Test that None header values are skipped"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute({"headers": {"X-Present": "value", "X-Absent": None}})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["headers"]["X-Present"] == "value"
-        assert "X-Absent" not in body["headers"]
-
-    @respx.mock
-    def test_execute_without_account_id(self):
-        """Test RPC tool execution without account ID"""
-        parameters = ToolParameters(
-            type="object",
-            properties={},
-        )
-        tool = _StackOneRpcTool(
-            name="test_tool",
-            description="Test",
-            parameters=parameters,
-            api_key="test_key",
-            base_url=TEST_BASE_URL,
-            account_id=None,
-        )
-
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = tool.execute({})
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert "x-account-id" not in body["headers"]
-
-    @respx.mock
-    def test_execute_with_none_arguments(self, rpc_tool):
-        """Test RPC tool execution with None arguments"""
-        route = respx.post(f"{TEST_BASE_URL}/actions/rpc").mock(
-            return_value=httpx.Response(200, json={"success": True})
-        )
-
-        result = rpc_tool.execute(None)
-
-        assert result == {"success": True}
-        body = json.loads(route.calls[0].request.content)
-        assert body["action"] == "hibob_get_employee"
-        assert body["body"] == {}
-
-    def test_parse_arguments_invalid_json(self, rpc_tool):
-        """Test that invalid JSON raises ValueError"""
-        with pytest.raises(ValueError):
-            rpc_tool._parse_arguments("not valid json")
-
-    def test_parse_arguments_non_dict(self, rpc_tool):
-        """Test that non-dict JSON raises ValueError"""
-        with pytest.raises(ValueError, match="Tool arguments must be a JSON object"):
-            rpc_tool._parse_arguments("[1, 2, 3]")
-
-    def test_extract_record_with_dict(self, rpc_tool):
-        """Test _extract_record with dict input"""
-        result = rpc_tool._extract_record({"key": "value"})
-        assert result == {"key": "value"}
-
-    def test_extract_record_with_non_dict(self, rpc_tool):
-        """Test _extract_record with non-dict input"""
-        assert rpc_tool._extract_record("string") is None
-        assert rpc_tool._extract_record(123) is None
-        assert rpc_tool._extract_record(None) is None
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda tool: tool.execute({"q": float("nan")}), id="unencodable"),
+        pytest.param(lambda tool: tool.execute({"headers": {"x": {"a", "set"}}}), id="unencodable-header"),
+        pytest.param(lambda tool: tool.execute("not json"), id="invalid-json"),
+        pytest.param(lambda tool: tool.execute("[1, 2]"), id="not-an-object"),
+        pytest.param(lambda tool: tool.call({"q": 1}, q=2), id="args-and-kwargs"),
+        pytest.param(lambda tool: tool.call({}, {}), id="two-positional"),
+    ],
+)
+def test_an_argument_error_is_a_stackone_error_and_a_value_error(call, seen):
+    """`except StackOneError` catches everything the SDK raises; `except ValueError` still works."""
+    with pytest.raises(ToolArgumentsError) as excinfo:
+        call(_mcp_tool({"headers": {"type": "object"}}))
+    assert isinstance(excinfo.value, StackOneError)
+    assert isinstance(excinfo.value, ValueError)
+    assert seen == {}

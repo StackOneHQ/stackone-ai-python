@@ -1,26 +1,40 @@
 """StackOne AI SDK"""
 
-from stackone_ai.models import StackOneTool, Tools
-from stackone_ai.semantic_search import (
-    SemanticSearchClient,
-    SemanticSearchError,
-    SemanticSearchResponse,
-    SemanticSearchResult,
+from stackone_ai.tools import StackOneMcpTool, StackOneTool, Tools
+from stackone_ai.toolset import StackOneToolSet
+from stackone_ai.types import (
+    ExecuteConfig,
+    ExecuteToolsConfig,
+    FeedbackCategory,
+    FeedbackRating,
+    FeedbackSource,
+    StackOneAPIError,
+    StackOneError,
+    ToolArgumentsError,
+    ToolMode,
+    ToolParameters,
+    ToolsetConfigError,
+    ToolsetError,
+    ToolsetLoadError,
 )
-from stackone_ai.toolset import ExecuteToolsConfig, SearchConfig, SearchMode, SearchTool, StackOneToolSet
 
 __all__ = [
     "StackOneToolSet",
     "StackOneTool",
+    "StackOneMcpTool",
     "Tools",
+    "ToolMode",
+    "ToolParameters",
+    "ExecuteConfig",
     "ExecuteToolsConfig",
-    "SearchConfig",
-    "SearchMode",
-    "SearchTool",
-    # Semantic search
-    "SemanticSearchClient",
-    "SemanticSearchResult",
-    "SemanticSearchResponse",
-    "SemanticSearchError",
+    "FeedbackRating",
+    "FeedbackCategory",
+    "FeedbackSource",
+    "StackOneError",
+    "StackOneAPIError",
+    "ToolArgumentsError",
+    "ToolsetError",
+    "ToolsetConfigError",
+    "ToolsetLoadError",
 ]
-__version__ = "2.5.0"
+__version__ = "2.10.1"

@@ -1,3 +1,0 @@
-[submodule "vendor/stackone-ai-node"]
-	path = vendor/stackone-ai-node
-	url = https://github.com/StackOneHQ/stackone-ai-node.git

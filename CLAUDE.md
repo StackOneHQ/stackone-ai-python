@@ -1,106 +1,275 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Rules and Skills Structure
-
-- **Rules** (`.claude/rules/`): Automatically loaded based on file paths. Source of truth for project conventions.
-- **Skills** (`.agents/skills/`, `.claude/skills/`): Managed by Nix via [agent-skills-nix](https://github.com/Kyure-A/agent-skills-nix). Skills are sourced from [StackOneHQ/skills](https://github.com/StackOneHQ/skills) and installed automatically when entering `nix develop`.
-- **Cursor rules** (`.cursor/rules/`): Symlinks to `.claude/rules/` for consistency.
-
-## Available Skills
-
-| Skill              | Usage                       | Description                                        |
-| ------------------ | --------------------------- | -------------------------------------------------- |
-| **release-please** | `/release-please <version>` | Trigger a release-please PR for a specific version |
-
-## Available Rules
-
-| Rule                         | Applies To          | Description                                        |
-| ---------------------------- | ------------------- | -------------------------------------------------- |
-| **git-workflow**             | All files           | Commit conventions, branch strategy, PR guidelines |
-| **development-workflow**     | All files           | Code style, file naming, project conventions       |
-| **release-please-standards** | All files           | Release versioning with release-please             |
-| **nix-workflow**             | All files           | Nix development environment and CI configuration   |
-| **no-relative-imports**      | `**/*.py`           | Enforce absolute imports in Python files           |
-| **package-installation**     | `**/pyproject.toml` | UV package management standards                    |
-| **uv-scripts**               | `scripts/**/*.py`   | Utility script standards with UV                   |
-| **examples-standards**       | `examples/**/*`     | Example requirements and organization              |
-
-## Available Skills
-
-| Skill             | Description                                  |
-| ----------------- | -------------------------------------------- |
-| **just-commands** | Available just commands (dynamically loaded) |
+Guidance for coding agents working in this repository. `AGENTS.md` is a symlink to
+this file, so Claude Code, Cursor and other agents read the same instructions.
 
 ## Project Overview
 
-StackOne AI SDK is a Python library that provides a unified interface for accessing various SaaS tools through AI-friendly APIs with support for OpenAI, LangChain, CrewAI, and Model Context Protocol (MCP).
+StackOne AI SDK is a Python library providing a unified interface for accessing SaaS
+tools through AI-friendly APIs, with support for OpenAI, LangChain, LangGraph,
+Pydantic AI and the Model Context Protocol (MCP).
+
+Requires Python >= 3.11.
 
 ## Code Architecture
 
-### Core Components
+The package is three modules. The guiding property is that **the toolset is the
+served catalog** — the schema listed to a model is the schema the MCP server sent,
+and a call sends the model's arguments, as given, over MCP `tools/call` to the
+endpoint and account that listed the tool. Nothing invented, nothing lost. The only
+non-MCP request is `GET /accounts`.
 
-1. **StackOneToolSet** (`stackone_ai/toolset.py`): Main entry point
-   - Handles authentication (API key + optional account ID)
-   - Manages tool loading with glob pattern filtering
-   - Provides format converters for OpenAI/LangChain
+1. **`types.py`** — `ToolParameters`, `ToolMode`, `ExecuteConfig`, the error
+   hierarchy, shared aliases and `DEFAULT_BASE_URL`.
+2. **`tools.py`** — `StackOneTool` (schema, header sanitising, framework converters;
+   its `execute()` raises — a hand-built tool must override it), `Tools` (container),
+   `StackOneMcpTool` (every tool the toolset builds, executed over MCP `tools/call`),
+   and the MCP client, including `parse_tool_result`.
+3. **`toolset.py`** — `StackOneToolSet`: account discovery, the cached catalog,
+   `search()` and `execute()`.
 
-2. **Models** (`stackone_ai/models.py`): Data structures
-   - `StackOneTool`: Base class with execution logic
-   - `Tools`: Container for managing multiple tools
-   - Format converters for different AI frameworks
+Tools are listed from `/mcp` (plus `?tool-mode=` when a mode is set; there is no
+param-style pin, so the model sees whatever style the server serves). An API key
+alone is enough: with no account given, `GET /accounts` is called and every `active`
+account is used. There is no OpenAPI parsing and no client-side search.
 
-## Key Development Patterns
+### Two calling surfaces
 
-### Tool Filtering
+The same actions are reachable two ways, with **different argument shapes**:
 
-```python
-# Use glob patterns for tool selection
-tools = StackOneToolSet(include_tools=["bamboohr_*", "!bamboohr_create_*"])
+- `toolset.search()` + `toolset.execute(action_id, args)` drives the per-connector
+  `_search_actions` / `_execute_action` meta tools (`?tool-mode=search_execute`).
+  Arguments are the **nested** form: `{"body": {"variables": {...}}}`.
+- `toolset.fetch_tools()` + `tool.execute(args)` calls per-action tools. Arguments
+  are the keys the tool's served schema names.
+
+Both go over `tools/call` with arguments sent verbatim — the SDK never splits or
+renames them. The server **silently drops** arguments that do not match the schema —
+a wrong key returns a normal-looking success with your filter ignored.
+
+Results follow one rule for every tool (`parse_tool_result`): text parts win, else
+`structuredContent`; `isError` raises `StackOneAPIError` with the payload's status.
+A success is returned exactly as the server wrote it, never unwrapped: for an action
+tool, `*_execute_action` and feedback that is UCA's `{"isError": false, "result": ...}`
+(optionally with `defenderMetadata` / `policyMetadata`); search results are bare JSON.
+Keep the result shape identical to the Node SDK's.
+
+## Commands
+
+```bash
+make               # List all targets (help is the default goal)
+make install            # Core dependencies only
+make install extras=1   # Adds adapters, examples and dev tooling
+make format        # Fix lint, format, and type check — run this before committing
+make test          # Run all tests
+make validate      # Validate against conformance, ADK and Pydantic AI consumers
+make build         # Build package
 ```
 
-### Authentication
+There are no git hooks. Lint, type checking and tests run in CI on every push; run
+them locally before pushing.
 
-```python
-# Uses environment variables or direct configuration
-toolset = StackOneToolSet(
-    api_key="your-api-key",  # or STACKONE_API_KEY env var
-    account_id="optional-id"  # explicit account ID required
-)
-```
+## Code Style
 
-### Type Safety
+- Use [ruff](https://docs.astral.sh/ruff/) for linting and formatting
+- Line length: 110 (set in `pyproject.toml`)
+- Target version: py311
+- Use snake_case for Python files
+- Use the `.yaml` extension, not `.yml`
+- Prefer early returns and guard clauses over nested conditionals
 
-- Full type annotations required (Python 3.10+)
-- Strict ty configuration
+## Type Annotations
+
+- Full type annotations required for all public APIs
+- Use Python 3.11+ typing features
 - Use generics for better IDE support
 
-### Testing
+## Imports
 
-- Snapshot testing for tool parsing (`tests/snapshots/`)
+Always use absolute imports starting with the full package name. Never use relative
+imports (`.` or `..`).
+
+```python
+from stackone_ai.tools import StackOneTool     # good
+from .tools import StackOneTool                # bad
+```
+
+Order: standard library, then third-party, then local.
+
+## Package Management
+
+Use `uv` for all dependency management.
+
+```bash
+uv add --dev pytest     # dev dependency
+uv add pydantic         # package dependency
+uv run pytest           # run from root
+```
+
+Never use `uv pip install`, and never use editable installs (`-e`).
+
+Two dependency tiers, nothing else. **Core** is what the SDK needs to function
+at all — `pydantic`, `httpx`, `mcp`, since `fetch_tools()` is the only route to
+a tool and it talks MCP. **Extras** are everything else: per-framework adapters
+(`langchain`, `pydantic-ai`), the `examples` set, and `dev` tooling. Adapters are
+imported lazily inside the method that needs them, so a bare install never drags
+in a framework you do not use. A new adapter goes in an extra with a lazy
+import, never in core.
+
+## Testing
+
 - Async tests use `pytest-asyncio`
-- See `examples-standards` rule for example validation
+- Examples are type-checked against the current SDK by `make validate` and in CI;
+  each must fail loudly rather than succeed with an empty catalog
+
+**Test doubles must model what the server demands, not what the client happens to
+send.** The SDK once shipped unable to list a single tool while every test passed,
+because the mock defaulted a missing `x-account-id` to `'default'` — inventing an
+account the real API would have rejected. The mock now 400s an unscoped `/mcp`
+request and 404s an unknown account. When adding a mock behaviour,
+make it refuse what the real API refuses. A fake whose signature has no failure mode
+cannot catch a bug.
+
+The mock logs every MCP `tools/call` request as sent — with its account and query
+string, before the
+MCP SDK parses it — at `GET /__requests` (`DELETE` clears it). Assert wire shape there, not
+on a handler's echo, which cannot show a stripped or null key. `MOCK_SUBMIT_FEEDBACK=off`
+(the `mcp_mock_server_without_feedback` fixture) serves a project without feedback.
+
+Verify live behaviour against a real key before claiming it works — a green suite is
+not evidence. Put credentials in the gitignored `.env` and run
+`uv run --env-file .env python ...`.
+
+Integration tests exercise an MCP mock server (`tests/mocks/`) that runs under `tsx`:
+
+```bash
+pnpm install
+```
+
+These tests **fail** rather than skip if Node dependencies are missing — a silent
+skip previously let them vanish while CI stayed green.
+
+The mock lists every `inputSchema` verbatim through the MCP SDK's low-level `Server`.
+Do not move it to `McpServer.registerTool`: that expects a Zod shape and lists a plain
+JSON Schema as `properties: {}`, so no test sees a declared parameter.
+
+The mock's dependencies are pinned exactly (`@modelcontextprotocol/sdk`, `zod`,
+`hono`, `@hono/mcp`). Do not loosen them to caret ranges.
+
+## Examples
+
+Live in `examples/` (flat — no subdirectories).
+
+- Every public function/class needs at least one example
+- Examples are runnable scripts with type hints, following the main code style
+- Start each file with a docstring explaining its purpose
+- Load credentials from `.env` — never hardcode keys
+- Include error handling; document prerequisites and expected output in comments
+
+## Git Workflow
+
+**Never push directly to main without permission.** Branch with
+`git switch -c feature-name`, then open a PR.
+
+Flow: branch → change → `make format` → `make test` → commit → PR.
+
+### Commit Messages
+
+Format: `type(scope): description`, where type is one of `feat`, `fix`, `docs`,
+`refactor`, `test`, `chore`, `ci`, `perf`.
+
+- Keep commits tiny but meaningful; use `git add -p` to stage selectively
+- Explain the *why* in the body, not just the what
+- Always write in English
+- Reference issues and PRs where relevant
+- When moving files, combine deletion and creation in one commit so git records a
+  rename and preserves history
+
+### Pull Requests
+
+Use the same title format as commits. Include a summary (1-3 bullets) and a test
+plan. Reference issues with `Closes #123`.
+
+## Releases
+
+Releases use release-please, configured in `.release-please-config.json` and
+`.release-please-manifest.json`.
+
+Version bumps follow commit type: `feat` bumps the minor version, `fix` the patch
+version, and `feat!` signals a breaking change. `docs`, `chore` and `test` do not
+trigger a release.
+
+Merging the release PR updates `CHANGELOG.md`, creates the GitHub release, and
+publishes to PyPI (requires the `PYPI_API_TOKEN` secret).
+
+Publishing only ever happens there. There is no `make publish`: releases go out
+via release-please after a merge to main, never from a developer machine.
+
+## Key Patterns
+
+```python
+toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
+
+hits = toolset.search("list recent comments", top_k=3)
+hit = hits[0] if hits else None
+session_id = hit.get("session_id") if hit else None
+account_ids = [hit["account_id"]] if hit else None
+toolset.execute(
+    "linear_list_comments", {"body": {"variables": {"first": 25}}}, account_ids=account_ids, session_id=session_id
+)
+toolset.submit_feedback("positive", ["linear_list_comments"], session_id=session_id)
+
+tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
+```
+
+- `providers` matches a full connector prefix, case-insensitively. `actions` is a
+  case-sensitive glob. **A leading `!` is not exclusion syntax** — it is a literal
+  character, so `["*", "!*_delete_*"]` matches every tool.
+- `top_k` is per connector, and must be 1..50.
+- `stackone_submit_feedback` is one global tool the server lists with every
+  account's catalog, in both modes, when feedback is enabled. Like every tool it is a
+  `StackOneMcpTool`; unlike the others it is deduped to one across accounts. It is never
+  invented client-side — when the server omits it, `submit_feedback()` raises.
+  `submit_feedback()` lists one account in `search_execute` mode and makes one
+  `tools/call`, through the first account (as given, else in `GET /accounts` order).
+- `Tools.get_tool()` returns the first tool listed under a name, as Node's `getTool()`.
+- `session_id` is copied onto each `search()` hit and forwarded by `execute()` /
+  `submit_feedback()` only when given. Optional wire keys are omitted, never null.
 
 ## Important Considerations
 
-1. **Dependencies**: See `package-installation` rule for uv dependency management
-2. **Pre-commit**: Hooks configured for ruff and ty - run on all commits
-3. **Python Version**: Requires Python >=3.10
-4. **Error Handling**: Custom exceptions (`StackOneError`, `StackOneAPIError`)
-5. **File Uploads**: Binary parameters auto-detected from OpenAPI specs
-6. **Context Window**: Tool loading warns when loading all tools (large context)
+- **Error handling**: everything derives from `StackOneError` (`types.py`) — both
+  `StackOneAPIError` and the `ToolsetError` family. Nothing outside that hierarchy
+  should escape a public method. `str(StackOneAPIError)` leads with the server's own
+  message.
+- **File downloads**: a file action returns a download link
+  (`{download_url, expires_at, file}`), unchanged; the SDK does not follow it. When no
+  link can be issued the server answers `isError` with status 501, which raises.
+- **Headers**: header arguments — entries of a nested `headers` object, and top-level
+  `headers_<name>` arguments — are an **allowlist** driven by the served schema. A nested
+  entry passes if `headers.properties` declares it, or if `headers` is an object with no
+  `properties` (open, as `*_execute_action` serves it); a flat one passes if the
+  `headers_<name>` property is declared. `Authorization` / `x-account-id` / `User-Agent`
+  never do. Every other argument is sent unchanged. The SDK sets those three itself,
+  after any configured headers. Match header grammar with
+  `fullmatch`, never `match`: `$` also matches before a trailing newline, so `match`
+  lets `"value\n"` through.
 
-## Common Tasks
+### Modifying Tool Behaviour
 
-### Adding New SaaS Integration
+- Execution: `StackOneMcpTool.execute()` and `call_mcp_tool()` in `tools.py`
+- Result parsing: `parse_tool_result()`
+- search/execute routing: `StackOneToolSet.execute()`
+- Tool construction and the feedback-tool dedupe: `StackOneToolSet._create_tool` and
+  `_dedupe_global_tools`
 
-1. Add OpenAPI spec to `stackone_ai/oas/`
-2. Parser automatically converts to tool definitions
-3. Test with `make test-tools`
+Schemas must reach the model intact. `to_openai_function` passes the served schema
+through verbatim, stripping only the SDK's internal `nullable` marker. Its `required`
+is the served root list in the served order — never rebuilt from the markers, which
+re-sorted it into property order. `to_langchain` and `to_pydantic_ai_tool` hand over
+that same schema — never rebuild one from property types, which silently loses every
+nested field, enum and bound. The conformance suite's `--strict-schema` gate checks
+the OpenAI surface.
 
-### Modifying Tool Behavior
-
-- Core execution logic in `StackOneTool.execute()` method
-- HTTP configuration via `ExecuteConfig` class
-- Response handling in `_process_response()`
+The ADK plugin reads `ToolParameters.properties` directly and re-derives `required`
+from the `nullable` marker, so renaming that marker breaks it.

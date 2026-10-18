@@ -9,401 +9,403 @@
 
 StackOne AI provides a unified interface for accessing various SaaS tools through AI-friendly APIs.
 
+> **Upgrading from 2.x?** 3.0 has breaking changes. See the
+> [migration guide](https://github.com/StackOneHQ/stackone-ai-python/blob/main/MIGRATION.md).
+
 ## Features
 
-- Unified interface for multiple SaaS tools
-- AI-friendly tool descriptions and parameters
-- **Tool Calling**: Direct method calling with `tool.call()` for intuitive usage
-- **MCP-backed Dynamic Discovery**: Fetch tools at runtime via `fetch_tools()` with provider, action, and account filtering
-- **Advanced Tool Filtering**:
-  - Glob pattern filtering with patterns like `"salesforce_*"` and exclusions `"!*_delete_*"`
-  - Provider and action filtering
-  - Multi-account support
-- **Semantic Search**: AI-powered tool discovery using natural language queries
-- **Search Tool**: Callable tool discovery for agent loops via `get_search_tool()`
-- Integration with popular AI frameworks:
-  - OpenAI Functions
-  - LangChain Tools
-  - CrewAI Tools
-  - LangGraph Tool Node
+- **Search and execute**: find an action in natural language and run it, so a
+  catalog of hundreds of tools never has to fit in a model's context
+- **Account discovery**: an API key is enough — linked accounts are found for you
+- **MCP-backed**: tools are fetched at runtime, and the schema a model is shown is
+  the schema the server served
+- **Filtering** by account, provider and glob action pattern
+- Integrations: OpenAI functions, LangChain, LangGraph, Pydantic AI
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 
 ## Installation
 
 ```bash
-pip install 'stackone-ai[mcp]'
-
-# Or with uv
-uv add 'stackone-ai[mcp]'
+uv add stackone-ai
 ```
 
-### Optional Features
-
-```bash
-# Install with CrewAI examples
-pip install 'stackone-ai[mcp,examples]'
-# or
-uv add 'stackone-ai[mcp,examples]'
-```
+Framework adapters are extras, imported lazily: `uv add 'stackone-ai[langchain]'`
+(LangGraph uses this one too) or `uv add 'stackone-ai[pydantic-ai]'`.
 
 ## Quick Start
 
-```python
-from stackone_ai import StackOneToolSet
-
-# Initialize with API key
-toolset = StackOneToolSet()  # Uses STACKONE_API_KEY env var
-# Or explicitly: toolset = StackOneToolSet(api_key="your-api-key")
-
-# Get HRIS-related tools with glob patterns
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
-
-# Use a specific tool with the call method
-employee_tool = tools.get_tool("bamboohr_get_employee")
-# Call with keyword arguments
-employee = employee_tool.call(id="employee-id")
-# Or with traditional execute method
-employee = employee_tool.execute({"id": "employee-id"})
-```
-
-## Tool Filtering
-
-StackOne AI SDK provides powerful filtering capabilities to help you select the exact tools you need.
-
-### Filtering with `fetch_tools()`
-
-The `fetch_tools()` method provides filtering by providers, actions, and account IDs:
+Set `STACKONE_API_KEY` and go. The SDK finds your linked accounts itself — you
+only pass an account id when you want to narrow things down.
 
 ```python
 from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 
-# Filter by account IDs
-tools = toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
+# 1. Find an action. Each hit carries the JSON Schema for its own arguments.
+hits = toolset.search("list recent comments", top_k=3)
+# [{"action_id": "linear_list_comments",
+#   "description": "Returns a page of Linear comments as a connection object ...",
+#   "similarity_score": 0.86,
+#   "example_request": {"action_id": "linear_list_comments"},
+#   "input_schema": {"type": "object", "properties": {"body": {...}}},
+#   "session_id": "3f9c...",
+#   "account_id": "acc-123"}, ...]
+hit = hits[0]
 
-# Filter by providers (case-insensitive)
-tools = toolset.fetch_tools(providers=["hibob", "bamboohr"])
-
-# Filter by action patterns with glob support
-tools = toolset.fetch_tools(actions=["*_list_employees"])
-
-# Combine multiple filters
-tools = toolset.fetch_tools(
-    account_ids=["acc-123"],
-    providers=["hibob"],
-    actions=["*_list_*"]
+# 2. Run it. Build the arguments from input_schema.
+result = toolset.execute(
+    hit["action_id"],
+    {"body": {"variables": {"first": 25}}},
+    account_ids=[hit["account_id"]],
+    session_id=hit.get("session_id"),
 )
+result["result"]["data"]  # as the server wrote it: {"isError": false, "result": ...}; a failure raises
 
-# Use set_accounts() for chaining
-toolset.set_accounts(["acc-123", "acc-456"])
-tools = toolset.fetch_tools(providers=["hibob"])
+# 3. Optionally, say how it went. The same session_id links it to the search.
+toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("session_id"))
 ```
 
-**Filtering Options:**
+`search()` asks every linked connector and returns actions ranked by
+`similarity_score`, so a catalog of hundreds of tools never has to fit in a
+model's context. This is the recommended way to use the SDK. `top_k` (1–50, default
+10) caps the whole result, after ranking across every connector.
 
-- **`account_ids`**: Filter tools by account IDs. Tools will be loaded for each specified account.
-- **`providers`**: Filter by provider names (e.g., `["hibob", "bamboohr"]`). Case-insensitive matching.
-- **`actions`**: Filter by action patterns with glob support:
-  - Exact match: `["bamboohr_list_employees"]`
-  - Glob pattern: `["*_list_employees"]` matches all tools ending with `_list_employees`
-  - Provider prefix: `["bamboohr_*"]` matches all BambooHR tools
+Each hit carries the `account_id` of the account that found it, and the same action
+linked on two accounts is two hits. When an action's connector is linked on more than
+one account, `execute()` raises `ToolsetConfigError` rather than pick one: pass the
+hit's account as `account_ids=[hit["account_id"]]`.
 
-## Implicit Feedback (Beta)
-
-The Python SDK can emit implicit behavioral feedback to LangSmith so you can triage low-quality tool results without manually tagging runs.
-
-### Automatic configuration
-
-Set `LANGSMITH_API_KEY` in your environment and the SDK will initialize the implicit feedback manager on first tool execution. You can optionally fine-tune behavior with:
-
-- `STACKONE_IMPLICIT_FEEDBACK_ENABLED` (`true`/`false`, defaults to `true` when an API key is present)
-- `STACKONE_IMPLICIT_FEEDBACK_PROJECT` to pin a LangSmith project name
-- `STACKONE_IMPLICIT_FEEDBACK_TAGS` with a comma-separated list of tags applied to every run
-
-### Manual configuration
-
-If you want custom session or user resolvers, call `configure_implicit_feedback` during start-up:
-
-```python
-from stackone_ai import configure_implicit_feedback
-
-configure_implicit_feedback(
-    api_key="/path/to/langsmith.key",
-    project_name="stackone-agents",
-    default_tags=["python-sdk"],
-)
-```
-
-Providing your own `session_resolver`/`user_resolver` callbacks lets you derive identifiers from the request context before events are sent to LangSmith.
-
-### Attaching session context to tool calls
-
-Both `tool.execute` and `tool.call` accept an `options` keyword that is excluded from the API request but forwarded to the feedback manager:
-
-```python
-tool.execute(
-    {"id": "employee-id"},
-    options={
-        "feedback_session_id": "chat-42",
-        "feedback_user_id": "user-123",
-        "feedback_metadata": {"conversation_id": "abc"},
-    },
-)
-```
-
-When two calls for the same session happen within a few seconds, the SDK emits a `refinement_needed` event, and you can inspect suitability scores directly in LangSmith.
+Each hit carries the `session_id` of the search that found it, when the server
+issued one, so read it with `hit.get("session_id")`. Passing it to
+`execute()` and `submit_feedback()` links the calls server-side; leaving it out
+is fine. `submit_feedback()` makes exactly one call, on the account with the lowest id
+among its `account_ids` when given, otherwise among those the toolset is configured
+with or discovers, and sends `action_run_id` only when given. It raises
+`ToolsetLoadError` when feedback is not enabled for your project. When it is, `fetch_tools()` also returns a single
+`stackone_submit_feedback` tool — one, however many accounts are linked — that a
+model can call itself.
 
 ## Integration Examples
 
-<details>
-<summary>LangChain Integration</summary>
+Every block below runs as written against any linked account — the `*_list_*`
+filter discovers whatever your key can reach rather than assuming a provider.
+Each has a matching runnable script in [examples/](examples/).
 
-StackOne tools work seamlessly with LangChain, enabling powerful AI agent workflows:
+<details>
+<summary>OpenAI</summary>
+
+Needs no `stackone-ai` extra — just `uv add openai`.
 
 ```python
-from langchain_openai import ChatOpenAI
+from openai import OpenAI
 from stackone_ai import StackOneToolSet
 
-# Initialize StackOne tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
+tools = toolset.fetch_tools(actions=["*_list_*"])
+openai_tools = tools.to_openai()[:20]   # keep the catalog inside the context window
 
-# Convert to LangChain format
-langchain_tools = tools.to_langchain()
+client = OpenAI()
+messages = [{"role": "user", "content": "Use a tool to list a few records, then summarise them."}]
+response = client.chat.completions.create(
+    model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
+)
 
-# Use with LangChain models
-model = ChatOpenAI(model="gpt-4o-mini")
-model_with_tools = model.bind_tools(langchain_tools)
-
-# Execute AI-driven tool calls
-response = model_with_tools.invoke("Get employee information for ID: emp123")
-
-# Handle tool calls
-for tool_call in response.tool_calls:
-    tool = tools.get_tool(tool_call["name"])
-    if tool:
-        result = tool.execute(tool_call["args"])
-        print(f"Result: {result}")
+message = response.choices[0].message
+messages.append(message.model_dump(exclude_none=True))   # the assistant turn comes first
+messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 ```
+
+`to_openai()` emits Chat Completions function tools, and
+`execute_openai_tool_calls()` runs the calls the model makes and returns the `tool`
+messages to send back. A failed call becomes an error message the model can read and
+retry from, rather than an exception. Chat Completions accepts at
+most **128 tools**, so filter before binding. See
+[examples/openai_integration.py](examples/openai_integration.py) for the full
+round trip, including feeding results back for a final answer.
 
 </details>
 
 <details>
-<summary>LangGraph Integration</summary>
-
-StackOne tools convert to LangChain tools, which LangGraph consumes via its prebuilt nodes:
-
-Prerequisites:
+<summary>LangChain</summary>
 
 ```bash
-pip install langgraph langchain-openai
+uv add 'stackone-ai[langchain]' langchain-openai
 ```
 
 ```python
 from langchain_openai import ChatOpenAI
-from typing import Annotated
-from typing_extensions import TypedDict
-
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import tools_condition
-
 from stackone_ai import StackOneToolSet
-from stackone_ai.integrations.langgraph import to_tool_node, bind_model_with_tools
 
-# Prepare tools
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
-langchain_tools = tools.to_langchain()
+tools = toolset.fetch_tools(actions=["*_list_*"])
 
-class State(TypedDict):
-    messages: Annotated[list, add_messages]
+model = ChatOpenAI(model="gpt-5.4").bind_tools(tools.to_langchain())
+response = model.invoke("Use a tool to list a few records.")
 
-# Build a small agent loop: LLM -> maybe tools -> back to LLM
-graph = StateGraph(State)
-graph.add_node("tools", to_tool_node(langchain_tools))
-
-def call_llm(state: dict):
-    llm = ChatOpenAI(model="gpt-4o-mini")
-    llm = bind_model_with_tools(llm, langchain_tools)
-    resp = llm.invoke(state["messages"])  # returns AIMessage with optional tool_calls
-    return {"messages": state["messages"] + [resp]}
-
-graph.add_node("llm", call_llm)
-graph.add_edge(START, "llm")
-graph.add_conditional_edges("llm", tools_condition)
-graph.add_edge("tools", "llm")
-app = graph.compile()
-
-_ = app.invoke({"messages": [("user", "Get employee with id emp123") ]})
+for call in response.tool_calls:
+    tool = tools.get_tool(call["name"])
+    print(tool.execute(call["args"]))
 ```
 
 </details>
 
 <details>
-<summary>CrewAI Integration</summary>
+<summary>Pydantic AI</summary>
 
-CrewAI uses LangChain tools natively, making integration seamless:
+```bash
+uv add 'stackone-ai[pydantic-ai]'
+```
 
 ```python
-from crewai import Agent, Crew, Task
+from pydantic_ai import Agent
 from stackone_ai import StackOneToolSet
 
-# Get tools and convert to LangChain format
 toolset = StackOneToolSet()
-tools = toolset.fetch_tools(actions=["bamboohr_*"], account_ids=["your-account-id"])
-langchain_tools = tools.to_langchain()
+tools = toolset.fetch_tools(actions=["*_list_*"]).to_pydantic_ai()
 
-# Create CrewAI agent with StackOne tools
-agent = Agent(
-    role="HR Manager",
-    goal="Analyze employee data and generate insights",
-    backstory="Expert in HR analytics and employee management",
-    tools=langchain_tools,
-    llm="gpt-4o-mini"
-)
+agent = Agent("openai:gpt-5.4", tools=tools)
+print(agent.run_sync("Use a tool to list a few records, then summarise them.").output)
+```
 
-# Define task and execute
-task = Task(
-    description="Find all employees in the engineering department",
-    agent=agent,
-    expected_output="List of engineering employees with their details"
-)
+`toolset.pydantic_ai()` is the same thing for the unfiltered catalog, parallel to
+`.openai()` and `.langchain()`.
 
-crew = Crew(agents=[agent], tasks=[task])
-result = crew.kickoff()
+</details>
+
+<details>
+<summary>LangGraph</summary>
+
+LangGraph consumes LangChain tools, so it goes through the same adapter.
+
+```bash
+uv add 'stackone-ai[langchain]' langchain langchain-openai
+```
+
+```python
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+from stackone_ai import StackOneToolSet
+
+toolset = StackOneToolSet()
+tools = toolset.fetch_tools(actions=["*_list_*"]).to_langchain()
+
+agent = create_agent(ChatOpenAI(model="gpt-5.4"), tools)
+result = agent.invoke({"messages": [("user", "Use a tool to list a few records.")]})
+print(result["messages"][-1].content)
 ```
 
 </details>
 
-## Feedback Collection
+## Advanced Filtering
 
-The SDK includes a feedback collection tool (`tool_feedback`) that allows users to submit feedback about their experience with StackOne tools. This tool is automatically included in the toolset and is designed to be invoked by AI agents after user permission.
+`fetch_tools()` takes three filters. They combine with AND, and all of them are
+applied locally to one cached listing — changing a filter never refetches. Call
+`clear_catalog_cache()` after linking or unlinking accounts.
+
+```python
+toolset = StackOneToolSet()
+
+toolset.fetch_tools()                                    # every tool, every active shared account
+toolset.fetch_tools(providers=["linear"])                # one connector
+toolset.fetch_tools(actions=["linear_list_*"])           # one connector's list actions
+toolset.fetch_tools(actions=["linear_get_issue"])        # exactly one tool
+toolset.fetch_tools(providers=["linear"],
+                    actions=["*_get_*"])                 # both filters, AND-ed
+toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
+```
+
+- **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
+  your active shared accounts (non-shared ones too with `include_non_shared=True`). An empty list means "no filter", not "no accounts". A
+  single failing account is logged and skipped, not fatal — unless it is rate
+  limited (see [Rate limits](#rate-limits)) — and left out of the cached catalog for
+  30 seconds, after which the next call lists it again. If every account fails with
+  the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
+  otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
+  `execute()` does not route around a failed account that could serve the action — one
+  whose provider is the action's connector, or unknown even after one `GET /accounts` to
+  learn it: it lists it again straight away rather than after 30 seconds (unless a lookup
+  failed to name it in the last 30 seconds, when it neither looks it up nor lists it
+  again), and if it still fails it raises `ToolsetLoadError` rather than run the action
+  on another account. Pass the account id to use. A failed account on another provider is not listed again
+  early, so it never costs the call a listing timeout, though learning its provider with
+  explicit ids takes one `GET /accounts`; like any account, it is listed again once its
+  30 seconds are up.
+- **`providers`** — matched **case-insensitively** as a full prefix, so
+  `providers=["linear"]` and `["LINEAR"]` are the same, and a connector whose name
+  contains an underscore must be spelled in full (`["browser_linkedin"]`, not
+  `["browser"]`). No globs here — use `actions` for that.
+- **`actions`** — glob patterns, matched **case-sensitively** against the whole
+  tool name. Exact (`["linear_get_issue"]`), prefix (`["linear_*"]`), infix
+  (`["*_list_*"]`), and character classes (`["linear_[lg]*"]`) all work. Multiple
+  patterns are OR'd together.
+
+```python
+# Chaining: set_accounts() scopes every later call on this toolset.
+toolset.set_accounts(["acc-123"])
+tools = toolset.fetch_tools(providers=["linear"])
+```
+
+### Non-shared accounts
+
+A non-shared account (`shared: false` in `GET /accounts`) belongs to a single end user.
+Discovery skips them, so a toolset built from an API key alone never puts one end user's
+accounts in front of everyone, and logs once per discovery which it skipped. If every
+active account on the key is non-shared, discovery raises `ToolsetConfigError` instead.
+Pass their ids to use them, or opt in:
+
+```python
+toolset = StackOneToolSet(include_non_shared=True)  # discovery includes non-shared accounts
+```
+
+The API requires every MCP request for a non-shared account to carry that account's
+end-user id in `x-end-user-id`. Whenever the SDK calls `GET /accounts`, during discovery
+or in `fetch_accounts()`, it records the `origin_username` of each account with
+`shared: false`, skipped or not, and sends it as `x-end-user-id` on every request for that
+account, including from tools it built earlier. Each successful `GET /accounts` replaces
+the record unless a later-started one has already been recorded; `clear_catalog_cache()`
+keeps it.
+
+With explicit account ids the SDK does not call `GET /accounts` up front. When the API
+refuses a request for an account with no recorded end user because it needs one, the SDK
+calls `GET /accounts` once (joining one already in flight), and if that names the account's
+end user, sends the request again with it; otherwise the API's 400 is raised, with the
+lookup's error as its `__cause__` if the lookup failed (a rate-limited lookup raises its
+429 `StackOneAPIError` instead). Calling
+`toolset.fetch_accounts()` first saves that round trip:
+
+```python
+toolset = StackOneToolSet(account_id="acc-123")
+toolset.fetch_accounts()  # records acc-123's end user if it is not shared
+tools = toolset.fetch_tools()
+```
+
+Or pass the end-user id yourself; a value recorded from `GET /accounts` replaces it:
+
+```python
+toolset = StackOneToolSet(account_id="acc-123", headers={"x-end-user-id": "carol"})
+```
+
+### Extra headers
+
+`StackOneToolSet(headers={...})` sends extra headers on every request the toolset makes,
+`GET /accounts` and every MCP request. `Authorization`, `x-account-id` and `User-Agent`
+are always the SDK's own: if you pass them they are ignored, with a warning.
+
+### Two ways to call a tool
+
+The SDK exposes the same actions through two surfaces. Both execute over MCP
+`tools/call`, on the endpoint and with the account that listed the tool, and send
+your arguments as given, except header arguments: each is forwarded only if the tool's
+schema declares it, and `Authorization`, `x-account-id`, `User-Agent` and `x-end-user-id`
+never are (see
+[the migration guide](MIGRATION.md#tool-arguments-and-headers)). They take **different
+argument shapes**, because each mirrors the schema the server served for it. Both return the server's result exactly
+as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.
+
+| | `search()` + `toolset.execute()` | `fetch_tools()` + `tool.execute()` |
+|---|---|---|
+| Schema to read | `input_schema` on each hit | `tool.parameters.properties` |
+| Argument shape | nested — `{"body": {"variables": {...}}}` | the keys the tool's served schema names |
+| Best for | agents that discover actions at run time | binding a fixed, filtered set of tools to a model |
+
+```python
+# The search/execute surface always takes the nested form:
+toolset.execute("linear_list_comments", {"body": {"variables": {"first": 25}}})
+
+# A fetch_tools() tool takes whatever its own schema declares:
+tool = toolset.fetch_tools(actions=["linear_list_comments"]).get_tool("linear_list_comments")
+print(tool.parameters.properties)
+```
+
+Keys `toolset.execute()` does not recognise are not an error — they are dropped,
+and you get the server's defaults.
+
+Results keep the exact value of an integer above 2^53, unlike the Node SDK, whose
+JSON parser has already rounded it by the time the SDK sees it.
+
+A file action's `result` is a download link, `{"download_url", "expires_at", "file":
+{"name", "content_type", "content_length"}}`, rather than the file itself; the SDK does
+not follow it, and `file.name` is chosen by the provider, so reduce it to a safe
+basename before writing to disk. When no link can be issued the call raises `StackOneAPIError` with
+`status_code` 501.
+
+## Rate limits
+
+Every request the SDK makes (`GET /accounts` and each MCP request, `tools/call`
+included) retries an HTTP 429 up to three times. It waits for the response's
+`Retry-After`, in seconds or as an HTTP date and capped at 30 seconds, or without one
+for 1s, 2s and 4s, each scaled by a random factor between 0.5 and 1. Each retry logs a
+warning. No other status is retried. A wait that would not end before the request's
+`timeout` is not started: an MCP request's deadline is its whole exchange, and
+`GET /accounts`'s is measured from its first attempt.
+
+A 429 that is still there after the fourth attempt, or that there is no time left to
+wait out, raises `StackOneAPIError` with
+`status_code` 429 and the server's body. That ends the whole call: when `fetch_tools()`
+or `search()` spans several accounts, one rate-limited account raises rather than being
+skipped, so you never get a partial catalog that looks complete. Other per-account
+failures are still logged and skipped.
+
+## Custom base URL
 
 ```python
 from stackone_ai import StackOneToolSet
 
-toolset = StackOneToolSet()
-
-# Get the feedback tool (included with "tool_*" pattern or all tools)
-tools = toolset.fetch_tools(actions=["tool_*"])
-feedback_tool = tools.get_tool("tool_feedback")
-
-# Submit feedback (typically invoked by AI after user consent)
-result = feedback_tool.call(
-    feedback="The HRIS tools are working great! Very fast response times.",
-    account_id="acc_123456",
-    tool_names=["bamboohr_list_employees", "bamboohr_get_employee"]
-)
+toolset = StackOneToolSet(base_url="https://api.example-dev.com")
 ```
 
-**Important**: The AI agent should always ask for user permission before submitting feedback:
-
-- "Are you ok with sending feedback to StackOne? The LLM will take care of sending it."
-- Only call the tool after the user explicitly agrees.
-
-## Search Tool
-
-Search for tools using natural language queries. Works with both semantic (cloud) and local BM25+TF-IDF search.
-
-### Basic Usage
-
-```python
-# Get a callable search tool
-toolset = StackOneToolSet()
-all_tools = toolset.fetch_tools(account_ids=["your-account-id"])
-search_tool = toolset.get_search_tool()
-
-# Search for relevant tools — returns a Tools collection
-tools = search_tool("manage employees", top_k=5)
-
-# Execute a discovered tool directly
-tools[0](limit=10)
-```
-
-## Semantic Search
-
-Discover tools using natural language instead of exact names. Queries like "onboard new hire" resolve to the right actions even when the tool is called `bamboohr_create_employee`.
-
-```python
-from stackone_ai import StackOneToolSet
-
-toolset = StackOneToolSet()
-
-# Search by intent — returns Tools collection ready for any framework
-tools = toolset.search_tools("manage employee records", account_ids=["your-account-id"], top_k=5)
-openai_tools = tools.to_openai()
-
-# Lightweight: inspect results without fetching full tool definitions
-results = toolset.search_action_names("time off requests", top_k=5)
-```
-
-### Search Modes
-
-Control which search backend `search_tools()` uses via the `search` parameter:
-
-```python
-# "auto" (default) — tries semantic search first, falls back to local
-tools = toolset.search_tools("manage employees", search="auto")
-
-# "semantic" — semantic API only, raises if unavailable
-tools = toolset.search_tools("manage employees", search="semantic")
-
-# "local" — local BM25+TF-IDF only, no semantic API call
-tools = toolset.search_tools("manage employees", search="local")
-```
-
-Results are automatically scoped to connectors in your linked accounts. See [Semantic Search Example](examples/semantic_search_example.py) for `SearchTool` (`get_search_tool`) integration, OpenAI, and LangChain patterns.
+Falls back to the `STACKONE_BASE_URL` environment variable, then to
+`https://api.stackone.com`, if `base_url` is not given.
 
 ## Examples
 
 For more examples, check out the [examples/](examples/) directory:
 
-- [StackOne Account IDs](examples/stackone_account_ids.py)
-- [File Uploads](examples/file_uploads.py)
-- [OpenAI Integration](examples/openai_integration.py)
-- [LangChain Integration](examples/langchain_integration.py)
-- [CrewAI Integration](examples/crewai_integration.py)
-- [Search Tool](examples/search_tool_example.py)
-- [Semantic Search](examples/semantic_search_example.py)
+- [OpenAI Integration](examples/openai_integration.py) — OpenAI function calling
+- [Search and Execute](examples/search_and_execute.py) — the recommended flow
+- [LangChain Integration](examples/langchain_integration.py) — LangChain tools
+- [LangGraph Integration](examples/langgraph_integration.py) — LangGraph agent
+- [Pydantic AI Integration](examples/pydantic_ai_integration.py) — Pydantic AI agent
+- [Auth Management](examples/auth_management.py) — API key and account ID patterns
 
 ## Development
 
-### Using Nix (Recommended)
+### Setup
 
-This project includes a Nix flake for reproducible development environments. All development tools are defined in [flake.nix](./flake.nix) and provided via Nix.
-
-#### Installing Nix
+Development uses [uv](https://docs.astral.sh/uv/) for Python and `make` as the task runner.
 
 ```bash
-# Install Nix with flakes enabled (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf -L https://artifacts.nixos.org/experimental-installer | \
-  sh -s -- install
+# Core only
+make install
 
-# If flakes are not enabled, enable them with:
-mkdir -p ~/.config/nix && echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+# Everything: adapters, examples and dev tooling
+make install extras=1
 ```
 
-#### Activating the Development Environment
+### Common Commands
 
 ```bash
-# Automatic activation with direnv (recommended)
-direnv allow
-
-# Or manual activation
-nix develop
+make          # list all targets
+make format   # fix lint, format, and type check
+make test     # run all tests
 ```
 
-The Nix development environment includes:
+Linting, type checking and tests run in CI on every push; there are no git hooks.
 
-- Python with uv package manager
-- Automatic dependency installation
-- Git hooks (treefmt + ty) auto-configured
-- Consistent environment across all platforms
+### Integration Tests
+
+Tests that exercise the MCP mock server need its Node dependencies
+([pnpm](https://pnpm.io/) provides `tsx`, which runs the server):
+
+```bash
+pnpm install
+```
+
+Without these, those tests fail rather than skip.
 
 ## License
 

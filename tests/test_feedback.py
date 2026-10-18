@@ -1,397 +1,374 @@
-"""Tests for feedback tool."""
+"""The feedback tool and session_id linking, against the MCP mock server.
+
+Assertions about the wire read the mock's request log, which records the JSON-RPC
+payload exactly as the SDK serialised it, so a key sent as null or out of order shows.
+"""
 
 from __future__ import annotations
 
-import json
-import os
-import string
+import logging
+from typing import Any
 
 import httpx
 import pytest
-import respx
-from hypothesis import given, settings
-from hypothesis import strategies as st
 
-from stackone_ai.constants import DEFAULT_BASE_URL
-from stackone_ai.feedback import create_feedback_tool
-from stackone_ai.models import StackOneError
-from tests.conftest import TEST_BASE_URL
+from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
+from stackone_ai.toolset import StackOneToolSet
+from stackone_ai.types import SUBMIT_FEEDBACK_TOOL_NAME, ToolsetConfigError, ToolsetLoadError
 
-# Hypothesis strategies for PBT
-# Various whitespace characters including Unicode
-WHITESPACE_CHARS = " \t\n\r\u00a0\u2003\u2009"
-whitespace_strategy = st.text(alphabet=WHITESPACE_CHARS, min_size=1, max_size=20)
-
-# Valid non-empty strings (stripped)
-valid_string_strategy = st.text(
-    alphabet=string.ascii_letters + string.digits + "_-",
-    min_size=1,
-    max_size=50,
-).filter(lambda s: s.strip())
-
-# Invalid JSON strings (strings that cannot be parsed as valid JSON at all)
-# Note: Python's json module accepts NaN/Infinity by default, so avoid those
-invalid_json_strategy = st.one_of(
-    st.just("{incomplete"),
-    st.just('{"missing": }'),
-    st.just('{"key": value}'),
-    st.just("[1, 2, 3"),
-    st.just("{trailing}garbage"),
-    st.just("{missing closing brace"),
-    st.just("undefined"),
-    st.just("not valid json"),
-    st.just("abc123"),
-    st.just("foo bar baz"),
-)
+# Must match MOCK_SEARCH_SESSION_ID in tests/mocks/mcp-server.ts.
+MOCK_SESSION_ID = "mock-session-1"
 
 
-class TestFeedbackToolValidation:
-    """Test suite for feedback tool input validation."""
-
-    def test_missing_required_fields(self) -> None:
-        """Test validation errors for missing required fields."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="account_id"):
-            tool.execute({"feedback": "Great tools!", "tool_names": ["test_tool"]})
-
-        with pytest.raises(StackOneError, match="tool_names"):
-            tool.execute({"feedback": "Great tools!", "account_id": "acc_123456"})
-
-        with pytest.raises(StackOneError, match="feedback"):
-            tool.execute({"account_id": "acc_123456", "tool_names": ["test_tool"]})
-
-    def test_empty_and_whitespace_validation(self) -> None:
-        """Test validation for empty and whitespace-only strings."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="non-empty"):
-            tool.execute({"feedback": "   ", "account_id": "acc_123456", "tool_names": ["test_tool"]})
-
-        with pytest.raises(StackOneError, match="non-empty"):
-            tool.execute({"feedback": "Great!", "account_id": "   ", "tool_names": ["test_tool"]})
-
-        with pytest.raises(StackOneError, match="tool_names"):
-            tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": []})
-
-        with pytest.raises(StackOneError, match="At least one tool name"):
-            tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": ["   ", "  "]})
-
-    def test_multiple_account_ids_validation(self) -> None:
-        """Test validation with multiple account IDs."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="At least one account ID is required"):
-            tool.execute({"feedback": "Great tools!", "account_id": [], "tool_names": ["test_tool"]})
-
-        with pytest.raises(StackOneError, match="At least one valid account ID is required"):
-            tool.execute({"feedback": "Great tools!", "account_id": ["", "   "], "tool_names": ["test_tool"]})
-
-    def test_invalid_account_id_type(self) -> None:
-        """Test validation with invalid account ID type (not string or list)."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        # Pydantic validates input types before our custom validator runs
-        with pytest.raises(StackOneError, match="(account_id|Input should be a valid)"):
-            tool.execute({"feedback": "Great tools!", "account_id": 12345, "tool_names": ["test_tool"]})
-
-        with pytest.raises(StackOneError, match="(account_id|Input should be a valid)"):
-            tool.execute(
-                {"feedback": "Great tools!", "account_id": {"nested": "dict"}, "tool_names": ["test_tool"]}
-            )
-
-    def test_invalid_json_input(self) -> None:
-        """Test that invalid JSON input raises appropriate error."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="Invalid JSON"):
-            tool.execute("not valid json {}")
-
-        with pytest.raises(StackOneError, match="Invalid JSON"):
-            tool.execute("{missing closing brace")
-
-    @given(whitespace=whitespace_strategy)
-    @settings(max_examples=50)
-    def test_whitespace_feedback_validation_pbt(self, whitespace: str) -> None:
-        """PBT: Test validation for various whitespace patterns in feedback."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="non-empty"):
-            tool.execute({"feedback": whitespace, "account_id": "acc_123456", "tool_names": ["test_tool"]})
-
-    @given(whitespace=whitespace_strategy)
-    @settings(max_examples=50)
-    def test_whitespace_account_id_validation_pbt(self, whitespace: str) -> None:
-        """PBT: Test validation for various whitespace patterns in account_id."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="non-empty"):
-            tool.execute({"feedback": "Great!", "account_id": whitespace, "tool_names": ["test_tool"]})
-
-    @given(whitespace_list=st.lists(whitespace_strategy, min_size=1, max_size=5))
-    @settings(max_examples=50)
-    def test_whitespace_tool_names_validation_pbt(self, whitespace_list: list[str]) -> None:
-        """PBT: Test validation for lists containing only whitespace tool names."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="At least one tool name"):
-            tool.execute({"feedback": "Great!", "account_id": "acc_123456", "tool_names": whitespace_list})
-
-    @given(
-        whitespace_list=st.lists(whitespace_strategy, min_size=1, max_size=5),
-    )
-    @settings(max_examples=50)
-    def test_whitespace_account_ids_list_validation_pbt(self, whitespace_list: list[str]) -> None:
-        """PBT: Test validation for lists containing only whitespace account IDs."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="At least one valid account ID is required"):
-            tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": whitespace_list,
-                    "tool_names": ["test_tool"],
-                }
-            )
-
-    @given(invalid_json=invalid_json_strategy)
-    @settings(max_examples=50)
-    def test_invalid_json_input_pbt(self, invalid_json: str) -> None:
-        """PBT: Test that various invalid JSON inputs raise appropriate error."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        with pytest.raises(StackOneError, match="Invalid JSON"):
-            tool.execute(invalid_json)
-
-    @respx.mock
-    def test_json_string_input(self) -> None:
-        """Test that JSON string input is properly parsed."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-
-        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
-            return_value=httpx.Response(200, json={"message": "Success"})
-        )
-
-        json_string = json.dumps(
-            {"feedback": "Great tools!", "account_id": "acc_123456", "tool_names": ["test_tool"]}
-        )
-        result = tool.execute(json_string)
-        assert result == {"message": "Success"}
-        assert route.called
-        assert route.calls[0].response.status_code == 200
+def _reset_requests(base_url: str) -> None:
+    httpx.delete(f"{base_url}/__requests").raise_for_status()
 
 
-class TestFeedbackToolExecution:
-    """Test suite for feedback tool execution."""
+def _requests(base_url: str) -> list[dict[str, Any]]:
+    response = httpx.get(f"{base_url}/__requests")
+    response.raise_for_status()
+    return response.json()
 
-    @respx.mock
-    def test_single_account_execution(self) -> None:
-        """Test execution with single account ID."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-        api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
 
-        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
-            return_value=httpx.Response(200, json=api_response)
-        )
+def _tool_calls(base_url: str, name: str) -> list[dict[str, Any]]:
+    return [r for r in _requests(base_url) if r["path"] == "/mcp" and r.get("name") == name]
 
-        result = tool.execute(
-            {
-                "feedback": "Great tools!",
-                "account_id": "acc_123456",
-                "tool_names": ["data_export", "analytics"],
-            }
-        )
 
-        assert result == api_response
-        assert route.called
-        assert route.call_count == 1
-        assert route.calls[0].response.status_code == 200
-        request = route.calls[0].request
-        body = json.loads(request.content)
-        assert body["feedback"] == "Great tools!"
-        assert body["account_id"] == "acc_123456"
-        assert body["tool_names"] == ["data_export", "analytics"]
+def _execute_calls(base_url: str) -> list[dict[str, Any]]:
+    return [
+        r
+        for r in _requests(base_url)
+        if r["path"] == "/mcp" and str(r.get("name", "")).endswith("_execute_action")
+    ]
 
-    @respx.mock
-    def test_call_method_interface(self) -> None:
-        """Test that the .call() method works correctly."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-        api_response = {"message": "Success", "trace_id": "test-trace-id"}
 
-        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
-            return_value=httpx.Response(200, json=api_response)
-        )
+class TestFeedbackToolIsAnMcpTool:
+    """Contract 1: built as an MCP tool in every mode."""
 
-        result = tool.call(
-            feedback="Testing the .call() method interface.",
-            account_id="acc_test004",
-            tool_names=["tool_feedback"],
-        )
+    @pytest.mark.parametrize("mode", [None, "individual", "search_execute"])
+    def test_built_as_an_mcp_tool_in_every_mode(self, mcp_mock_server: str, mode):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
+        tool = toolset.fetch_tools(account_ids=["acc1"]).get_tool(SUBMIT_FEEDBACK_TOOL_NAME)
+        assert isinstance(tool, StackOneMcpTool)
 
-        assert result == api_response
-        assert route.called
-        assert route.call_count == 1
-        assert route.calls[0].response.status_code == 200
+    @pytest.mark.parametrize("mode", [None, "search_execute"])
+    def test_calling_it_sends_one_tools_call(self, mcp_mock_server: str, mode):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
+        tool = toolset.fetch_tools(account_ids=["acc1"]).get_tool(SUBMIT_FEEDBACK_TOOL_NAME)
+        assert tool is not None
 
-    @respx.mock
-    def test_api_error_handling(self) -> None:
-        """Test that API errors are handled properly."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
+        _reset_requests(mcp_mock_server)
+        result = tool.execute({"rating": "positive", "tool_names": ["acc1_tool_1"]})
 
-        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
-            return_value=httpx.Response(401, json={"error": "Unauthorized"})
-        )
+        assert result["message"] == "Feedback recorded"
+        assert len(_tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)) == 1
 
-        with pytest.raises(StackOneError):
-            tool.execute(
-                {
-                    "feedback": "Great tools!",
-                    "account_id": "acc_123456",
-                    "tool_names": ["test_tool"],
-                }
-            )
 
-        assert route.called
-        assert route.calls[0].response.status_code == 401
+class TestFeedbackToolIsListedOnce:
+    """Contract 2: one tool however many accounts list it, and no duplicate warning."""
 
-    @respx.mock
-    def test_multiple_account_ids_execution(self) -> None:
-        """Test execution with multiple account IDs - both success and mixed scenarios."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
-        api_response = {"message": "Feedback successfully stored", "trace_id": "test-trace-id"}
+    @pytest.mark.parametrize("mode", [None, "search_execute"])
+    def test_multi_account_listing_yields_exactly_one(self, mcp_mock_server: str, mode, caplog):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tools = toolset.fetch_tools(account_ids=["acc1", "acc2", "acc3"])
 
-        # Test all successful case
-        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(
-            return_value=httpx.Response(200, json=api_response)
-        )
+        feedback = [t for t in tools if t.name == SUBMIT_FEEDBACK_TOOL_NAME]
+        assert len(feedback) == 1
+        assert "more than one account" not in caplog.text
 
-        result = tool.execute(
-            {
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_789012", "acc_345678"],
-                "tool_names": ["test_tool"],
-            }
-        )
-
-        assert result == {
-            "message": "Feedback sent to 3 account(s)",
-            "total_accounts": 3,
-            "successful": 3,
-            "failed": 0,
-            "results": [
-                {
-                    "account_id": "acc_123456",
-                    "status": "success",
-                    "result": {"message": "Feedback successfully stored", "trace_id": "test-trace-id"},
-                },
-                {
-                    "account_id": "acc_789012",
-                    "status": "success",
-                    "result": {"message": "Feedback successfully stored", "trace_id": "test-trace-id"},
-                },
-                {
-                    "account_id": "acc_345678",
-                    "status": "success",
-                    "result": {"message": "Feedback successfully stored", "trace_id": "test-trace-id"},
-                },
+    def test_the_first_listing_is_kept(self, monkeypatch):
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h, **_k: [
+                McpToolDefinition(name=SUBMIT_FEEDBACK_TOOL_NAME, description="", input_schema={})
             ],
+        )
+        toolset = StackOneToolSet(api_key="test-key")
+        tool = toolset.fetch_tools(account_ids=["acc2", "acc1"]).get_tool(SUBMIT_FEEDBACK_TOOL_NAME)
+        assert tool is not None
+        # Listings are merged in sorted account order, so "first" is stable across calls.
+        assert tool.get_account_id() == "acc1"
+
+    def test_real_duplicates_still_warn(self, monkeypatch, caplog):
+        """Only the global tool is deduped; a genuine clash must still be reported."""
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h, **_k: [
+                McpToolDefinition(name="linear_list_issues", description="", input_schema={})
+            ],
+        )
+        toolset = StackOneToolSet(api_key="test-key")
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            tools = toolset.fetch_tools(account_ids=["acc2", "acc1"])
+        assert len(tools) == 2
+        assert "more than one account (linear_list_issues)" in caplog.text
+        assert "The first one listed, from the lowest account id, is used" in caplog.text
+
+        # The first listed, as Node's getTool() does. Listings merge in sorted account order.
+        assert [t.get_account_id() for t in tools] == ["acc1", "acc2"]
+        tool = tools.get_tool("linear_list_issues")
+        assert tool is tools[0]
+
+
+class TestFeedbackToolAbsent:
+    """Contract 3: never invented client-side."""
+
+    @pytest.mark.parametrize("mode", [None, "search_execute"])
+    def test_absent_when_the_server_does_not_serve_it(self, mcp_mock_server_without_feedback: str, mode):
+        base_url = mcp_mock_server_without_feedback
+        toolset = StackOneToolSet(api_key="test-key", base_url=base_url, tool_mode=mode)
+        tools = toolset.fetch_tools(account_ids=["acc1", "acc2"])
+        assert len(tools) > 0
+        assert tools.get_tool(SUBMIT_FEEDBACK_TOOL_NAME) is None
+
+    def test_submit_feedback_raises_saying_not_enabled(self, mcp_mock_server_without_feedback: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server_without_feedback)
+        _reset_requests(mcp_mock_server_without_feedback)
+
+        with pytest.raises(ToolsetLoadError, match="feedback is not enabled for this project"):
+            toolset.submit_feedback("negative", ["mock_list_items"])
+        assert _tool_calls(mcp_mock_server_without_feedback, SUBMIT_FEEDBACK_TOOL_NAME) == []
+
+    def test_search_and_execute_are_unaffected(self, mcp_mock_server_without_feedback: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server_without_feedback)
+        hit = toolset.search("list items")[0]
+        result = toolset.execute(hit["action_id"], session_id=hit["session_id"])
+        assert result["result"]["data"] == {"nodes": []}
+
+
+class TestSearchSessionId:
+    """Contract 4: each hit carries the session_id of the search that produced it."""
+
+    def test_every_hit_carries_the_search_session_id(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        hits = toolset.search("list items")
+        assert hits
+        assert all(hit["session_id"] == MOCK_SESSION_ID for hit in hits)
+
+    def test_each_hit_keeps_its_own_search_session_across_connectors(self, monkeypatch):
+        per_connector = {
+            "a_acc1_search_actions": {"session_id": "s-a", "actions": [{"action_id": "a_x"}]},
+            "b_acc2_search_actions": {"session_id": "s-b", "actions": [{"action_id": "b_x"}]},
         }
-        assert route.call_count == 3
-        assert route.calls[0].response.status_code == 200
-        assert route.calls[1].response.status_code == 200
-        assert route.calls[2].response.status_code == 200
+        monkeypatch.setattr(StackOneMcpTool, "execute", lambda self, _args: per_connector[self.name])
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, headers, **_k: [
+                McpToolDefinition(name=name, description="", input_schema={})
+                for name in per_connector
+                if headers["x-account-id"] in name
+            ],
+        )
+        toolset = StackOneToolSet(api_key="test-key")
+        toolset.set_accounts(["acc1", "acc2"])
+        assert {h["action_id"]: h["session_id"] for h in toolset.search("x")} == {"a_x": "s-a", "b_x": "s-b"}
 
-    @respx.mock
-    def test_multiple_account_ids_mixed_success(self) -> None:
-        """Test execution with multiple account IDs - mixed success and error."""
-        tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
+    def test_the_field_is_omitted_when_the_server_returned_none(self, monkeypatch):
+        monkeypatch.setattr(
+            StackOneMcpTool, "execute", lambda self, _args: {"actions": [{"action_id": "a_x"}]}
+        )
+        monkeypatch.setattr(
+            "stackone_ai.toolset.fetch_mcp_tools",
+            lambda _e, _h, **_k: [
+                McpToolDefinition(name="a_acc1_search_actions", description="", input_schema={})
+            ],
+        )
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        assert toolset.search("x") == [{"action_id": "a_x", "account_id": "acc1"}]
 
-        def custom_side_effect(request: httpx.Request) -> httpx.Response:
-            body = json.loads(request.content)
-            account_id = body.get("account_id")
-            if account_id == "acc_123456":
-                return httpx.Response(200, json={"message": "Success"})
-            else:
-                return httpx.Response(401, json={"error": "Unauthorized"})
 
-        route = respx.post(f"{TEST_BASE_URL}/ai/tool-feedback").mock(side_effect=custom_side_effect)
+class TestExecuteSessionId:
+    """Contract 5: forwarded top-level when given, never when not, action_id still last."""
 
-        result = tool.execute(
+    def test_forwarded_when_given(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        hit = toolset.search("list items")[0]
+
+        _reset_requests(mcp_mock_server)
+        toolset.execute(hit["action_id"], hit["example_request"], session_id=hit["session_id"])
+
+        [call] = _execute_calls(mcp_mock_server)
+        assert call["arguments"] == {
+            "query": {"page_size": 25},
+            "session_id": MOCK_SESSION_ID,
+            "action_id": "mock_list_items",
+        }
+
+    def test_not_forwarded_when_not_given(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+        toolset.execute("mock_list_items")
+
+        [call] = _execute_calls(mcp_mock_server)
+        assert call["arguments"] == {"action_id": "mock_list_items"}
+
+    def test_pinning_and_header_sanitising_survive_alongside_it(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+        toolset.execute(
+            "mock_list_items",
             {
-                "feedback": "Great tools!",
-                "account_id": ["acc_123456", "acc_unauthorized"],
-                "tool_names": ["test_tool"],
-            }
+                "action_id": "mock_delete_everything",
+                "headers": {"x-account-id": "victim"},
+                "session_id": "model-invented",
+            },
+            session_id=MOCK_SESSION_ID,
         )
 
-        assert result == {
-            "message": "Feedback sent to 2 account(s)",
-            "total_accounts": 2,
-            "successful": 1,
-            "failed": 1,
-            "results": [
-                {
-                    "account_id": "acc_123456",
-                    "status": "success",
-                    "result": {"message": "Success"},
-                },
-                {
-                    "account_id": "acc_unauthorized",
-                    "status": "error",
-                    "error": (
-                        "Client error '401 Unauthorized' for url "
-                        f"'{TEST_BASE_URL}/ai/tool-feedback'\n"
-                        "For more information check: "
-                        "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
-                    ),
-                },
+        [call] = _execute_calls(mcp_mock_server)
+        # Exact items, in order: the pinned keys replace the model's and move to the end.
+        assert list(call["arguments"].items()) == [
+            ("headers", {}),
+            ("session_id", MOCK_SESSION_ID),
+            ("action_id", "mock_list_items"),
+        ]
+
+    @pytest.mark.parametrize("bad", ["", 42])
+    def test_rejects_a_non_string_or_empty_session_id(self, bad):
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetConfigError, match="session_id"):
+            toolset.execute("mock_list_items", session_id=bad)
+
+
+class TestSubmitFeedback:
+    """Contract 6: the toolset method."""
+
+    @pytest.mark.parametrize("mode", [None, "search_execute"])
+    def test_sends_only_the_given_keys_over_tools_call(self, mcp_mock_server: str, mode):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
+        _reset_requests(mcp_mock_server)
+
+        result = toolset.submit_feedback("negative", ["mock_list_items"], session_id=MOCK_SESSION_ID)
+
+        [call] = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        # Exact equality: no feedback/category keys at all, rather than keys set to null.
+        assert call["arguments"] == {
+            "rating": "negative",
+            "tool_names": ["mock_list_items"],
+            "session_id": MOCK_SESSION_ID,
+            "source": "model",
+        }
+        assert all(value is not None for value in call["arguments"].values())
+        assert result["session_id"] == MOCK_SESSION_ID
+
+    def test_sends_every_field_in_contract_order(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+
+        toolset.submit_feedback(
+            "positive",
+            ["mock_list_items"],
+            feedback="Found it first try",
+            category="search",
+            session_id=MOCK_SESSION_ID,
+            source="user",
+        )
+
+        [call] = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert list(call["arguments"].items()) == [
+            ("rating", "positive"),
+            ("tool_names", ["mock_list_items"]),
+            ("feedback", "Found it first try"),
+            ("category", "search"),
+            ("session_id", MOCK_SESSION_ID),
+            ("source", "user"),
+        ]
+
+    def test_session_id_is_omitted_when_not_given(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("neutral", ["mock_list_items"])
+
+        [call] = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert "session_id" not in call["arguments"]
+
+    def test_runs_once_across_many_accounts(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ["acc1_tool_1"], account_ids=["acc1", "acc2"])
+
+        calls = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert [c["accountId"] for c in calls] == ["acc1"]
+
+    @pytest.mark.parametrize("mode", [None, "individual"])
+    def test_lists_only_the_lowest_given_account_in_search_execute_mode(self, mcp_mock_server: str, mode):
+        """The lowest account id, not the first given; and the small listing whatever the mode."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, tool_mode=mode)
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ["acc1_tool_1"], account_ids=["acc2", "acc1"])
+
+        listings = [r for r in _requests(mcp_mock_server) if r.get("method") == "tools/list"]
+        assert [(r["accountId"], r["search"]) for r in listings] == [("acc1", "?tool-mode=search_execute")]
+        calls = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert [c["accountId"] for c in calls] == ["acc1"]
+
+    def test_sends_action_run_id_only_when_given(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="acc1")
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ["a"], session_id=MOCK_SESSION_ID, action_run_id="run-1")
+        toolset.submit_feedback("positive", ["a"])
+
+        first, second = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert list(first["arguments"].items()) == [
+            ("rating", "positive"),
+            ("tool_names", ["a"]),
+            ("session_id", MOCK_SESSION_ID),
+            ("action_run_id", "run-1"),
+            ("source", "model"),
+        ]
+        assert "action_run_id" not in second["arguments"]
+
+    def test_defaults_to_the_lowest_discovered_account_id(self, monkeypatch):
+        monkeypatch.setattr(
+            StackOneToolSet,
+            "fetch_accounts",
+            lambda self: [
+                {"id": "zeta", "status": "active"},
+                {"id": "dead", "status": "inactive"},
+                {"id": "alpha", "status": "active"},
             ],
-        }
-        assert route.call_count == 2
-        assert route.calls[0].response.status_code == 200
-        assert route.calls[1].response.status_code == 401
+        )
+        listed: list[tuple[str, str]] = []
 
-    def test_tool_integration(self) -> None:
-        """Test that feedback tool integrates properly with toolset."""
-        feedback_tool = create_feedback_tool(api_key="test_key", base_url=TEST_BASE_URL)
+        def fake_fetch(endpoint: str, headers: dict[str, str], **_k: object) -> list[McpToolDefinition]:
+            listed.append((headers["x-account-id"], endpoint))
+            return [McpToolDefinition(name=SUBMIT_FEEDBACK_TOOL_NAME, description="", input_schema={})]
 
-        assert feedback_tool is not None
-        assert feedback_tool.name == "tool_feedback"
-        assert "feedback" in feedback_tool.description.lower()
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
+        called: list[str | None] = []
+        monkeypatch.setattr(
+            StackOneMcpTool, "execute", lambda self, _args: called.append(self.get_account_id()) or {}
+        )
 
-        # Test OpenAI format
-        openai_format = feedback_tool.to_openai_function()
-        assert openai_format["type"] == "function"
-        assert openai_format["function"]["name"] == "tool_feedback"
-        assert "feedback" in openai_format["function"]["parameters"]["properties"]
-        assert "account_id" in openai_format["function"]["parameters"]["properties"]
-        assert "tool_names" in openai_format["function"]["parameters"]["properties"]
+        StackOneToolSet(api_key="test-key").submit_feedback("positive", ["x"])
 
+        assert listed == [("alpha", "https://api.stackone.com/mcp?tool-mode=search_execute")]
+        assert called == ["alpha"]
 
-@pytest.mark.integration
-@pytest.mark.skip(reason="Live integration test - requires valid API key with feedback permissions")
-def test_live_feedback_submission() -> None:
-    """Submit feedback to the live API and assert a successful response."""
-    import uuid
+    def test_accepts_any_sequence_of_tool_names(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+        toolset.submit_feedback("positive", ("a", "b"))
 
-    api_key = os.getenv("STACKONE_API_KEY")
-    if not api_key:
-        pytest.skip("STACKONE_API_KEY env var required for live feedback test")
+        [call] = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
+        assert call["arguments"]["tool_names"] == ["a", "b"]
 
-    base_url = os.getenv("STACKONE_BASE_URL", DEFAULT_BASE_URL)
+    def test_the_feedback_types_are_exported(self):
+        import stackone_ai
 
-    feedback_tool = create_feedback_tool(api_key=api_key, base_url=base_url)
-    assert feedback_tool is not None, "Feedback tool must be available"
+        for name in ("FeedbackRating", "FeedbackCategory", "FeedbackSource", "StackOneMcpTool"):
+            assert name in stackone_ai.__all__
+            assert hasattr(stackone_ai, name)
 
-    feedback_token = uuid.uuid4().hex[:8]
-    result = feedback_tool.execute(
-        {
-            "feedback": f"CI live test feedback {feedback_token}",
-            "account_id": f"acc-ci-{feedback_token}",
-            "tool_names": ["hibob_list_employees"],
-        }
-    )
+    def test_rejects_a_bare_string_of_tool_names(self):
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetConfigError, match="Did you mean"):
+            toolset.submit_feedback("positive", "mock_list_items")  # ty: ignore[invalid-argument-type]
 
-    assert isinstance(result, dict)
-    assert result.get("message", "").lower().startswith("feedback")
-    assert "trace_id" in result and result["trace_id"]
+    @pytest.mark.parametrize("bad", ["", 42])
+    def test_rejects_a_non_string_or_empty_session_id(self, bad):
+        """Checked as execute() checks it, before any account is listed."""
+        toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
+        with pytest.raises(ToolsetConfigError, match="session_id"):
+            toolset.submit_feedback("positive", ["mock_list_items"], session_id=bad)

@@ -1,5 +1,62 @@
 # Changelog
 
+## [2.10.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.0...stackone-ai-v2.10.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deps:** cap pydantic-ai in examples extra below 2.0 ([#195](https://github.com/StackOneHQ/stackone-ai-python/issues/195)) ([66f3f2b](https://github.com/StackOneHQ/stackone-ai-python/commit/66f3f2b8d2d41989852b850a0555c94c977e6afc))
+
+## [2.10.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.9.1...stackone-ai-v2.10.0) (2026-07-27)
+
+
+### Features
+
+* **ENG-733:** support flat_prefixed MCP param style ([#192](https://github.com/StackOneHQ/stackone-ai-python/issues/192)) ([ff8fb9a](https://github.com/StackOneHQ/stackone-ai-python/commit/ff8fb9a41add55e9c31bd84e04447bb3685ab024))
+
+## [2.9.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.9.0...stackone-ai-v2.9.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **models:** handle binary file downloads in tool execution ([#190](https://github.com/StackOneHQ/stackone-ai-python/issues/190)) ([8983c68](https://github.com/StackOneHQ/stackone-ai-python/commit/8983c68dd2fdbdbdd52af531a9a9f1de6d72e1b8))
+* **search:** make ToolsetConfigError actionable and fix misleading docs ([#188](https://github.com/StackOneHQ/stackone-ai-python/issues/188)) ([d332c27](https://github.com/StackOneHQ/stackone-ai-python/commit/d332c27d2f7b827e7ca043f60c37cb0831a92361))
+
+## [2.9.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.8.0...stackone-ai-v2.9.0) (2026-04-30)
+
+
+### Features
+
+* **integrations:** add native Pydantic AI support ([#184](https://github.com/StackOneHQ/stackone-ai-python/issues/184)) ([8216ab6](https://github.com/StackOneHQ/stackone-ai-python/commit/8216ab6c0776b0753cf3e68461bf5e8a9b044b06))
+
+## [2.8.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.7.0...stackone-ai-v2.8.0) (2026-04-20)
+
+
+### Features
+
+* **examples:** streamline examples, standardize auth patterns and migrate examples to Workday ([#179](https://github.com/StackOneHQ/stackone-ai-python/issues/179)) ([0bdc939](https://github.com/StackOneHQ/stackone-ai-python/commit/0bdc939e2844a0dae6bf527c8c8209df0a90d1f7))
+
+## [2.7.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.6.0...stackone-ai-v2.7.0) (2026-04-14)
+
+
+### Features
+
+* **search-optimization:** cache tool catalog and parallelize per-account MCP fetches ([#173](https://github.com/StackOneHQ/stackone-ai-python/issues/173)) ([cd635e6](https://github.com/StackOneHQ/stackone-ai-python/commit/cd635e65621e4e84da270a57e4e1453a3734ad95))
+
+## [2.6.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.5.1...stackone-ai-v2.6.0) (2026-04-07)
+
+
+### Features
+
+* include available connectors in search/execute tool descriptions ([#165](https://github.com/StackOneHQ/stackone-ai-python/issues/165)) ([544f41e](https://github.com/StackOneHQ/stackone-ai-python/commit/544f41ef1340d11f58be1a34e627aa8e81f1102d))
+
+## [2.5.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.5.0...stackone-ai-v2.5.1) (2026-03-26)
+
+
+### Bug Fixes
+
+* **search:** fall back to local search when semantic results don't match MCP tools ([#159](https://github.com/StackOneHQ/stackone-ai-python/issues/159)) ([2c86475](https://github.com/StackOneHQ/stackone-ai-python/commit/2c864759f43dc701d1bfa8407badf4a10f608332))
+
 ## [2.5.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.4.0...stackone-ai-v2.5.0) (2026-03-25)
 
 
