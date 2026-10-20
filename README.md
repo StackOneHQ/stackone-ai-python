@@ -53,14 +53,14 @@ hits = toolset.search("list recent comments", top_k=3)
 #   "example_request": {"action_id": "linear_list_comments"},
 #   "input_schema": {"type": "object", "properties": {"body": {...}}},
 #   "session_id": "3f9c...",
-#   "account_id": "acc-123"}, ...]
+#   "available_accounts": [{"id": "acc-123", "name": "Acme Linear"}]}, ...]
 hit = hits[0]
 
 # 2. Run it. Build the arguments from input_schema.
 result = toolset.execute(
     hit["action_id"],
     {"body": {"variables": {"first": 25}}},
-    account_ids=[hit["account_id"]],
+    account_ids=[hit["available_accounts"][0]["id"]],
     session_id=hit.get("session_id"),
 )
 result["result"]["data"]  # as the server wrote it: {"isError": false, "result": ...}; a failure raises
@@ -69,15 +69,22 @@ result["result"]["data"]  # as the server wrote it: {"isError": false, "result":
 toolset.submit_feedback("positive", [hit["action_id"]], session_id=hit.get("session_id"))
 ```
 
-`search()` asks every linked connector and returns actions ranked by
-`similarity_score`, so a catalog of hundreds of tools never has to fit in a
-model's context. This is the recommended way to use the SDK. `top_k` (1–50, default
-10) caps the whole result, after ranking across every connector.
+`search()` makes one call to StackOne's `stackone_search_actions` tool, which searches
+every linked connector and returns actions ranked by `similarity_score`, so a catalog
+of hundreds of tools never has to fit in a model's context. This is the recommended
+way to use the SDK. `top_k` (1–50, default 10) caps the whole result.
 
-Each hit carries the `account_id` of the account that found it, and the same action
-linked on two accounts is two hits. When an action's connector is linked on more than
-one account, `execute()` raises `ToolsetConfigError` rather than pick one: pass the
-hit's account as `account_ids=[hit["account_id"]]`.
+Each hit names the accounts that can run it in `available_accounts`, so an action
+linked on two accounts is one hit. `execute()` makes one call to
+`stackone_execute_action`. When the action's connector is linked on more than one
+account in scope, the server refuses to pick one and `execute()` raises
+`StackOneAPIError`: pass the account to use as `account_ids=[...]`, one of the hit's
+`available_accounts`.
+
+To hand a model the same two tools, build the toolset with
+`tool_mode="search_execute"`: `fetch_tools()` then returns `stackone_search_actions`,
+`stackone_execute_action` and `stackone_list_accounts`, spanning every account in
+scope however many there are.
 
 Each hit carries the `session_id` of the search that found it, when the server
 issued one, so read it with `hit.get("session_id")`. Passing it to
