@@ -37,6 +37,8 @@ interface RecordedRequest {
   /** The query string the call was made with, e.g. "" or "?tool-mode=search_execute". */
   search: string;
   accountId: string | null;
+  /** Every account named, header first, then each `x-account-id` query parameter. */
+  accountIds: string[];
   method: string;
   name?: string;
   arguments?: unknown;
@@ -46,6 +48,8 @@ interface RecordedHeaders {
   method: string;
   accountId: string | null;
   endUserId: string | null;
+  /** Every end user named, header first, then each `x-end-user-id` query parameter. */
+  endUserIds: string[];
 }
 
 // The SDK-set headers of every JSON-RPC message, initialize and notifications included.
@@ -68,6 +72,7 @@ const mcpApp = createMcpApp({
     lookalike: metaLookalikeTools,
     "your-bamboohr-account-id": exampleBamboohrTools,
     "your-stackone-account-id": exampleBamboohrTools,
+    "search-execute-disabled": defaultMcpTools,
   },
   submitFeedback,
 });
@@ -91,20 +96,23 @@ app.delete("/__requests", (c) => {
 
 app.use("/mcp", async (c, next) => {
   const accountId = c.req.header("x-account-id") ?? c.req.query("x-account-id") ?? null;
+  const accountIds = [c.req.header("x-account-id") ?? [], c.req.queries("x-account-id") ?? []].flat();
   const endUserId = c.req.header("x-end-user-id") ?? null;
+  const endUserIds = [endUserId ?? [], c.req.queries("x-end-user-id") ?? []].flat();
   if (c.req.method === "POST") {
     try {
       const payload = (await c.req.raw.clone().json()) as unknown;
       const messages = Array.isArray(payload) ? payload : [payload];
       for (const message of messages as { method?: string; params?: Record<string, unknown> }[]) {
         if (typeof message?.method === "string") {
-          recordedHeaders.push({ method: message.method, accountId, endUserId });
+          recordedHeaders.push({ method: message.method, accountId, endUserId, endUserIds });
         }
         if (message?.method !== "tools/call" && message?.method !== "tools/list") continue;
         recorded.push({
           path: "/mcp",
           search: new URL(c.req.url).search,
           accountId,
+          accountIds,
           method: message.method,
           name: message.params?.name as string | undefined,
           arguments: message.params?.arguments,
@@ -114,12 +122,15 @@ app.use("/mcp", async (c, next) => {
       // Not JSON: the MCP handler rejects it, so there is nothing to record.
     }
   }
-  const expected = endUsers && accountId ? END_USER_IDS[accountId] : undefined;
-  if (expected !== undefined && endUserId !== expected) {
+  // Every non-shared account named needs its end user among those named, as the real API checks.
+  const refused = endUsers
+    ? accountIds.find((id) => END_USER_IDS[id] !== undefined && !endUserIds.includes(END_USER_IDS[id]))
+    : undefined;
+  if (refused !== undefined) {
     return c.json(
       {
         statusCode: 400,
-        message: `x-end-user-id header does not match account end user id for account ${accountId}`,
+        message: `x-end-user-id header does not match account end user id for account ${refused}`,
       },
       400,
     );

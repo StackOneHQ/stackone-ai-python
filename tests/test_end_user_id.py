@@ -81,21 +81,52 @@ class TestOverTheWire:
         assert _end_user_ids(base_url, "acc1") == {"end-user-1"}
         assert _end_user_ids(base_url, "acc2") == {None}
 
-    def test_meta_tools_and_feedback_send_it(self, mcp_mock_server_with_end_users: str):
+    def test_the_trio_and_feedback_send_it_as_a_query_parameter(self, mcp_mock_server_with_end_users: str):
+        """One request names every account, so each end user goes beside its account id."""
         base_url = mcp_mock_server_with_end_users
         toolset = StackOneToolSet(api_key="test-key", base_url=base_url, include_non_shared=True)
         _reset(base_url)
 
-        hits = toolset.search("list items", account_ids=None)
-        assert any(hit["account_id"] == "acc1" for hit in hits)
+        [hit] = toolset.search("list items", account_ids=None)
+        assert [account["id"] for account in hit["available_accounts"]] == ["acc1", "acc2"]
         toolset.execute("mock_list_items", {}, account_ids=["acc1"])
         toolset.submit_feedback("positive", ["mock_list_items"], account_ids=["acc1"])
 
-        called = {
-            r.get("name") for r in httpx.get(f"{base_url}/__requests").json() if r["accountId"] == "acc1"
-        }
-        assert {"mock_acc1_search_actions", "mock_acc1_execute_action", "stackone_submit_feedback"} <= called
-        assert _end_user_ids(base_url, "acc1") == {"end-user-1"}
+        requests = httpx.get(f"{base_url}/__requests").json()
+        assert [(r.get("name"), r["search"]) for r in requests if r["method"] == "tools/call"] == [
+            (
+                "stackone_search_actions",
+                "?tool-mode=search_execute&x-account-id=acc1&x-account-id=acc2&x-end-user-id=end-user-1",
+            ),
+            (
+                "stackone_execute_action",
+                "?tool-mode=search_execute&x-account-id=acc1&x-end-user-id=end-user-1",
+            ),
+            (
+                "stackone_submit_feedback",
+                "?tool-mode=search_execute&x-account-id=acc1&x-end-user-id=end-user-1",
+            ),
+        ]
+        assert all(r["endUserIds"] == ["end-user-1"] for r in _headers(base_url))
+
+    def test_explicit_ids_look_their_end_users_up_when_the_trio_listing_is_refused(
+        self, mcp_mock_server_with_end_users: str
+    ):
+        base_url = mcp_mock_server_with_end_users
+        toolset = StackOneToolSet(api_key="test-key", base_url=base_url)
+        _reset(base_url)
+
+        tools = toolset.fetch_tools(account_ids=["acc2", "acc1"], mode="search_execute")
+
+        assert tools.get_tool("stackone_search_actions") is not None
+        listings = [
+            r["search"] for r in httpx.get(f"{base_url}/__requests").json() if r["method"] == "tools/list"
+        ]
+        # Refused once without it, then listed with it.
+        assert listings == [
+            "?tool-mode=search_execute&x-account-id=acc1&x-account-id=acc2&x-end-user-id=end-user-1"
+        ]
+        assert {tuple(r["endUserIds"]) for r in _headers(base_url)} == {(), ("end-user-1",)}
 
     def test_a_direct_fetch_accounts_records_it_for_explicit_ids(self, mcp_mock_server_with_end_users: str):
         base_url = mcp_mock_server_with_end_users
@@ -137,8 +168,12 @@ class TestOverTheWire:
         )
 
         [call] = [r for r in httpx.get(f"{base_url}/__requests").json() if r["method"] == "tools/call"]
-        assert call["arguments"] == {"headers": {"x-custom": "kept"}, "action_id": "mock_list_items"}
-        assert _end_user_ids(base_url, "acc1") == {"end-user-1"}
+        assert call["arguments"] == {
+            "headers": {"x-custom": "kept"},
+            "stackone_account_id": "acc1",
+            "action_id": "mock_list_items",
+        }
+        assert {tuple(r["endUserIds"]) for r in _headers(base_url)} == {("end-user-1",)}
 
 
 def _accounts_response(monkeypatch: pytest.MonkeyPatch, *bodies: Any) -> list[int]:

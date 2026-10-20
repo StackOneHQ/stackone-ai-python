@@ -900,14 +900,15 @@ class TestParallelFetch:
 
 
 class TestMcpEndpoint:
-    """No param-style pin: the endpoint is {base}/mcp, plus ?tool-mode= when a mode is set."""
+    """No param-style pin: the endpoint is {base}/mcp, plus ?tool-mode= when a mode is set, and
+    under search_execute the accounts it spans."""
 
     @pytest.mark.parametrize(
         ("mode", "expected"),
         [
             (None, "https://api.example.com/mcp"),
             ("individual", "https://api.example.com/mcp?tool-mode=individual"),
-            ("search_execute", "https://api.example.com/mcp?tool-mode=search_execute"),
+            ("search_execute", "https://api.example.com/mcp?tool-mode=search_execute&x-account-id=acc1"),
         ],
     )
     def test_endpoint(self, monkeypatch, mode, expected):
@@ -1527,13 +1528,47 @@ class TestSearchAndExecuteApi:
             account_ids=["default"],
         )
 
-        [call] = _tool_calls(mcp_mock_server, "mock_default_execute_action")
-        assert call["accountId"] == "default"
+        [call] = _tool_calls(mcp_mock_server, "stackone_execute_action")
+        assert call["accountIds"] == ["default"]
         assert call["arguments"] == {
             "query": {"page_size": 25},
             "headers": {"x-custom": "kept"},
+            "stackone_account_id": "default",
             "action_id": "mock_list_items",
         }
+
+    def test_one_listing_spans_every_account_and_hits_name_them(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        _reset_requests(mcp_mock_server)
+
+        [hit] = toolset.search("list items", account_ids=["acc2", "acc1"])
+
+        assert hit["available_accounts"] == [{"id": "acc1", "name": "acc1"}, {"id": "acc2", "name": "acc2"}]
+        assert hit["session_id"] == "mock-session-1"
+        listings = [
+            r for r in httpx.get(f"{mcp_mock_server}/__requests").json() if r["method"] == "tools/list"
+        ]
+        assert [(r["accountIds"], r["search"]) for r in listings] == [
+            (["acc1", "acc2"], "?tool-mode=search_execute&x-account-id=acc1&x-account-id=acc2")
+        ]
+
+    def test_an_action_on_several_accounts_needs_one_chosen(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        toolset.set_accounts(["acc1", "acc2"])
+
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.execute("mock_list_items")
+        assert excinfo.value.status_code == 400
+        assert "one of [acc1 (acc1), acc2 (acc2)]" in str(excinfo.value)
+
+        result = toolset.execute("mock_list_items", account_ids=["acc2"])
+        assert result["result"]["account_id"] == "acc2"
+
+    def test_a_listing_without_the_trio_raises(self, mcp_mock_server: str):
+        """As when the project's policy turns search_execute off."""
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        with pytest.raises(ToolsetLoadError, match="did not serve stackone_search_actions"):
+            toolset.search("list items", account_ids=["search-execute-disabled"])
 
     def test_unknown_action_raises_rather_than_returning_an_error_body(self, mcp_mock_server: str):
         from stackone_ai.types import StackOneAPIError
@@ -1742,7 +1777,7 @@ class TestExecuteReturnShape:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         assert toolset.execute("mock_list_items") == {
             "isError": False,
-            "result": {"data": {"nodes": []}, "echoed_query": None},
+            "result": {"data": {"nodes": []}, "echoed_query": None, "account_id": "default"},
         }
 
 
@@ -1904,85 +1939,6 @@ def test_every_sdk_error_is_a_stackone_error():
 
     with pytest.raises(StackOneError):
         StackOneToolSet(api_key="k").search("x", top_k=0)
-
-
-class TestExecuteRouting:
-    """Pins for execute()'s routing and argument handling."""
-
-    @staticmethod
-    def _toolset_with_meta_tools(monkeypatch, names, account_ids):
-        from stackone_ai.tools import StackOneMcpTool
-
-        seen: dict[str, object] = {}
-
-        def fake_execute(self, arguments):
-            seen["tool"] = self.name
-            seen["arguments"] = arguments
-            return {"data": {}}
-
-        monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
-        monkeypatch.setattr(
-            "stackone_ai.toolset.fetch_mcp_tools",
-            lambda _e, headers, **_k: [
-                McpToolDefinition(name=name, description="", input_schema={})
-                for name in names
-                if name.split("_execute_action")[0].endswith(headers["x-account-id"])
-            ],
-        )
-        toolset = StackOneToolSet(api_key="test-key")
-        toolset.set_accounts(account_ids)
-        return toolset, seen
-
-    def test_a_model_supplied_action_id_cannot_override_the_pinned_one(self, monkeypatch):
-        """Spreading arguments over action_id let a prompt-injected call swap the action."""
-        toolset, seen = self._toolset_with_meta_tools(monkeypatch, ["linear_acc1_execute_action"], ["acc1"])
-        toolset.execute("linear_list_issues", {"action_id": "linear_delete_issue"})
-        assert seen["arguments"]["action_id"] == "linear_list_issues"
-
-    def test_account_ids_containing_underscores_still_route(self, monkeypatch):
-        """nanoid's alphabet includes "_"; splitting on it made the account unroutable."""
-        toolset, seen = self._toolset_with_meta_tools(monkeypatch, ["linear_acc_1_execute_action"], ["acc_1"])
-        toolset.execute("linear_list_issues")
-        assert seen["tool"] == "linear_acc_1_execute_action"
-
-    def test_the_longest_matching_connector_wins(self, monkeypatch):
-        """With browser and browser_linkedin both linked, the first token alone misroutes."""
-        toolset, seen = self._toolset_with_meta_tools(
-            monkeypatch,
-            ["browser_acc1_execute_action", "browser_linkedin_acc2_execute_action"],
-            ["acc1", "acc2"],
-        )
-        toolset.execute("browser_linkedin_search_people")
-        assert seen["tool"] == "browser_linkedin_acc2_execute_action"
-
-
-class TestSearchRanking:
-    def test_results_are_ranked_across_connectors_and_tolerate_bad_scores(self, monkeypatch):
-        """Concatenation left results grouped by connector; a non-numeric score crashed."""
-        from stackone_ai.tools import StackOneMcpTool
-
-        per_connector = {
-            "a_acc1_search_actions": [
-                {"action_id": "a_low", "similarity_score": 0.2},
-                {"action_id": "a_bad", "similarity_score": "0.99"},
-            ],
-            "b_acc2_search_actions": [{"action_id": "b_high", "similarity_score": 0.9}],
-        }
-
-        monkeypatch.setattr(
-            StackOneMcpTool, "execute", lambda self, _args: {"actions": per_connector[self.name]}
-        )
-        monkeypatch.setattr(
-            "stackone_ai.toolset.fetch_mcp_tools",
-            lambda _e, headers, **_k: [
-                McpToolDefinition(name=name, description="", input_schema={})
-                for name in per_connector
-                if headers["x-account-id"] in name
-            ],
-        )
-        toolset = StackOneToolSet(api_key="test-key")
-        toolset.set_accounts(["acc1", "acc2"])
-        assert [a["action_id"] for a in toolset.search("x")] == ["b_high", "a_low", "a_bad"]
 
 
 class TestAdapterErrorsReachTheModel:

@@ -1,4 +1,4 @@
-"""More than one account: the catalog cache, search hits, routing and adapters.
+"""More than one account: the catalog cache, the search_execute trio, search hits and adapters.
 
 With discovery as the default, the same provider linked on two accounts is common, so
 every surface has to say which account it means.
@@ -13,14 +13,12 @@ from typing import Any
 import httpx
 import pytest
 
-from stackone_ai import tools as tools_module
 from stackone_ai import toolset as toolset_module
 from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, Tools
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
 from stackone_ai.types import (
     StackOneAPIError,
     ToolParameters,
-    ToolsetConfigError,
     ToolsetLoadError,
 )
 
@@ -209,81 +207,207 @@ class TestEveryAccountFails:
         assert len(accounts.listed) == 4
 
 
-def _meta_tools(monkeypatch: pytest.MonkeyPatch, per_account: dict[str, list[str]]) -> dict[str, Any]:
-    """Serve ``per_account``'s meta tools, and record what each one is called with."""
-    seen: dict[str, Any] = {}
+_TRIO = ["stackone_list_accounts", "stackone_search_actions", "stackone_execute_action"]
+_TRIO_ENDPOINT = "https://api.stackone.com/mcp?tool-mode=search_execute"
 
-    def fake_execute(self: StackOneMcpTool, arguments: Any) -> dict[str, Any]:
-        seen["tool"], seen["account"], seen["arguments"] = self.name, self.get_account_id(), arguments
-        if self.name.endswith("_search_actions"):
-            return {"session_id": f"s-{self.get_account_id()}", "actions": seen["hits"][self.name]}
+
+class _Trio:
+    """A fake search_execute listing of the trio, and a record of every listing and call.
+
+    ``served`` is the tool names listed, or an exception to raise; ``hits`` what search returns.
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, served: list[str] | Exception | None = None) -> None:
+        self.served: list[str] | Exception = _TRIO if served is None else served
+        self.hits: dict[str, Any] = {"session_id": "s-1", "actions": []}
+        self.listings: list[tuple[str, dict[str, str]]] = []
+        self.calls: list[tuple[str, str, str | None, Any]] = []
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", self._fetch)
+        monkeypatch.setattr(StackOneMcpTool, "execute", lambda tool, args: self._execute(tool, args))
+
+    def _fetch(self, endpoint: str, headers: dict[str, str], **_kwargs: object) -> list[McpToolDefinition]:
+        self.listings.append((endpoint, headers))
+        if isinstance(self.served, Exception):
+            raise self.served
+        return [_tool(name) for name in self.served]
+
+    def _execute(self, tool: StackOneMcpTool, arguments: Any) -> dict[str, Any]:
+        self.calls.append((tool.name, tool._endpoint, tool.get_account_id(), arguments))
+        if tool.name == "stackone_search_actions":
+            return self.hits
         return {"isError": False, "result": {}}
 
-    monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
-    monkeypatch.setattr(
-        "stackone_ai.toolset.fetch_mcp_tools",
-        lambda _e, headers, **_k: [_tool(name) for name in per_account[headers["x-account-id"]]],
-    )
-    return seen
+
+class TestSearchExecuteListing:
+    """One listing spans the whole scope: the trio, bound to no account."""
+
+    def test_every_account_is_a_sorted_deduped_query_parameter_not_a_header(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc2", "acc1", "acc2"]})
+
+        tools = toolset.fetch_tools(mode="search_execute")
+
+        assert [t.name for t in tools] == _TRIO
+        assert all(t.get_account_id() is None for t in tools)
+        [(endpoint, headers)] = trio.listings
+        assert endpoint == f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc2"
+        assert "x-account-id" not in {name.lower() for name in headers}
+
+    def test_the_trio_executes_on_the_endpoint_that_listed_it(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.fetch_tools(mode="search_execute").get_tool("stackone_list_accounts").execute({})
+        [(_name, endpoint, account, _args)] = trio.calls
+        assert (endpoint, account) == (f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc2", None)
+
+    def test_it_is_cached_per_scope(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k")
+        for _ in range(2):
+            toolset.fetch_tools(account_ids=["acc1", "acc2"], mode="search_execute")
+        toolset.fetch_tools(account_ids=["acc1"], mode="search_execute")
+        assert [endpoint for endpoint, _ in trio.listings] == [
+            f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc2",
+            f"{_TRIO_ENDPOINT}&x-account-id=acc1",
+        ]
+
+    def test_a_failure_is_raised_and_not_cached(self, monkeypatch):
+        """There is one request, so no account to skip."""
+        trio = _Trio(monkeypatch, served=StackOneAPIError("down", 503, None))
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        for _ in range(2):
+            with pytest.raises(StackOneAPIError) as excinfo:
+                toolset.fetch_tools(mode="search_execute")
+            assert excinfo.value.status_code == 503
+        assert len(trio.listings) == 2
+
+    def test_providers_narrow_the_accounts_with_one_accounts_listing(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        calls = _providers(monkeypatch, acc1="HRIS", acc2="crm", acc3="hris")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2", "acc3"]})
+
+        tools = toolset.fetch_tools(providers=["hris"], mode="search_execute")
+        toolset.fetch_tools(providers=["crm"], mode="search_execute")
+
+        # The trio is named after no provider, so it is kept whole.
+        assert [t.name for t in tools] == _TRIO
+        assert [endpoint for endpoint, _ in trio.listings] == [
+            f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc3",
+            f"{_TRIO_ENDPOINT}&x-account-id=acc2",
+        ]
+        assert len(calls) == 1
+
+    def test_no_account_on_the_providers_means_no_tools_and_no_listing(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        _providers(monkeypatch, acc1="hris")
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "unlisted"]})
+        assert len(toolset.fetch_tools(providers=["crm"], mode="search_execute")) == 0
+        assert trio.listings == []
+
+    def test_actions_still_filter_the_tool_names(self, monkeypatch):
+        _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k", account_id="acc1")
+        tools = toolset.fetch_tools(actions=["*_actions"], mode="search_execute")
+        assert [t.name for t in tools] == ["stackone_search_actions"]
 
 
 class TestSearchHits:
-    def test_each_hit_names_its_account_and_top_k_cuts_the_merged_ranking(self, monkeypatch):
-        seen = _meta_tools(
-            monkeypatch,
-            {
-                "acc1": ["hris_acc1_search_actions"],
-                "acc2": ["hris_acc2_search_actions", "crm_acc2_search_actions"],
-            },
-        )
-        seen["hits"] = {
-            "hris_acc1_search_actions": [
-                {"action_id": "hris_list", "similarity_score": 0.9},
-                {"action_id": "hris_get", "similarity_score": 0.4},
+    def test_one_search_spans_the_scope_and_top_k_cuts_its_hits(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        trio.hits = {
+            "session_id": "s-1",
+            "actions": [
+                {"action_id": "hris_list", "available_accounts": [{"id": "acc1", "name": "A"}]},
+                {"action_id": "crm_list", "available_accounts": [{"id": "acc2", "name": "B"}]},
+                {"action_id": "hris_get", "available_accounts": [{"id": "acc1", "name": "A"}]},
             ],
-            "hris_acc2_search_actions": [
-                {"action_id": "hris_list", "similarity_score": 0.8},
-                {"action_id": "hris_get", "similarity_score": 0.3},
-            ],
-            "crm_acc2_search_actions": [{"action_id": "crm_list", "similarity_score": 0.7}],
         }
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
 
-        hits = toolset.search("list", top_k=3)
+        hits = toolset.search("list", top_k=2)
 
-        # top_k is the total, not per connector: 3 connectors asked for 3 each served 5.
-        assert seen["arguments"]["top_k"] == 3
-        assert [(h["action_id"], h["account_id"], h["session_id"]) for h in hits] == [
-            ("hris_list", "acc1", "s-acc1"),
-            ("hris_list", "acc2", "s-acc2"),
-            ("crm_list", "acc2", "s-acc2"),
+        assert [(name, args) for name, _, _, args in trio.calls] == [
+            ("stackone_search_actions", {"query": "list", "top_k": 2})
+        ]
+        assert hits == [
+            {
+                "action_id": "hris_list",
+                "available_accounts": [{"id": "acc1", "name": "A"}],
+                "session_id": "s-1",
+            },
+            {
+                "action_id": "crm_list",
+                "available_accounts": [{"id": "acc2", "name": "B"}],
+                "session_id": "s-1",
+            },
         ]
 
+    def test_account_ids_scope_the_listing_searched(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.search("list", account_ids=["acc2"])
+        [(_name, endpoint, _account, _args)] = trio.calls
+        assert endpoint == f"{_TRIO_ENDPOINT}&x-account-id=acc2"
 
-class TestExecuteRouting:
-    PER_ACCOUNT = {
-        "acc1": ["hris_acc1_execute_action"],
-        "acc2": ["hris_acc2_execute_action"],
-    }
+    def test_a_listing_without_the_search_tool_raises(self, monkeypatch):
+        _Trio(monkeypatch, served=["stackone_submit_feedback"])
+        toolset = StackOneToolSet(api_key="k", account_id="acc1")
+        with pytest.raises(ToolsetLoadError) as excinfo:
+            toolset.search("list")
+        assert str(excinfo.value) == (
+            "The server did not serve stackone_search_actions for this account scope."
+        )
 
-    def test_a_connector_on_two_accounts_is_refused(self, monkeypatch):
-        seen = _meta_tools(monkeypatch, self.PER_ACCOUNT)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc2", "acc1"]})
-        with pytest.raises(ToolsetConfigError) as excinfo:
+
+class TestExecuteArguments:
+    """Pinned keys are set however the model filled the arguments, and action_id goes last,
+    as in Node."""
+
+    def _arguments(self, monkeypatch: pytest.MonkeyPatch, *args: Any, **kwargs: Any) -> Any:
+        trio = _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
+        toolset.execute(*args, **kwargs)
+        [(name, _endpoint, _account, arguments)] = trio.calls
+        assert name == "stackone_execute_action"
+        return arguments
+
+    def test_one_account_id_becomes_stackone_account_id(self, monkeypatch):
+        arguments = self._arguments(
+            monkeypatch,
+            "hris_list_employees",
+            {"stackone_account_id": "model", "session_id": "model", "action_id": "x", "query": {"a": 1}},
+            account_ids=["acc2", "acc2"],
+            session_id="s-1",
+        )
+        assert list(arguments.items()) == [
+            ("query", {"a": 1}),
+            ("stackone_account_id", "acc2"),
+            ("session_id", "s-1"),
+            ("action_id", "hris_list_employees"),
+        ]
+
+    def test_several_or_no_account_ids_leave_the_choice_to_the_arguments(self, monkeypatch):
+        arguments = self._arguments(
+            monkeypatch,
+            "hris_list_employees",
+            {"session_id": "s-0", "stackone_account_id": "acc1", "query": {}},
+            account_ids=["acc1", "acc2"],
+        )
+        assert list(arguments.items()) == [
+            ("session_id", "s-0"),
+            ("stackone_account_id", "acc1"),
+            ("query", {}),
+            ("action_id", "hris_list_employees"),
+        ]
+
+    def test_a_listing_without_the_execute_tool_raises(self, monkeypatch):
+        _Trio(monkeypatch, served=["stackone_list_accounts"])
+        toolset = StackOneToolSet(api_key="k", account_id="acc1")
+        with pytest.raises(ToolsetLoadError) as excinfo:
             toolset.execute("hris_list_employees")
         assert str(excinfo.value) == (
-            '"hris_list_employees" matches 2 connectors on different accounts '
-            "(hris_acc1_execute_action on acc1, hris_acc2_execute_action on acc2). "
-            "Pass the account id to use, such as a search hit's account_id."
+            "The server did not serve stackone_execute_action for this account scope."
         )
-        assert "tool" not in seen
-
-    @pytest.mark.parametrize("account", ["acc1", "acc2"])
-    def test_a_hits_account_id_routes_to_it(self, monkeypatch, account):
-        seen = _meta_tools(monkeypatch, self.PER_ACCOUNT)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        toolset.execute("hris_list_employees", account_ids=[account])
-        assert (seen["tool"], seen["account"]) == (f"hris_{account}_execute_action", account)
 
 
 def _providers(monkeypatch: pytest.MonkeyPatch, status: int = 200, **providers: str) -> list[int]:
@@ -301,248 +425,6 @@ def _providers(monkeypatch: pytest.MonkeyPatch, status: int = 200, **providers: 
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
     return calls
-
-
-class TestExecuteWithAFailedAccount:
-    """An account that failed to list could have served the action: running it on another
-    account instead would run it on an account the caller never chose.
-    """
-
-    def _execute(self, monkeypatch: pytest.MonkeyPatch, **accounts: list[str] | Exception) -> Any:
-        listing = _Accounts(monkeypatch, **accounts)
-        seen: dict[str, Any] = {}
-
-        def fake_execute(tool: StackOneMcpTool, arguments: Any) -> dict[str, Any]:
-            seen["account"] = tool.get_account_id()
-            return {"isError": False}
-
-        monkeypatch.setattr(StackOneMcpTool, "execute", fake_execute)
-        return listing, seen
-
-    def test_an_account_on_the_actions_connector_refuses(self, monkeypatch):
-        _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
-        _providers(monkeypatch, acc1="HRIS", acc2="hris")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc2", "acc1"]})
-        toolset.fetch_accounts()
-        with pytest.raises(ToolsetLoadError) as excinfo:
-            toolset.execute("hris_list_employees")
-        assert str(excinfo.value) == (
-            '"hris_list_employees" may be served by an account that failed to list (acc1: boom). '
-            "Pass the account id to use, such as a search hit's account_id."
-        )
-        assert seen == {}
-
-    def test_accounts_with_no_known_provider_refuse_in_account_order(self, monkeypatch):
-        """GET /accounts failed, so either could be on the action's connector."""
-        _, seen = self._execute(
-            monkeypatch,
-            acc3=RuntimeError("down"),
-            acc1=RuntimeError("boom"),
-            acc2=["hris_acc2_execute_action"],
-        )
-        calls = _providers(monkeypatch, status=403)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc3", "acc2", "acc1"]})
-        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc1: boom; acc3: down\)\."):
-            toolset.execute("hris_list_employees")
-        assert seen == {}
-        assert len(calls) == 1
-
-    def test_explicit_ids_learn_their_providers_with_one_accounts_listing(self, monkeypatch, clock):
-        """With explicit ids no GET /accounts was made, so execute() makes one to learn the
-        failed account's provider before deciding."""
-        listing, seen = self._execute(
-            monkeypatch, acc1=RuntimeError("dead"), acc2=["hris_acc2_execute_action"]
-        )
-        calls = _providers(monkeypatch, acc1="crm", acc2="hris")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        toolset.execute("hris_list_employees")
-        assert seen == {"account": "acc2"}
-        assert len(calls) == 1
-
-        # Known now: the next call neither lists accounts nor re-lists the dead one.
-        listing.listed.clear()
-        toolset.execute("hris_list_employees")
-        assert (len(calls), listing.listed) == (1, [])
-
-    def test_a_rate_limited_lookup_is_raised(self, monkeypatch):
-        """The 429 is the key's: swallowed, it would read as a provider no lookup has named."""
-        monkeypatch.setattr(tools_module, "_sleep", lambda _delay: None)
-        self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
-        _providers(monkeypatch, status=429)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        with pytest.raises(StackOneAPIError) as excinfo:
-            toolset.execute("hris_list_employees")
-        assert excinfo.value.status_code == 429
-
-    @pytest.mark.parametrize(
-        "accounts",
-        [{"status": 403}, {"acc1": "hris"}],
-        ids=["the lookup fails", "the lookup does not list it"],
-    )
-    def test_a_lookup_that_misses_waits_out_the_failure_window(self, monkeypatch, clock, accounts):
-        """Looking up and listing it again on every call would pay a GET /accounts each
-        time, and the listing's timeout if it hangs."""
-        listing, seen = self._execute(
-            monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead")
-        )
-        calls = _providers(monkeypatch, **accounts)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        for _ in range(3):
-            with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc2: dead\)"):
-                toolset.execute("hris_list_employees")
-        assert seen == {}
-        assert (len(calls), listing.listed.count("acc2")) == (1, 1)
-
-        clock[0] += FAILED_ACCOUNT_RETRY_SECONDS
-        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc2: dead\)"):
-            toolset.execute("hris_list_employees")
-        assert (len(calls), listing.listed.count("acc2")) == (2, 2)
-
-    def test_clearing_the_cache_forgets_a_lookups_miss(self, monkeypatch, clock):
-        self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
-        calls = _providers(monkeypatch, status=403)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        with pytest.raises(ToolsetLoadError):
-            toolset.execute("hris_list_employees")
-        toolset.clear_catalog_cache()
-        with pytest.raises(ToolsetLoadError):
-            toolset.execute("hris_list_employees")
-        assert len(calls) == 2
-
-    def test_the_call_whose_lookup_misses_does_not_list_it_again(self, monkeypatch, clock):
-        """Its own miss holds it out at once, so concurrent calls sharing the lookup don't
-        each pay its timeout."""
-        listing, _ = self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
-        _providers(monkeypatch, status=403)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        toolset.fetch_tools(mode="search_execute")
-        clock[0] += 1
-        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc2: dead\)"):
-            toolset.execute("hris_list_employees")
-        assert listing.listed.count("acc2") == 1
-
-    def test_a_miss_is_not_recorded_across_a_clear_during_its_lookup(self, monkeypatch, clock):
-        self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        calls: list[int] = []
-
-        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
-            calls.append(1)
-            if len(calls) == 1:
-                toolset.clear_catalog_cache()
-            return httpx.Response(403, text="nope", request=request)
-
-        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
-        for _ in range(2):
-            with pytest.raises(ToolsetLoadError):
-                toolset.execute("hris_list_employees")
-        assert len(calls) == 2
-
-    def test_a_miss_is_forgotten_once_get_accounts_names_the_account(self, monkeypatch, clock):
-        listing, _ = self._execute(monkeypatch, acc1=["hris_acc1_execute_action"], acc2=RuntimeError("dead"))
-        _providers(monkeypatch, status=403)
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        with pytest.raises(ToolsetLoadError):
-            toolset.execute("hris_list_employees")
-        _providers(monkeypatch, acc1="hris", acc2="hris")
-        toolset.fetch_accounts()
-
-        clock[0] += 1
-        with pytest.raises(ToolsetLoadError):
-            toolset.execute("hris_list_employees")
-        # acc2 is hris's, so it is listed again at once rather than after the window.
-        assert listing.listed.count("acc2") == 2
-
-    def test_an_account_on_another_provider_does_not(self, monkeypatch):
-        _, seen = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
-        _providers(monkeypatch, acc1="crm", acc2="hris")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        toolset.fetch_accounts()
-        toolset.execute("hris_list_employees")
-        assert seen == {"account": "acc2"}
-
-    def test_a_failed_account_on_a_shorter_provider_prefix_does_not(self, monkeypatch):
-        """acc1's provider ``hris`` prefixes the action, but its connector is ``hris_beta``."""
-        _, seen = self._execute(
-            monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_beta_acc2_execute_action"]
-        )
-        _providers(monkeypatch, acc1="hris", acc2="hris_beta")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        toolset.fetch_accounts()
-        toolset.execute("hris_beta_list_employees")
-        assert seen == {"account": "acc2"}
-
-    def test_a_failed_account_is_listed_again_at_once_and_then_routes_as_usual(self, monkeypatch, clock):
-        listing, _ = self._execute(monkeypatch, acc1=RuntimeError("boom"), acc2=["hris_acc2_execute_action"])
-        _providers(monkeypatch, acc1="hris", acc2="hris")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        # Left out of the search_execute catalog, which execute() lists in, for 30s from now.
-        assert [t.name for t in toolset.fetch_tools(mode="search_execute")] == ["hris_acc2_execute_action"]
-
-        listing.accounts["acc1"] = ["hris_acc1_execute_action"]
-        listing.listed.clear()
-        with pytest.raises(ToolsetConfigError, match="matches 2 connectors on different accounts"):
-            toolset.execute("hris_list_employees")
-        # Only the failed account, and without waiting for it to be due.
-        assert listing.listed == ["acc1"]
-
-        # Its listing is cached for the next call, like any other.
-        listing.listed.clear()
-        toolset.fetch_tools(mode="search_execute")
-        assert listing.listed == []
-
-    def test_an_account_that_fails_during_the_call_is_not_listed_again_in_it(self, monkeypatch, clock):
-        """Listing it again at once, as Node once did, would only double the wait."""
-        listing, _ = self._execute(monkeypatch, acc1=RuntimeError("hangs"), acc2=["hris_acc2_execute_action"])
-        _providers(monkeypatch, acc1="hris", acc2="hris")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        with pytest.raises(ToolsetLoadError):
-            toolset.execute("hris_list_employees")
-        assert sorted(listing.listed) == ["acc1", "acc2"]
-
-    def test_a_failed_account_on_another_provider_is_not_listed_again(self, monkeypatch, clock):
-        """A hanging crm account must not cost every hris action its timeout."""
-        listing, seen = self._execute(
-            monkeypatch, acc1=RuntimeError("hangs"), acc2=["hris_acc2_execute_action"]
-        )
-        _providers(monkeypatch, acc1="crm", acc2="hris")
-        toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
-        toolset.fetch_accounts()
-        toolset.execute("hris_list_employees")
-
-        listing.listed.clear()
-        toolset.execute("hris_list_employees")
-        assert listing.listed == []
-        assert seen == {"account": "acc2"}
-
-        # One that could serve the action is still listed again at once.
-        with pytest.raises(ToolsetLoadError, match=r"failed to list \(acc1: hangs\)"):
-            toolset.execute("crm_list_contacts")
-        assert listing.listed == ["acc1"]
-
-
-class TestPinnedArgumentsGoLast:
-    """A pinned session_id and action_id are moved to the end, as in Node."""
-
-    def test_a_supplied_session_id_is_moved_before_action_id(self, monkeypatch):
-        seen = _meta_tools(monkeypatch, {"acc1": ["hris_acc1_execute_action"]})
-        toolset = StackOneToolSet(api_key="k", account_id="acc1")
-        toolset.execute(
-            "hris_list_employees",
-            {"session_id": "model-chosen", "action_id": "x", "query": {"a": 1}},
-            session_id="s-1",
-        )
-        assert list(seen["arguments"].items()) == [
-            ("query", {"a": 1}),
-            ("session_id", "s-1"),
-            ("action_id", "hris_list_employees"),
-        ]
-
-    def test_an_unpinned_session_id_stays_where_it_was(self, monkeypatch):
-        seen = _meta_tools(monkeypatch, {"acc1": ["hris_acc1_execute_action"]})
-        toolset = StackOneToolSet(api_key="k", account_id="acc1")
-        toolset.execute("hris_list_employees", {"session_id": "s-0", "query": {}})
-        assert list(seen["arguments"]) == ["session_id", "query", "action_id"]
 
 
 class TestExtraHeadersCannotReplaceTheSdksOwn:
