@@ -68,25 +68,32 @@ const submitFeedbackTool = {
 } as const satisfies McpToolDefinition;
 
 /**
- * The two meta tools the real endpoint serves per connector under `tool-mode=search_execute`.
- * Without them the SDK's search/execute path has nothing to talk to and goes untested.
+ * The trio the real endpoint serves under `tool-mode=search_execute`, spanning every account the
+ * request names. Every account here is linked to the one connector, `mock`.
  */
-const metaTools = (accountId: string): McpToolDefinition[] => [
+const trioTools: McpToolDefinition[] = [
 	{
-		name: `mock_${accountId}_search_actions`,
+		name: 'stackone_list_accounts',
+		description: 'Lists the accounts connected to this session as `{ id, name, connector }` objects.',
+		inputSchema: { type: 'object', properties: {} },
+	},
+	{
+		name: 'stackone_search_actions',
 		description: 'Search for available actions in natural language.',
 		inputSchema: {
 			type: 'object',
 			properties: {
 				query: { type: 'string' },
 				top_k: { type: 'integer', minimum: 1, maximum: 50 },
+				provider: { type: 'string', enum: ['mock'] },
+				stackone_account_id: { type: 'string' },
 				session_id: { type: 'string' },
 			},
 			required: ['query'],
 		},
 	},
 	{
-		name: `mock_${accountId}_execute_action`,
+		name: 'stackone_execute_action',
 		description: 'Execute an action by its action_id.',
 		inputSchema: {
 			type: 'object',
@@ -97,6 +104,7 @@ const metaTools = (accountId: string): McpToolDefinition[] => [
 				body: { type: 'object' },
 				headers: { type: 'object' },
 				session_id: { type: 'string' },
+				stackone_account_id: { type: 'string' },
 			},
 			required: ['action_id'],
 		},
@@ -159,28 +167,75 @@ const callActionTool = (name: string, args: Record<string, unknown>): CallToolRe
 	}
 };
 
-const callMetaTool = (name: string, args: Record<string, unknown>): CallToolResult | undefined => {
-	if (name.endsWith('_search_actions')) {
-		return text({
-			session_id: MOCK_SEARCH_SESSION_ID,
-			actions: [
-				{
-					action_id: 'mock_list_items',
-					description: 'List items',
-					example_request: { query: { page_size: 25 } },
-				},
-			],
-		});
+/** The real endpoint's tool-level failure: `{ isError, result: { error, status_code, ... } }`. */
+const toolError = (error: string, status_code: number, error_code: string): CallToolResult =>
+	uca({ error, status_code, error_code, error_category: 'validation', retryable: false }, true);
+
+/** The server's 400 for a `stackone_account_id` outside the request's accounts. */
+const unknownAccount = (accountId: unknown, accounts: readonly string[]): CallToolResult =>
+	toolError(
+		`Account "${String(accountId)}" is not permitted. Choose one of [${accounts.map((id) => `${id} (${id})`).join(', ')}].`,
+		400,
+		'INVALID_ACCOUNT',
+	);
+
+/**
+ * How the trio answers, modelled on UCA's session-scoped handlers, for the accounts the request
+ * names. Search finds `mock_list_items` on every account in scope (or the one asked for); execute
+ * runs it on the account asked for, or the only one, and refuses to guess between several.
+ */
+const callTrioTool = (
+	name: string,
+	args: Record<string, unknown>,
+	accounts: readonly string[],
+): CallToolResult | undefined => {
+	const requested = typeof args.stackone_account_id === 'string' ? args.stackone_account_id : undefined;
+	if (requested !== undefined && !accounts.includes(requested)) {
+		return unknownAccount(requested, accounts);
 	}
-	if (name.endsWith('_execute_action')) {
-		// An unknown action must come back as isError — a normal response with the flag set —
-		// the way the real endpoint reports it.
-		if (args.action_id !== 'mock_list_items') {
-			return text({ error: `Unknown action ${String(args.action_id)}` }, true);
+	const targets = requested ? [requested] : accounts;
+	switch (name) {
+		case 'stackone_list_accounts':
+			return uca({ accounts: accounts.map((id) => ({ id, name: id, connector: 'mock' })) });
+		case 'stackone_search_actions':
+			return text({
+				providers_searched: ['mock'],
+				session_id: MOCK_SEARCH_SESSION_ID,
+				actions: [
+					{
+						action_id: 'mock_list_items',
+						provider: 'mock',
+						available_accounts: targets.map((id) => ({ id, name: id })),
+						description: 'List items',
+						similarity_score: 0.9,
+						example_request: { query: { page_size: 25 } },
+					},
+				],
+				total_count: 1,
+				hint: 'To run an action, call stackone_execute_action with its action_id exactly as shown above.',
+			});
+		case 'stackone_execute_action': {
+			// An unknown action must come back as isError — a normal response with the flag set —
+			// the way the real endpoint reports it.
+			if (args.action_id !== 'mock_list_items') {
+				return toolError(
+					`Unknown action_id "${String(args.action_id)}" — it does not match any integration connected to this session ([mock]). Call stackone_search_actions first and use an action_id exactly as returned.`,
+					400,
+					'INVALID_ACTION',
+				);
+			}
+			if (targets.length > 1) {
+				return toolError(
+					`stackone_execute_action runs against multiple accounts — pass "stackone_account_id", one of [${targets.map((id) => `${id} (${id})`).join(', ')}] (or call stackone_list_accounts to list them).`,
+					400,
+					'INVALID_ACCOUNT',
+				);
+			}
+			return uca({ data: { nodes: [] }, echoed_query: args.query ?? null, account_id: targets[0] });
 		}
-		return uca({ data: { nodes: [] }, echoed_query: args.query ?? null });
+		default:
+			return undefined;
 	}
-	return undefined;
 };
 
 const hasMethod = async (request: Request, method: string): Promise<boolean> => {
@@ -222,61 +277,71 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 	app.all('/mcp', async (c) => {
 		// The real endpoint rejects a request with no account. Defaulting here made the
 		// mock more permissive than production and hid a fatal SDK bug: `?? 'default'`
-		// meant an SDK that never sent the header still got a full catalog.
-		const accountId = c.req.header('x-account-id') ?? c.req.query('x-account-id');
-		if (!accountId) {
+		// meant an SDK that never sent the header still got a full catalog. Under
+		// search_execute the SDK names every account as a repeated query parameter.
+		const header = c.req.header('x-account-id');
+		const accountIds = [...(header ? [header] : []), ...(c.req.queries('x-account-id') ?? [])];
+		if (accountIds.length === 0) {
 			return c.json(
 				{ statusCode: 400, message: 'Missing x-account-id header or query parameter in request' },
 				400,
 			);
 		}
-		// No `?? accountTools.default` fallback. Serving a full catalog for an account
-		// that does not exist is the same permissiveness that hid the missing-header bug
-		// one line further up: any bug that sends a wrong, stale or mangled account id
-		// would be invisible. The real API refuses.
-		// What the real endpoint answers for an account linked before MCP existed, verbatim.
-		if (accountId === 'legacy-account') {
-			return c.json(
-				{
-					jsonrpc: '2.0',
-					error: {
-						code: -32600,
-						message: 'Legacy accounts cannot be used with MCP. Account provider: mock, version: 2',
+		const rateLimited = new Set<string>();
+		for (const accountId of accountIds) {
+			// No `?? accountTools.default` fallback. Serving a full catalog for an account
+			// that does not exist is the same permissiveness that hid the missing-header bug
+			// one line further up: any bug that sends a wrong, stale or mangled account id
+			// would be invisible. The real API refuses.
+			// What the real endpoint answers for an account linked before MCP existed, verbatim.
+			if (accountId === 'legacy-account') {
+				return c.json(
+					{
+						jsonrpc: '2.0',
+						error: {
+							code: -32600,
+							message: 'Legacy accounts cannot be used with MCP. Account provider: mock, version: 2',
+						},
+						id: null,
 					},
-					id: null,
-				},
-				400,
-			);
-		}
-		// `ratelimit-<all|list|call>-<n|always>-[after<s>-]<tag>` answers 429 (`Retry-After: 0`,
-		// or `<s>`) to the first n requests for that exact id, or every one, and then serves the
-		// default catalog. `all` counts every request, `list` only tools/list and `call` only
-		// tools/call; the tag keeps tests' counters apart.
-		const rateLimit = /^ratelimit-(all|list|call)-(\d+|always)-(?:after(\d+)-)?/.exec(accountId);
-		if (rateLimit) {
-			const [, scope, times, retryAfter = '0'] = rateLimit;
-			const method = { list: 'tools/list', call: 'tools/call' }[scope];
-			if (!method || (await hasMethod(c.req.raw, method))) {
-				const seen = (rateLimitCounts.get(accountId) ?? 0) + 1;
-				rateLimitCounts.set(accountId, seen);
-				if (times === 'always' || seen <= Number(times)) {
-					return c.json({ statusCode: 429, message: 'Too many requests' }, 429, {
-						'Retry-After': retryAfter,
-					});
-				}
+					400,
+				);
 			}
-		} else if (!Object.hasOwn(accountTools, accountId)) {
-			return c.json({ statusCode: 404, message: `Unknown account ${accountId}` }, 404);
+			// `ratelimit-<all|list|call>-<n|always>-[after<s>-]<tag>` answers 429 (`Retry-After: 0`,
+			// or `<s>`) to the first n requests for that exact id, or every one, and then serves the
+			// default catalog. `all` counts every request, `list` only tools/list and `call` only
+			// tools/call; the tag keeps tests' counters apart.
+			const rateLimit = /^ratelimit-(all|list|call)-(\d+|always)-(?:after(\d+)-)?/.exec(accountId);
+			if (rateLimit) {
+				rateLimited.add(accountId);
+				const [, scope, times, retryAfter = '0'] = rateLimit;
+				const method = { list: 'tools/list', call: 'tools/call' }[scope];
+				if (!method || (await hasMethod(c.req.raw, method))) {
+					const seen = (rateLimitCounts.get(accountId) ?? 0) + 1;
+					rateLimitCounts.set(accountId, seen);
+					if (times === 'always' || seen <= Number(times)) {
+						return c.json({ statusCode: 429, message: 'Too many requests' }, 429, {
+							'Retry-After': retryAfter,
+						});
+					}
+				}
+			} else if (!Object.hasOwn(accountTools, accountId)) {
+				return c.json({ statusCode: 404, message: `Unknown account ${accountId}` }, 404);
+			}
 		}
-		const accountCatalog = (rateLimit ? accountTools.default : accountTools[accountId]) ?? [];
+		const [accountId] = accountIds;
+		const accountCatalog = (rateLimited.has(accountId) ? accountTools.default : accountTools[accountId]) ?? [];
 
 		// The feedback tool comes first because the real endpoint does the same: it is one
 		// global tool, served identically in both modes and once per account listing. Under
-		// search_execute the per-action catalog is swapped for two meta tools per connector.
+		// search_execute the per-action catalog is swapped for the trio spanning every account
+		// named, unless one of them is `search-execute-disabled`, which models a project whose
+		// policy turns search_execute off: the listing then has no trio at all.
 		const searchExecute = c.req.query('tool-mode') === 'search_execute';
+		const trio = accountIds.includes('search-execute-disabled') ? [] : trioTools;
 		const listed: McpToolDefinition[] = [
 			...(submitFeedback ? [submitFeedbackTool] : []),
-			...(searchExecute ? metaTools(accountId) : accountCatalog),
+			...(searchExecute ? trio : accountCatalog),
 		];
 
 		// A low-level Server rather than McpServer: McpServer.registerTool expects a Zod shape
@@ -304,9 +369,9 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 					session_id: args.session_id ?? null,
 				});
 			}
-			// Only search_execute serves meta tools: in individual mode a per-action tool whose
+			// Only search_execute serves the trio: in individual mode a per-action tool whose
 			// name ends in `_execute_action` is still an action.
-			return (searchExecute ? callMetaTool(name, args) : undefined) ?? callActionTool(name, args);
+			return (searchExecute ? callTrioTool(name, args, accountIds) : undefined) ?? callActionTool(name, args);
 		});
 
 		const transport = new StreamableHTTPTransport();

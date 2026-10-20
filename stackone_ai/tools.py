@@ -883,7 +883,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     wins when both are present. Parts that are not text (images, embedded resources)
     are kept under ``content_parts`` as plain JSON, the form they arrived in.
 
-    The result is returned as the server wrote it. For an action tool, ``*_execute_action``
+    The result is returned as the server wrote it. For an action tool, ``stackone_execute_action``
     and feedback that is ``{"isError": false, "result": ..., "defenderMetadata"?: ...,
     "policyMetadata"?: ...}``; a search result is bare JSON.
 
@@ -1084,7 +1084,7 @@ class StackOneTool(BaseModel):
         property as something other than an object, an ordinary field that happens to be
         named ``headers`` rather than a header container.
         ``nested`` is ``None`` when the ``headers`` object is open — ``type: "object"`` with
-        no ``properties`` and ``additionalProperties`` not ``false``, as ``*_execute_action``
+        no ``properties`` and ``additionalProperties`` not ``false``, as ``stackone_execute_action``
         serves it — which declares every name. Any other schema with no ``properties``
         declares none.
         """
@@ -1378,7 +1378,7 @@ class StackOneMcpTool(StackOneTool):
     """A tool executed over MCP ``tools/call`` on the endpoint that listed it.
 
     Every tool the toolset builds is one of these: per-action tools, the
-    ``*_search_actions`` / ``*_execute_action`` meta tools and ``stackone_submit_feedback``.
+    ``search_execute`` trio and ``stackone_submit_feedback``.
     """
 
     _endpoint: str = PrivateAttr()

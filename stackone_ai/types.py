@@ -26,11 +26,19 @@ ToolMode = Literal["individual", "search_execute"]
 """How the MCP endpoint lists tools.
 
 ``"individual"`` (the server default) lists one tool per action — hundreds per
-account. ``"search_execute"`` lists two meta tools per connector instead, a
-``*_search_actions`` that ranks actions for a natural-language query and an
-``*_execute_action`` that runs one by id. The catalog stays small regardless of
-how many accounts are linked, which is what keeps it inside a model's context.
+account. ``"search_execute"`` lists one fixed trio across every account instead:
+``stackone_list_accounts``, ``stackone_search_actions``, which ranks actions for a
+natural-language query, and ``stackone_execute_action``, which runs one by id. The
+catalog stays the same size however many accounts are linked, which is what keeps it
+inside a model's context.
 """
+
+SEARCH_ACTIONS_TOOL_NAME: str = "stackone_search_actions"
+"""The ``search_execute`` tool that ranks actions, across every account in scope."""
+
+EXECUTE_ACTION_TOOL_NAME: str = "stackone_execute_action"
+"""The ``search_execute`` tool that runs an action by id, on the account it names or the
+only one in scope linked to the action's connector."""
 
 SUBMIT_FEEDBACK_TOOL_NAME: str = "stackone_submit_feedback"
 """The one global tool the MCP endpoint serves in every mode when feedback is enabled.
