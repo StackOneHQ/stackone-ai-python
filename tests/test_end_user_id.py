@@ -82,7 +82,10 @@ class TestOverTheWire:
         assert _end_user_ids(base_url, "acc2") == {None}
 
     def test_the_trio_and_feedback_send_it_as_a_query_parameter(self, mcp_mock_server_with_end_users: str):
-        """One request names every account, so each end user goes beside its account id."""
+        """One request names every account, so each end user goes beside the account ids.
+
+        With one account the server serves that account's pair, called by its served name.
+        """
         base_url = mcp_mock_server_with_end_users
         toolset = StackOneToolSet(api_key="test-key", base_url=base_url, include_non_shared=True)
         _reset(base_url)
@@ -96,10 +99,10 @@ class TestOverTheWire:
         assert [(r.get("name"), r["search"]) for r in requests if r["method"] == "tools/call"] == [
             (
                 "stackone_search_actions",
-                "?tool-mode=search_execute&x-account-id=acc1&x-account-id=acc2&x-end-user-id=end-user-1",
+                "?tool-mode=search_execute&x-account-id=acc1%2Cacc2&x-end-user-id=end-user-1",
             ),
             (
-                "stackone_execute_action",
+                "mock_acc1_execute_action",
                 "?tool-mode=search_execute&x-account-id=acc1&x-end-user-id=end-user-1",
             ),
             (
@@ -123,9 +126,7 @@ class TestOverTheWire:
             r["search"] for r in httpx.get(f"{base_url}/__requests").json() if r["method"] == "tools/list"
         ]
         # Refused once without it, then listed with it.
-        assert listings == [
-            "?tool-mode=search_execute&x-account-id=acc1&x-account-id=acc2&x-end-user-id=end-user-1"
-        ]
+        assert listings == ["?tool-mode=search_execute&x-account-id=acc1%2Cacc2&x-end-user-id=end-user-1"]
         assert {tuple(r["endUserIds"]) for r in _headers(base_url)} == {(), ("end-user-1",)}
 
     def test_a_direct_fetch_accounts_records_it_for_explicit_ids(self, mcp_mock_server_with_end_users: str):
@@ -168,11 +169,8 @@ class TestOverTheWire:
         )
 
         [call] = [r for r in httpx.get(f"{base_url}/__requests").json() if r["method"] == "tools/call"]
-        assert call["arguments"] == {
-            "headers": {"x-custom": "kept"},
-            "stackone_account_id": "acc1",
-            "action_id": "mock_list_items",
-        }
+        # The one account's pair takes no stackone_account_id: it runs on that account.
+        assert call["arguments"] == {"headers": {"x-custom": "kept"}, "action_id": "mock_list_items"}
         assert {tuple(r["endUserIds"]) for r in _headers(base_url)} == {("end-user-1",)}
 
 

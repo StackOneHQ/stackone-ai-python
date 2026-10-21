@@ -6,6 +6,7 @@ import concurrent.futures
 import contextlib
 import copy
 import fnmatch
+import functools
 import logging
 import os
 import threading
@@ -18,9 +19,11 @@ from urllib.parse import urlencode
 import httpx
 
 from stackone_ai.tools import (
+    AccountPair,
     McpToolDefinition,
     RateLimitRetryingClient,
     RateLimitTimeout,
+    StackOneAccountPairTool,
     StackOneMcpTool,
     StackOneTool,
     Tools,
@@ -63,6 +66,9 @@ _Listing = tuple[McpToolDefinition, str | None, str]
 
 # stackone_search_actions' served schema caps top_k at 50.
 _MAX_TOP_K = 50
+
+# The server spans at most this many accounts in one search_execute request.
+_MAX_SEARCH_EXECUTE_ACCOUNTS = 50
 
 FAILED_ACCOUNT_RETRY_SECONDS = 30.0
 """How long an account that failed to list tools is left out of a cached individual-mode
@@ -180,9 +186,11 @@ class StackOneToolSet:
                 Increase for slow providers (e.g. Workday).
             tool_mode: How the endpoint lists tools. ``"search_execute"`` returns
                 ``stackone_list_accounts``, ``stackone_search_actions`` and
-                ``stackone_execute_action``, spanning every account in scope, instead
-                of one tool per action, keeping the catalog small enough for a
-                model's context.
+                ``stackone_execute_action``, spanning every account in scope (at most
+                50), instead of one tool per action, keeping the catalog small enough
+                for a model's context. For one account the server serves that account's
+                own search and execute pair, presented under the same two names, and no
+                ``stackone_list_accounts``.
             headers: Extra HTTP headers sent with every request this toolset makes
                 (``GET /accounts`` and every MCP request). ``Authorization``,
                 ``x-account-id`` and ``User-Agent`` are always the SDK's own and
@@ -375,8 +383,10 @@ class StackOneToolSet:
             # either one kept serving the old catalog, still pointed at the old host.
             listings = self._catalog(account_scope, mode, generation)
 
+            # One account is served its own search and execute pair rather than the trio.
+            pair_account = account_scope[0] if mode == "search_execute" and len(account_scope) == 1 else None
             all_tools = [
-                self._create_tool(tool_def, account, endpoint)
+                self._create_tool(tool_def, account, endpoint, pair_account)
                 for tool_def, account, endpoint in self._dedupe_global_tools(listings)
             ]
 
@@ -543,14 +553,24 @@ class StackOneToolSet:
     def _search_execute_catalog(
         self, account_scope: list[str], key: tuple[Any, ...], generation: int
     ) -> list[_Listing]:
-        """The ``search_execute`` trio spanning every scoped account, from one listing.
+        """The ``search_execute`` tools spanning every scoped account, from one listing: the
+        trio for several accounts, the account's own pair for one.
 
         The server spans every account the request names behind one search and one execute
         tool, so there is no account to skip: a failure is raised. A refusal for want of the
         end user of an account sent without one is answered as in individual mode: the end
         users are looked up, and the scope listed once more. The tools bind no account and
         execute on the endpoint that listed them, which names the accounts.
+
+        Raises:
+            ToolsetConfigError: If the scope has more accounts than one request can span,
+                before any request is made.
         """
+        if len(account_scope) > _MAX_SEARCH_EXECUTE_ACCOUNTS:
+            raise ToolsetConfigError(
+                f"{len(account_scope)} accounts are in scope, but search and execute span at most "
+                f"{_MAX_SEARCH_EXECUTE_ACCOUNTS} in one request. Pass account ids to narrow the scope."
+            )
         with self._cache_lock:
             cached = self._catalog_cache.get(key)
         if cached is not None:
@@ -576,18 +596,19 @@ class StackOneToolSet:
         return listings
 
     def _search_execute_endpoint(self, account_scope: list[str]) -> str:
-        """The MCP endpoint listing the trio for these accounts.
+        """The MCP endpoint listing search and execute for these accounts.
 
-        Each account goes as a repeated ``x-account-id`` query parameter, and the recorded end
-        user of each non-shared one as a repeated ``x-end-user-id``: as headers, some HTTP
-        stacks join repeated values into one.
+        The accounts go as one ``x-account-id`` query value, joined by commas, and the recorded
+        end user of each non-shared one as a repeated ``x-end-user-id``: the server matches each
+        end user exactly, so they cannot be joined, and as headers some HTTP stacks would join
+        them.
         """
         end_users = dict.fromkeys(
             end_user for account in account_scope if (end_user := self._end_user_id(account)) is not None
         )
         query = [
             ("tool-mode", "search_execute"),
-            *(("x-account-id", account) for account in account_scope),
+            ("x-account-id", ",".join(account_scope)),
             *(("x-end-user-id", end_user) for end_user in end_users),
         ]
         return f"{self.base_url.rstrip('/')}/mcp?{urlencode(query)}"
@@ -646,7 +667,8 @@ class StackOneToolSet:
 
         One ``stackone_search_actions`` call, which the server answers across every connector
         linked on the accounts in scope, so the catalog never has to be loaded into a model's
-        context.
+        context. One account or many, the call and its hits look the same: see
+        :class:`~stackone_ai.tools.AccountPair`.
 
         Args:
             query: What you want to do, e.g. "list recent comments".
@@ -657,7 +679,8 @@ class StackOneToolSet:
         Returns:
             At most ``top_k`` hits, best first, each as the server serves it: at least
             ``action_id`` and ``description``, and ``available_accounts``, the accounts in
-            scope that can run it, as ``{"id", "name"}``. Each also carries the search's
+            scope that can run it, as ``{"id", "name"}`` (just ``{"id"}`` when one account is
+            in scope). Each also carries the search's
             ``session_id`` when the server issued one. Pass ``session_id`` to
             :meth:`execute` and :meth:`submit_feedback` to link the calls, and, when
             ``available_accounts`` lists more than one, the chosen ``id`` in ``account_ids``.
@@ -1141,13 +1164,20 @@ class StackOneToolSet:
         tool_def: McpToolDefinition,
         account_id: str | None,
         endpoint: str,
+        pair_account: str | None = None,
     ) -> StackOneTool:
         """Build an executable tool from a served catalog entry.
 
         Every tool, in every mode, executes over MCP ``tools/call`` on the endpoint that
         listed it, with the ``x-account-id`` of the account that listed it, and the
-        ``x-end-user-id`` recorded for that account when the request is made.
+        ``x-end-user-id`` recorded for that account when the request is made. A tool of
+        ``pair_account``'s search and execute pair is presented as the trio tool it stands for.
         """
+        served_name = tool_def.name
+        pair = AccountPair.serving(served_name, pair_account) if pair_account else None
+        if pair is not None:
+            tool_def = pair.presented(tool_def)
+
         schema = tool_def.input_schema or {}
         # Pop keys we explicitly override to avoid "multiple values for keyword argument"
         rest = dict(schema)
@@ -1163,7 +1193,10 @@ class StackOneToolSet:
             type=schema_type,
             properties=schema_properties,
         )
-        tool = StackOneMcpTool(
+        tool_class = (
+            StackOneMcpTool if pair is None else functools.partial(StackOneAccountPairTool, pair=pair)
+        )
+        tool = tool_class(
             name=tool_def.name,
             description=tool_def.description or "",
             parameters=parameters,
@@ -1172,6 +1205,7 @@ class StackOneToolSet:
             account_id=account_id,
             headers=self._headers,
             timeout=self._timeout,
+            served_name=served_name,
         )
         tool._end_user_id_of = self._end_user_id
         tool._look_up_end_user = self._look_up_end_user

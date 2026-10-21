@@ -37,7 +37,7 @@ interface RecordedRequest {
   /** The query string the call was made with, e.g. "" or "?tool-mode=search_execute". */
   search: string;
   accountId: string | null;
-  /** Every account named, header first, then each `x-account-id` query parameter. */
+  /** Every `x-account-id` value as sent, header first, then each query value, commas kept. */
   accountIds: string[];
   method: string;
   name?: string;
@@ -124,7 +124,7 @@ app.use("/mcp", async (c, next) => {
   }
   // Every non-shared account named needs its end user among those named, as the real API checks.
   const refused = endUsers
-    ? accountIds.find((id) => END_USER_IDS[id] !== undefined && !endUserIds.includes(END_USER_IDS[id]))
+    ? accountIds.flatMap((value) => value.split(",")).find((id) => END_USER_IDS[id] !== undefined && !endUserIds.includes(END_USER_IDS[id]))
     : undefined;
   if (refused !== undefined) {
     return c.json(

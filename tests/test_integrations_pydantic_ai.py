@@ -190,9 +190,14 @@ def test_agent_runs_an_individual_tool_over_mcp(mcp_mock_server: str):
     }
 
 
-def test_agent_searches_then_executes_in_search_execute_mode(mcp_mock_server: str):
+@pytest.mark.parametrize("account_ids", [["acc1"], ["acc1", "acc2"]], ids=["one-account", "two-accounts"])
+def test_agent_searches_then_executes_in_search_execute_mode(mcp_mock_server: str, account_ids: list[str]):
+    """The same script runs on one account's pair and on the trio over two."""
     toolset = StackOneToolSet(
-        api_key="test-key", base_url=mcp_mock_server, account_id="acc1", tool_mode="search_execute"
+        api_key="test-key",
+        base_url=mcp_mock_server,
+        execute={"account_ids": account_ids},
+        tool_mode="search_execute",
     )
     tools = toolset.pydantic_ai()
 
@@ -200,7 +205,12 @@ def test_agent_searches_then_executes_in_search_execute_mode(mcp_mock_server: st
         assert found is not None
         hit = found.content["actions"][0]
         return ToolCallPart(
-            "stackone_execute_action", {"action_id": hit["action_id"], **hit["example_request"]}
+            "stackone_execute_action",
+            {
+                "action_id": hit["action_id"],
+                "stackone_account_id": hit["available_accounts"][0]["id"],
+                **hit["example_request"],
+            },
         )
 
     model = _scripted_model(

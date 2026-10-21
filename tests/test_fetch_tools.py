@@ -1528,12 +1528,11 @@ class TestSearchAndExecuteApi:
             account_ids=["default"],
         )
 
-        [call] = _tool_calls(mcp_mock_server, "stackone_execute_action")
+        [call] = _tool_calls(mcp_mock_server, "mock_default_execute_action")
         assert call["accountIds"] == ["default"]
         assert call["arguments"] == {
             "query": {"page_size": 25},
             "headers": {"x-custom": "kept"},
-            "stackone_account_id": "default",
             "action_id": "mock_list_items",
         }
 
@@ -1549,7 +1548,7 @@ class TestSearchAndExecuteApi:
             r for r in httpx.get(f"{mcp_mock_server}/__requests").json() if r["method"] == "tools/list"
         ]
         assert [(r["accountIds"], r["search"]) for r in listings] == [
-            (["acc1", "acc2"], "?tool-mode=search_execute&x-account-id=acc1&x-account-id=acc2")
+            (["acc1,acc2"], "?tool-mode=search_execute&x-account-id=acc1%2Cacc2")
         ]
 
     def test_an_action_on_several_accounts_needs_one_chosen(self, mcp_mock_server: str):
@@ -1582,6 +1581,71 @@ class TestSearchAndExecuteApi:
         accounts = toolset.fetch_accounts()
         assert {a["id"] for a in accounts} == {"default", "dead"}
         assert [a["id"] for a in accounts if a["status"] == "active"] == ["default"]
+
+
+class TestOneAccountPairOverTheWire:
+    """One account is served `mock_<account>_search_actions` / `_execute_action`, and the SDK
+    shows them to callers and models as the trio's two tools."""
+
+    def test_fetch_tools_shows_the_trio_names_wherever_the_served_names_appeared(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="acc1")
+        tools = toolset.fetch_tools(mode="search_execute")
+
+        assert [t.name for t in tools] == [
+            "stackone_submit_feedback",
+            "stackone_search_actions",
+            "stackone_execute_action",
+        ]
+        served_text = str([t.to_openai_function() for t in tools])
+        assert "mock_acc1" not in served_text
+        assert "Run a hit with stackone_execute_action." in served_text
+
+    def test_a_model_searches_and_executes_with_the_trio_names(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="acc1")
+        tools = toolset.fetch_tools(mode="search_execute")
+        _reset_requests(mcp_mock_server)
+
+        found = tools.get_tool("stackone_search_actions").execute(  # type: ignore[union-attr]
+            {"query": "list items", "provider": "mock", "stackone_account_id": "acc1"}
+        )
+        [hit] = found["actions"]
+        result = tools.get_tool("stackone_execute_action").execute(  # type: ignore[union-attr]
+            {"action_id": hit["action_id"], "stackone_account_id": hit["available_accounts"][0]["id"]}
+        )
+
+        assert found["hint"] == (
+            "To run an action, call stackone_execute_action with its action_id exactly as shown above."
+        )
+        assert (hit["available_accounts"], hit["provider"]) == ([{"id": "acc1"}], "mock")
+        assert result["result"]["account_id"] == "acc1"
+        # The mock refuses the trio's scope arguments, which the pair does not declare.
+        assert [call["arguments"] for call in _tool_calls(mcp_mock_server, "mock_acc1_search_actions")] == [
+            {"query": "list items"}
+        ]
+        assert [call["arguments"] for call in _tool_calls(mcp_mock_server, "mock_acc1_execute_action")] == [
+            {"action_id": "mock_list_items"}
+        ]
+
+    def test_search_and_execute_look_the_same_for_one_account_or_many(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+        for scope in (["acc1"], ["acc1", "acc2"]):
+            [hit] = toolset.search("list items", account_ids=scope)
+            assert hit["action_id"] == "mock_list_items"
+            assert [account["id"] for account in hit["available_accounts"]] == scope
+            assert hit["provider"] == "mock"
+            assert hit["session_id"] == "mock-session-1"
+            result = toolset.execute(hit["action_id"], account_ids=["acc1"])
+            assert result["result"]["account_id"] == "acc1"
+            assert toolset.submit_feedback("positive", ["mock_list_items"], account_ids=scope)["message"] == (
+                "Feedback recorded"
+            )
+
+    def test_an_error_names_the_trio_tools(self, mcp_mock_server: str):
+        toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="acc1")
+        with pytest.raises(StackOneAPIError) as excinfo:
+            toolset.execute("mock_not_a_real_action")
+        assert "Call stackone_search_actions first" in str(excinfo.value)
+        assert "mock_acc1" not in str(excinfo.value)
 
 
 class TestServerRefusals:
