@@ -30,7 +30,8 @@ account. ``"search_execute"`` lists one fixed trio across every account instead:
 ``stackone_list_accounts``, ``stackone_search_actions``, which ranks actions for a
 natural-language query, and ``stackone_execute_action``, which runs one by id. The
 catalog stays the same size however many accounts are linked, which is what keeps it
-inside a model's context.
+inside a model's context. For a single account the server serves that account's own
+search and execute pair, which the SDK presents under the same two names.
 """
 
 SEARCH_ACTIONS_TOOL_NAME: str = "stackone_search_actions"

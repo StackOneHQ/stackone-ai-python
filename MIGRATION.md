@@ -135,14 +135,20 @@ openai_tools = toolset.openai(mode="search_and_execute")
 # ...for each tool call the model makes:
 toolset.execute(call.function.name, call.function.arguments)
 
-# 3.0: stackone_search_actions, stackone_execute_action and stackone_list_accounts,
-# served by the server and spanning every account in scope
+# 3.0: stackone_search_actions and stackone_execute_action, served by the server and
+# spanning every account in scope (at most 50), with stackone_list_accounts for several
 toolset = StackOneToolSet(tool_mode="search_execute")
 tools = toolset.fetch_tools()
 openai_tools = tools.to_openai()
 # ...then run the model's tool calls and get the messages to send back:
 messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 ```
+
+For a single account the server serves that account's own pair,
+`<provider>_<account>_search_actions` and `_execute_action`; the SDK presents them as
+`stackone_search_actions` and `stackone_execute_action`, so code and prompts use the same
+names for one account or many. A scope of more than 50 accounts raises
+`ToolsetConfigError` before any request.
 
 `get_search_tool()` and `semantic_client` are removed. Call `toolset.search()` instead.
 

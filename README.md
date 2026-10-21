@@ -82,9 +82,15 @@ account in scope, the server refuses to pick one and `execute()` raises
 `available_accounts`.
 
 To hand a model the same two tools, build the toolset with
-`tool_mode="search_execute"`: `fetch_tools()` then returns `stackone_search_actions`,
-`stackone_execute_action` and `stackone_list_accounts`, spanning every account in
-scope however many there are.
+`tool_mode="search_execute"`: `fetch_tools()` then returns `stackone_search_actions`
+and `stackone_execute_action`, spanning every account in scope in one request, up to
+50 accounts; more raise `ToolsetConfigError`, so pass `account_ids` to narrow the scope.
+Several accounts also get `stackone_list_accounts`. For one account the server serves
+that account's own search and execute pair, which the SDK presents under the same two
+names: their descriptions, schemas and results read in those names, hits gain
+`available_accounts` and `provider`, and a `stackone_account_id` or `provider` argument
+naming that account or its connector is dropped, while any other raises
+`ToolArgumentsError` before a request is made.
 
 Each hit carries the `session_id` of the search that found it, when the server
 issued one, so read it with `hit.get("session_id")`. Passing it to

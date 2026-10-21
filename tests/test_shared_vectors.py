@@ -674,6 +674,37 @@ def _trio_tool_not_served(mp, log) -> Emitted:
     return _raised(ToolsetLoadError, lambda: toolset.search("issues")), {"tool": "stackone_search_actions"}
 
 
+def _too_many_accounts(mp, log) -> Emitted:
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("stackone_search_actions"))
+    toolset = StackOneToolSet(api_key="k", execute={"account_ids": [f"acc-{i}" for i in range(51)]})
+    return _raised(ToolsetConfigError, lambda: toolset.search("issues")), {"count": 51}
+
+
+def _one_account_pair_tool(mp, name: str) -> StackOneTool:
+    """``name`` of the pair a one-account search_execute listing serves acc-1, as presented."""
+    served = [
+        McpToolDefinition(f"jira_acc-1_{suffix}", "", {"type": "object", "properties": {}})
+        for suffix in ("search_actions", "execute_action")
+    ]
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", lambda *_args, **_kwargs: served)
+    tool = StackOneToolSet(api_key="k", account_id="acc-1").fetch_tools(mode="search_execute").get_tool(name)
+    assert tool is not None
+    return tool
+
+
+def _account_outside_scope(mp, log) -> Emitted:
+    tool = _one_account_pair_tool(mp, "stackone_execute_action")
+    arguments = {"action_id": "a", "stackone_account_id": "acc-2"}
+    error = _raised(ToolArgumentsError, lambda: tool.execute(arguments))
+    return error, {"value": "acc-2", "tool": "stackone_execute_action", "account_id": "acc-1"}
+
+
+def _provider_outside_scope(mp, log) -> Emitted:
+    tool = _one_account_pair_tool(mp, "stackone_search_actions")
+    error = _raised(ToolArgumentsError, lambda: tool.execute({"query": "q", "provider": "linear"}))
+    return error, {"value": "linear", "provider": "jira"}
+
+
 def _arguments_not_finite(mp, log) -> Emitted:
     tool = _served_tool({"type": "object", "properties": {}})
     error = _raised(ToolArgumentsError, lambda: tool.execute({"a": [1, float("-inf")]}))
@@ -760,6 +791,9 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "tool-names-not-a-list": _tool_names_not_a_list,
     "feedback-not-enabled": _feedback_not_enabled,
     "trio-tool-not-served": _trio_tool_not_served,
+    "too-many-accounts": _too_many_accounts,
+    "account-outside-scope": _account_outside_scope,
+    "provider-outside-scope": _provider_outside_scope,
     "arguments-not-finite": _arguments_not_finite,
     "arguments-not-encodable": _arguments_not_encodable,
     "arguments-invalid-json": _arguments_invalid_json,

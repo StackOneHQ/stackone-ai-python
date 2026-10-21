@@ -13,12 +13,15 @@ from typing import Any
 import httpx
 import pytest
 
+from stackone_ai import tools as tools_module
 from stackone_ai import toolset as toolset_module
 from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, Tools
 from stackone_ai.toolset import FAILED_ACCOUNT_RETRY_SECONDS, StackOneToolSet
 from stackone_ai.types import (
     StackOneAPIError,
+    ToolArgumentsError,
     ToolParameters,
+    ToolsetConfigError,
     ToolsetLoadError,
 )
 
@@ -241,7 +244,7 @@ class _Trio:
 class TestSearchExecuteListing:
     """One listing spans the whole scope: the trio, bound to no account."""
 
-    def test_every_account_is_a_sorted_deduped_query_parameter_not_a_header(self, monkeypatch):
+    def test_every_account_is_in_one_sorted_deduped_comma_list_not_a_header(self, monkeypatch):
         trio = _Trio(monkeypatch)
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc2", "acc1", "acc2"]})
 
@@ -250,7 +253,7 @@ class TestSearchExecuteListing:
         assert [t.name for t in tools] == _TRIO
         assert all(t.get_account_id() is None for t in tools)
         [(endpoint, headers)] = trio.listings
-        assert endpoint == f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc2"
+        assert endpoint == f"{_TRIO_ENDPOINT}&x-account-id=acc1%2Cacc2"
         assert "x-account-id" not in {name.lower() for name in headers}
 
     def test_the_trio_executes_on_the_endpoint_that_listed_it(self, monkeypatch):
@@ -258,7 +261,7 @@ class TestSearchExecuteListing:
         toolset = StackOneToolSet(api_key="k", execute={"account_ids": ["acc1", "acc2"]})
         toolset.fetch_tools(mode="search_execute").get_tool("stackone_list_accounts").execute({})
         [(_name, endpoint, account, _args)] = trio.calls
-        assert (endpoint, account) == (f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc2", None)
+        assert (endpoint, account) == (f"{_TRIO_ENDPOINT}&x-account-id=acc1%2Cacc2", None)
 
     def test_it_is_cached_per_scope(self, monkeypatch):
         trio = _Trio(monkeypatch)
@@ -267,7 +270,7 @@ class TestSearchExecuteListing:
             toolset.fetch_tools(account_ids=["acc1", "acc2"], mode="search_execute")
         toolset.fetch_tools(account_ids=["acc1"], mode="search_execute")
         assert [endpoint for endpoint, _ in trio.listings] == [
-            f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc2",
+            f"{_TRIO_ENDPOINT}&x-account-id=acc1%2Cacc2",
             f"{_TRIO_ENDPOINT}&x-account-id=acc1",
         ]
 
@@ -292,7 +295,7 @@ class TestSearchExecuteListing:
         # The trio is named after no provider, so it is kept whole.
         assert [t.name for t in tools] == _TRIO
         assert [endpoint for endpoint, _ in trio.listings] == [
-            f"{_TRIO_ENDPOINT}&x-account-id=acc1&x-account-id=acc3",
+            f"{_TRIO_ENDPOINT}&x-account-id=acc1%2Cacc3",
             f"{_TRIO_ENDPOINT}&x-account-id=acc2",
         ]
         assert len(calls) == 1
@@ -408,6 +411,212 @@ class TestExecuteArguments:
         assert str(excinfo.value) == (
             "The server did not serve stackone_execute_action for this account scope."
         )
+
+
+class TestTooManyAccounts:
+    def test_more_than_50_raise_before_any_request(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        toolset = StackOneToolSet(api_key="k", execute={"account_ids": [f"acc{i:02}" for i in range(51)]})
+        with pytest.raises(ToolsetConfigError) as excinfo:
+            toolset.search("list")
+        assert str(excinfo.value) == (
+            "51 accounts are in scope, but search and execute span at most 50 in one request. "
+            "Pass account ids to narrow the scope."
+        )
+        assert trio.listings == []
+
+    def test_50_are_one_request(self, monkeypatch):
+        trio = _Trio(monkeypatch)
+        accounts = [f"acc{i:02}" for i in range(50)]
+        StackOneToolSet(api_key="k").fetch_tools(account_ids=accounts, mode="search_execute")
+        [(endpoint, _headers)] = trio.listings
+        assert endpoint == f"{_TRIO_ENDPOINT}&x-account-id={'%2C'.join(accounts)}"
+
+    def test_individual_mode_has_no_cap(self, monkeypatch):
+        accounts = _Accounts(monkeypatch, **{f"acc{i:02}": [] for i in range(51)})
+        StackOneToolSet(api_key="k").fetch_tools(account_ids=sorted(accounts.accounts))
+        assert len(accounts.listed) == 51
+
+
+_PAIR_SEARCH = "mock_acc1_search_actions"
+_PAIR_EXECUTE = "mock_acc1_execute_action"
+
+
+class _Pair:
+    """A fake one-account search_execute listing: acc1's pair and the feedback tool, and a
+    record of every tools/call. ``answer`` is what the next call returns, or raises."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.answer: dict[str, Any] | Exception = {"isError": False, "result": {}}
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
+        served = [
+            McpToolDefinition(
+                _PAIR_SEARCH,
+                f"Search acc1's actions. Run a hit with {_PAIR_EXECUTE}.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "session_id": {"type": "string", "description": f"From an earlier {_PAIR_SEARCH}."},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            McpToolDefinition(
+                _PAIR_EXECUTE,
+                f"Execute an action {_PAIR_SEARCH} found.",
+                {
+                    "type": "object",
+                    "properties": {"action_id": {"type": "string"}},
+                    "required": ["action_id"],
+                },
+            ),
+            McpToolDefinition("stackone_submit_feedback", "Feedback.", {"type": "object", "properties": {}}),
+        ]
+        monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", lambda *_args, **_kwargs: served)
+        monkeypatch.setattr(tools_module, "call_mcp_tool", self._call)
+
+    def _call(self, endpoint: str, _headers: Any, name: str, arguments: Any, **_kwargs: Any) -> Any:
+        self.calls.append((name, endpoint, arguments))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+class TestOneAccountPair:
+    """One account is served its own pair, which the SDK presents as the trio's two tools."""
+
+    def _toolset(self) -> StackOneToolSet:
+        return StackOneToolSet(api_key="k", account_id="acc1")
+
+    def test_it_is_listed_under_the_trio_names_with_every_served_name_rewritten(self, monkeypatch):
+        _Pair(monkeypatch)
+        tools = self._toolset().fetch_tools(mode="search_execute")
+
+        assert [t.name for t in tools] == [
+            "stackone_search_actions",
+            "stackone_execute_action",
+            "stackone_submit_feedback",
+        ]
+        search, execute = tools[0], tools[1]
+        assert search.description == "Search acc1's actions. Run a hit with stackone_execute_action."
+        assert execute.description == "Execute an action stackone_search_actions found."
+        assert search.to_openai_function()["function"]["parameters"]["properties"]["session_id"] == {
+            "type": "string",
+            "description": "From an earlier stackone_search_actions.",
+        }
+        assert all(t.get_account_id() is None for t in tools)
+
+    def test_it_calls_the_served_tool_on_the_endpoint_that_listed_it(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        self._toolset().execute("mock_list_items", account_ids=["acc1"])
+        assert pair.calls == [
+            (_PAIR_EXECUTE, f"{_TRIO_ENDPOINT}&x-account-id=acc1", {"action_id": "mock_list_items"})
+        ]
+
+    def test_its_results_read_in_trio_names(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        pair.answer = {"session_id": "s-1", "actions": [], "hint": f"Call {_PAIR_EXECUTE} next."}
+        tool = self._toolset().fetch_tools(mode="search_execute").get_tool("stackone_search_actions")
+        assert tool is not None
+        assert tool.execute({"query": "q"})["hint"] == "Call stackone_execute_action next."
+
+    def test_its_errors_read_in_trio_names(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        pair.answer = StackOneAPIError(
+            f'Tool "{_PAIR_EXECUTE}" failed: call {_PAIR_SEARCH} first', 400, {"error": f"see {_PAIR_SEARCH}"}
+        )
+        with pytest.raises(StackOneAPIError) as excinfo:
+            self._toolset().execute("nope")
+        assert str(excinfo.value) == (
+            'Tool "stackone_execute_action" failed: call stackone_search_actions first'
+        )
+        assert (excinfo.value.status_code, excinfo.value.response_body) == (
+            400,
+            {"error": "see stackone_search_actions"},
+        )
+
+    def test_search_hits_gain_the_account_and_connector_when_absent(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        pair.answer = {
+            "provider": "mock",
+            "session_id": "s-1",
+            "actions": [
+                {"action_id": "mock_a"},
+                {
+                    "action_id": "mock_b",
+                    "provider": "served",
+                    "available_accounts": [{"id": "acc1", "name": "A"}],
+                },
+            ],
+        }
+        assert self._toolset().search("list") == [
+            {
+                "available_accounts": [{"id": "acc1"}],
+                "provider": "mock",
+                "action_id": "mock_a",
+                "session_id": "s-1",
+            },
+            {
+                "action_id": "mock_b",
+                "provider": "served",
+                "available_accounts": [{"id": "acc1", "name": "A"}],
+                "session_id": "s-1",
+            },
+        ]
+        assert pair.calls[0][:1] == (_PAIR_SEARCH,)
+
+    def test_its_own_account_and_connector_are_dropped_from_the_arguments(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        pair.answer = {"actions": []}
+        tools = self._toolset().fetch_tools(mode="search_execute")
+        tools.get_tool("stackone_search_actions").execute(  # type: ignore[union-attr]
+            {"query": "q", "provider": "MOCK", "stackone_account_id": "acc1"}
+        )
+        tools.get_tool("stackone_execute_action").execute(  # type: ignore[union-attr]
+            {"action_id": "mock_a", "stackone_account_id": "acc1"}
+        )
+        # None is not given, as for session_id.
+        tools.get_tool("stackone_execute_action").execute(  # type: ignore[union-attr]
+            {"action_id": "mock_a", "stackone_account_id": None, "provider": None}
+        )
+        assert [arguments for _, _, arguments in pair.calls] == [
+            {"query": "q"},
+            {"action_id": "mock_a"},
+            {"action_id": "mock_a"},
+        ]
+
+    def test_another_account_is_refused_before_any_call(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        tool = self._toolset().fetch_tools(mode="search_execute").get_tool("stackone_execute_action")
+        assert tool is not None
+        with pytest.raises(ToolArgumentsError) as excinfo:
+            tool.execute({"action_id": "mock_a", "stackone_account_id": "acc2"})
+        assert str(excinfo.value) == (
+            'stackone_account_id "acc2" is not an account "stackone_execute_action" can run on; '
+            'it runs on "acc1".'
+        )
+        assert pair.calls == []
+
+    def test_another_provider_is_refused_before_any_call(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        tool = self._toolset().fetch_tools(mode="search_execute").get_tool("stackone_search_actions")
+        assert tool is not None
+        with pytest.raises(ToolArgumentsError) as excinfo:
+            tool.execute({"query": "q", "provider": "hibob"})
+        assert str(excinfo.value) == 'provider "hibob" is not linked in this account scope, which has "mock".'
+        assert pair.calls == []
+
+    def test_feedback_passes_through(self, monkeypatch):
+        pair = _Pair(monkeypatch)
+        self._toolset().submit_feedback("positive", ["stackone_search_actions"])
+        [(name, _endpoint, arguments)] = pair.calls
+        assert (name, arguments["tool_names"]) == ("stackone_submit_feedback", ["stackone_search_actions"])
+
+    def test_a_tool_named_for_another_account_is_left_as_served(self, monkeypatch):
+        _Pair(monkeypatch)
+        tools = StackOneToolSet(api_key="k", account_id="acc2").fetch_tools(mode="search_execute")
+        assert [t.name for t in tools] == [_PAIR_SEARCH, _PAIR_EXECUTE, "stackone_submit_feedback"]
 
 
 def _providers(monkeypatch: pytest.MonkeyPatch, status: int = 200, **providers: str) -> list[int]:

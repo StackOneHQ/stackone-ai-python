@@ -111,6 +111,51 @@ const trioTools: McpToolDefinition[] = [
 	},
 ];
 
+/**
+ * The pair the real endpoint serves under `tool-mode=search_execute` when the request names one
+ * account: named after the account's connector and id, scoped to it, so neither tool takes
+ * `stackone_account_id` or `provider`. Each names the other, as the real descriptions do.
+ */
+const pairNames = (accountId: string) => ({
+	search: `mock_${accountId}_search_actions`,
+	execute: `mock_${accountId}_execute_action`,
+});
+
+const pairTools = (accountId: string): McpToolDefinition[] => {
+	const { search, execute } = pairNames(accountId);
+	return [
+		{
+			name: search,
+			description: `Search for available mock actions in natural language. Run a hit with ${execute}.`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					query: { type: 'string' },
+					top_k: { type: 'integer', minimum: 1, maximum: 50 },
+					session_id: { type: 'string', description: `The session_id an earlier ${search} returned.` },
+				},
+				required: ['query'],
+			},
+		},
+		{
+			name: execute,
+			description: `Execute a mock action by the action_id ${search} returned.`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					action_id: { type: 'string', description: `An action_id exactly as ${search} returned it.` },
+					path: { type: 'object' },
+					query: { type: 'object' },
+					body: { type: 'object' },
+					headers: { type: 'object' },
+					session_id: { type: 'string' },
+				},
+				required: ['action_id'],
+			},
+		},
+	];
+};
+
 const text = (payload: unknown, isError = false): CallToolResult => ({
 	isError,
 	content: [{ type: 'text', text: JSON.stringify(payload) }],
@@ -238,6 +283,65 @@ const callTrioTool = (
 	}
 };
 
+/**
+ * How an account's pair answers. Search returns hits without `available_accounts` or `provider`,
+ * as the real one does; both refuse the trio's scope arguments, which the pair does not declare.
+ */
+const callPairTool = (
+	name: string,
+	args: Record<string, unknown>,
+	accountId: string,
+): CallToolResult | undefined => {
+	const { search, execute } = pairNames(accountId);
+	if (name !== search && name !== execute) {
+		return undefined;
+	}
+	const undeclared = ['stackone_account_id', 'provider'].filter((key) => Object.hasOwn(args, key));
+	if (undeclared.length > 0) {
+		return toolError(`Unrecognized key(s) in object: ${undeclared.join(', ')}`, 400, 'INVALID_ARGUMENTS');
+	}
+	if (name === search) {
+		return text({
+			provider: 'mock',
+			session_id: MOCK_SEARCH_SESSION_ID,
+			actions: [
+				{
+					action_id: 'mock_list_items',
+					description: 'List items',
+					similarity_score: 0.9,
+					example_request: { query: { page_size: 25 } },
+				},
+			],
+			total_count: 1,
+			hint: `To run an action, call ${execute} with its action_id exactly as shown above.`,
+		});
+	}
+	if (args.action_id !== 'mock_list_items') {
+		return toolError(
+			`Unknown action_id "${String(args.action_id)}". Call ${search} first and use an action_id exactly as returned.`,
+			400,
+			'INVALID_ACTION',
+		);
+	}
+	return uca({ data: { nodes: [] }, echoed_query: args.query ?? null, account_id: accountId });
+};
+
+/**
+ * Every account a request names: the header and each `x-account-id` query value, each a comma
+ * list, deduped, as the real endpoint reads them.
+ */
+const namedAccounts = (header: string | undefined, queries: readonly string[]): string[] => [
+	...new Set(
+		[...(header ? [header] : []), ...queries]
+			.flatMap((value) => value.split(','))
+			.map((id) => id.trim())
+			.filter((id) => id.length > 0),
+	),
+];
+
+/** The real endpoint's cap on the accounts one request may name. */
+const MAX_ACCOUNTS = 50;
+
 const hasMethod = async (request: Request, method: string): Promise<boolean> => {
 	try {
 		const payload = (await request.clone().json()) as { method?: string } | { method?: string }[];
@@ -278,12 +382,17 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 		// The real endpoint rejects a request with no account. Defaulting here made the
 		// mock more permissive than production and hid a fatal SDK bug: `?? 'default'`
 		// meant an SDK that never sent the header still got a full catalog. Under
-		// search_execute the SDK names every account as a repeated query parameter.
-		const header = c.req.header('x-account-id');
-		const accountIds = [...(header ? [header] : []), ...(c.req.queries('x-account-id') ?? [])];
+		// search_execute the SDK names every account in one comma-separated query value.
+		const accountIds = namedAccounts(c.req.header('x-account-id'), c.req.queries('x-account-id') ?? []);
 		if (accountIds.length === 0) {
 			return c.json(
 				{ statusCode: 400, message: 'Missing x-account-id header or query parameter in request' },
+				400,
+			);
+		}
+		if (accountIds.length > MAX_ACCOUNTS) {
+			return c.json(
+				{ statusCode: 400, message: `At most ${MAX_ACCOUNTS} accounts may be named, got ${accountIds.length}` },
 				400,
 			);
 		}
@@ -335,10 +444,16 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 		// The feedback tool comes first because the real endpoint does the same: it is one
 		// global tool, served identically in both modes and once per account listing. Under
 		// search_execute the per-action catalog is swapped for the trio spanning every account
-		// named, unless one of them is `search-execute-disabled`, which models a project whose
-		// policy turns search_execute off: the listing then has no trio at all.
+		// named, or for one account its own pair, unless one of them is `search-execute-disabled`,
+		// which models a project whose policy turns search_execute off: the listing then has
+		// neither.
 		const searchExecute = c.req.query('tool-mode') === 'search_execute';
-		const trio = accountIds.includes('search-execute-disabled') ? [] : trioTools;
+		const onlyAccount = accountIds.length === 1 ? accountId : undefined;
+		const trio = accountIds.includes('search-execute-disabled')
+			? []
+			: onlyAccount !== undefined
+				? pairTools(onlyAccount)
+				: trioTools;
 		const listed: McpToolDefinition[] = [
 			...(submitFeedback ? [submitFeedbackTool] : []),
 			...(searchExecute ? trio : accountCatalog),
@@ -371,7 +486,12 @@ export function createMcpApp(options: MockMcpServerOptions): HonoApp {
 			}
 			// Only search_execute serves the trio: in individual mode a per-action tool whose
 			// name ends in `_execute_action` is still an action.
-			return (searchExecute ? callTrioTool(name, args, accountIds) : undefined) ?? callActionTool(name, args);
+			const served = !searchExecute
+				? undefined
+				: onlyAccount !== undefined
+					? callPairTool(name, args, onlyAccount)
+					: callTrioTool(name, args, accountIds);
+			return served ?? callActionTool(name, args);
 		});
 
 		const transport = new StreamableHTTPTransport();
