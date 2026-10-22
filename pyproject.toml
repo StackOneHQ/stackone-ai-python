@@ -69,6 +69,11 @@ asyncio_default_fixture_loop_scope = "function"
 line-length = 110
 target-version = "py311"
 
+# These fixtures are a byte-for-byte copy of sdk-conformance; its CI drift check
+# owns their formatting. Keep Ruff from rewriting the vendored Markdown examples.
+[tool.ruff.format]
+exclude = ["tests/vectors/**"]
+
 [tool.ruff.lint]
 select = [
   "E", # pycodestyle errors
