@@ -19,17 +19,18 @@ import re
 import threading
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from importlib import metadata
-from typing import Any, NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar, cast
 
 import anyio
 import httpx
-from pydantic import BaseModel, Field, PrivateAttr
+import httpx2
+from pydantic import BaseModel, Field, PrivateAttr, TypeAdapter
 
 from stackone_ai.types import (
     ExecuteConfig,
@@ -47,6 +48,8 @@ from stackone_ai.types import (
 logger = logging.getLogger("stackone.tools")
 
 T = TypeVar("T")
+_RequestT = TypeVar("_RequestT", httpx.Request, httpx2.Request)
+_ResponseT = TypeVar("_ResponseT", bound=httpx.Response | httpx2.Response)
 
 try:
     _SDK_VERSION = metadata.version("stackone-ai")
@@ -342,7 +345,7 @@ def build_auth_header(api_key: str) -> str:
     return f"Basic {token}"
 
 
-async def _buffer_error_body(response: httpx.Response) -> None:
+async def _buffer_error_body(response: httpx.Response | httpx2.Response) -> None:
     """Read an error response's body while its stream is still open.
 
     The ``mcp`` client raises on the status after the streamed response is closed, so
@@ -461,7 +464,7 @@ def _backoff_delay(retry: int, retry_after: float | None, random_value: float | 
     return min(retry_after, RATE_LIMIT_MAX_DELAY_SECONDS)
 
 
-def _rate_limit_delay(response: httpx.Response, retry: int) -> float:
+def _rate_limit_delay(response: httpx.Response | httpx2.Response, retry: int) -> float:
     """How long to wait before retry number ``retry`` (1-based) of this 429."""
     return _backoff_delay(retry, _retry_after_seconds(response.headers.get("retry-after")))
 
@@ -471,7 +474,7 @@ def _waits_for_retry(delay: float, remaining: float) -> bool:
     return delay < remaining
 
 
-def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) -> None:
+def _log_rate_limit_retry(request: httpx.Request | httpx2.Request, attempt: int, delay: float) -> None:
     logger.warning(
         "%s %s was rate limited (429) on attempt %d of %d; retrying in %ss",
         request.method,
@@ -482,7 +485,9 @@ def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) ->
     )
 
 
-def _outlasts_deadline(request: httpx.Request, attempt: int, delay: float, remaining: float) -> bool:
+def _outlasts_deadline(
+    request: httpx.Request | httpx2.Request, attempt: int, delay: float, remaining: float
+) -> bool:
     """Whether waiting ``delay`` would not end before the deadline, logging when so.
 
     Such a wait is not started. Sleeping into the deadline would turn the 429 into a
@@ -554,12 +559,12 @@ class _Throttle:
     GET, say, answered while a ``tools/list`` retry hangs, must not clear that retry's 429.
     """
 
-    response: httpx.Response | None = None
+    response: httpx.Response | httpx2.Response | None = None
     retrying: int = 0
 
 
 class RateLimitRetryingAsyncClient(httpx.AsyncClient):
-    """The async counterpart of :class:`RateLimitRetryingClient`, used for every MCP request.
+    """The MCP 1 async counterpart of :class:`RateLimitRetryingClient`.
 
     The MCP client streams its responses; a discarded 429 is read and closed here, and
     the final one still passes through the response hooks, so its body is buffered.
@@ -577,30 +582,67 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
         self._throttle = throttle
 
     async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
-        attempt = 1
-        retried = False
-        response = await super().send(request, **kwargs)
-        while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
-            delay = _rate_limit_delay(response, attempt)
-            remaining = anyio.current_effective_deadline() - _async_clock()
-            if _outlasts_deadline(request, attempt, delay, remaining):
-                break
+        async def send_once(value: httpx.Request) -> httpx.Response:
+            return await super(RateLimitRetryingAsyncClient, self).send(value, **kwargs)
+
+        return await _retry_mcp_request(request, send_once, self._throttle)
+
+
+class _McpV2RetryingAsyncClient(httpx2.AsyncClient):
+    """MCP 2's HTTP client, with the same retry/deadline policy as MCP 1."""
+
+    def __init__(self, *args: Any, throttle: _Throttle | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._throttle = throttle
+
+    async def send(self, request: httpx2.Request, **kwargs: Any) -> httpx2.Response:
+        async def send_once(value: httpx2.Request) -> httpx2.Response:
+            return await super(_McpV2RetryingAsyncClient, self).send(value, **kwargs)
+
+        response = await _retry_mcp_request(request, send_once, self._throttle)
+        if request.method == "POST" and response.status_code >= 400 and response.status_code != 404:
+            # MCP 2 converts HTTP failures into JSON-RPC errors and drops the status.
+            # Preserve it for end-user recovery, rate limits and server diagnostics.
+            # Session 404s, GET 405s and redirects retain the transport's handling.
             await response.aread()
             await response.aclose()
-            if self._throttle is not None:
-                self._throttle.response = response
-                if not retried:
-                    retried = True
-                    self._throttle.retrying += 1
-            _log_rate_limit_retry(request, attempt, delay)
-            await _async_sleep(delay)
-            attempt += 1
-            response = await super().send(request, **kwargs)
-        if self._throttle is not None and retried and response.status_code != 429:
-            self._throttle.retrying -= 1
-            if self._throttle.retrying == 0:
-                self._throttle.response = None
+            response.raise_for_status()
         return response
+
+
+async def _discard_mcp_response(response: httpx.Response | httpx2.Response) -> None:
+    """Read a retried response before closing it to return its connection to the pool."""
+    await response.aread()
+    await response.aclose()
+
+
+async def _retry_mcp_request(
+    request: _RequestT, send: Callable[[_RequestT], Awaitable[_ResponseT]], throttle: _Throttle | None
+) -> _ResponseT:
+    """Retry a streamed MCP request without depending on its HTTP client generation."""
+    attempt = 1
+    retried = False
+    response = await send(request)
+    while response.status_code == 429 and attempt <= RATE_LIMIT_MAX_RETRIES:
+        delay = _rate_limit_delay(response, attempt)
+        remaining = anyio.current_effective_deadline() - _async_clock()
+        if _outlasts_deadline(request, attempt, delay, remaining):
+            break
+        await _discard_mcp_response(response)
+        if throttle is not None:
+            throttle.response = response
+            if not retried:
+                retried = True
+                throttle.retrying += 1
+        _log_rate_limit_retry(request, attempt, delay)
+        await _async_sleep(delay)
+        attempt += 1
+        response = await send(request)
+    if throttle is not None and retried and response.status_code != 429:
+        throttle.retrying -= 1
+        if throttle.retrying == 0:
+            throttle.response = None
+    return response
 
 
 def is_rate_limited(exc: BaseException) -> bool:
@@ -620,7 +662,10 @@ def is_rate_limited(exc: BaseException) -> bool:
         if id(current) in seen:
             continue
         seen.add(id(current))
-        if isinstance(current, httpx.HTTPStatusError) and current.response.status_code == 429:
+        if (
+            isinstance(current, httpx.HTTPStatusError | httpx2.HTTPStatusError)
+            and current.response.status_code == 429
+        ):
             return True
         stack.extend(getattr(current, "exceptions", None) or [])
         stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
@@ -630,7 +675,7 @@ def is_rate_limited(exc: BaseException) -> bool:
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float, throttle: _Throttle | None = None
-) -> AsyncIterator[tuple[Any, Any, Any]]:
+) -> AsyncIterator[tuple[Any, Any]]:
     """Open the streamable-HTTP transport with the caller's timeout on every leg.
 
     The client's own defaults are a 30s connect and a 300s SSE read, and neither was
@@ -643,17 +688,34 @@ async def _mcp_transport(
     than headers and timeouts. It retries a 429, so the MCP client never sees one that
     a retry got past.
     """
+    from mcp import types as mcp_types  # ty: ignore[unresolved-import]
     from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
 
-    async with RateLimitRetryingAsyncClient(
+    # MCP 2 changed its HTTP client types while retaining the transport's call shape.
+    # Keep both supported MCP majors, and pair each with its matching HTTP client.
+    client_class = (
+        _McpV2RetryingAsyncClient
+        if "input_schema" in mcp_types.Tool.model_fields
+        else RateLimitRetryingAsyncClient
+    )
+    transport = cast(Callable[..., AbstractAsyncContextManager[tuple[Any, ...]]], streamable_http_client)
+    async with client_class(
         throttle=throttle,
         headers=headers,
-        timeout=httpx.Timeout(timeout),
+        timeout=timeout,
         follow_redirects=True,
         event_hooks={"response": [_buffer_error_body]},
     ) as client:
-        async with streamable_http_client(endpoint, http_client=client) as streams:
-            yield streams
+        async with transport(endpoint, http_client=client) as streams:
+            yield streams[0], streams[1]
+
+
+def _mcp_field(value: Any, name: str, legacy_name: str, default: Any = None) -> Any:
+    """Read either MCP model generation without invoking deprecated v2 alias properties."""
+    try:
+        return getattr(value, name)
+    except AttributeError:
+        return getattr(value, legacy_name, default)
 
 
 def fetch_mcp_tools(
@@ -681,7 +743,6 @@ def fetch_mcp_tools(
         async with _mcp_transport(endpoint, headers, timeout, throttle) as (
             read_stream,
             write_stream,
-            _,
         ):
             session = ClientSession(
                 read_stream,
@@ -693,9 +754,11 @@ def fetch_mcp_tools(
                 cursor: str | None = None
                 collected: list[McpToolDefinition] = []
                 while True:
-                    result = await session.list_tools(cursor)
+                    result = await session.list_tools(
+                        params=mcp_types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None
+                    )
                     for tool in result.tools:
-                        input_schema = tool.inputSchema or {}
+                        input_schema = _mcp_field(tool, "input_schema", "inputSchema") or {}
                         collected.append(
                             McpToolDefinition(
                                 name=tool.name,
@@ -703,7 +766,7 @@ def fetch_mcp_tools(
                                 input_schema=dict(input_schema),
                             )
                         )
-                    cursor = result.nextCursor
+                    cursor = _mcp_field(result, "next_cursor", "nextCursor")
                     if cursor is None:
                         break
                 return collected
@@ -716,7 +779,7 @@ def fetch_mcp_tools(
         _raise_mcp_failure(exc, endpoint, timeout, throttle)
 
 
-def _response_body(response: httpx.Response) -> str:
+def _response_body(response: httpx.Response | httpx2.Response) -> str:
     """Best-effort read of an error body.
 
     The MCP transport streams, so `.text` raises until the stream is read, and by
@@ -755,7 +818,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
         # ExceptionGroup because they are raised inside the session's TaskGroup.
         if isinstance(current, StackOneError | ToolsetError):
             return current
-        if isinstance(current, httpx.HTTPStatusError):
+        if isinstance(current, httpx.HTTPStatusError | httpx2.HTTPStatusError):
             body = _response_body(current.response)
             detail = f": {body}" if body else ""
             status = f"{current.response.status_code} {current.response.reason_phrase}".rstrip()
@@ -775,7 +838,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
     # for the deadline's TimeoutError that is the cancellation, or whatever the
     # cancelled task happened to be catching.
     leaf = _leaf_failure(exc)
-    if isinstance(leaf, TimeoutError | httpx.TimeoutException):
+    if isinstance(leaf, TimeoutError | httpx.TimeoutException | httpx2.TimeoutException):
         return ToolsetLoadError(f"MCP request to {endpoint} timed out after {_js_number(timeout)}s")
     return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
 
@@ -783,7 +846,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
 def _leaf_failure(exc: BaseException) -> BaseException:
     """The innermost cause through group members and ``__cause__``, stopping at a timeout."""
     leaf = exc
-    while not isinstance(leaf, TimeoutError | httpx.TimeoutException):
+    while not isinstance(leaf, TimeoutError | httpx.TimeoutException | httpx2.TimeoutException):
         members = getattr(leaf, "exceptions", None)
         if members:
             leaf = members[0]
@@ -804,10 +867,17 @@ def _raise_mcp_failure(exc: Exception, endpoint: str, timeout: float, throttle: 
     :func:`is_rate_limited` reads it as the HTTP 429 it is.
     """
     throttled = throttle.response
-    if throttled is not None and isinstance(_leaf_failure(exc), TimeoutError | httpx.TimeoutException):
-        status = httpx.HTTPStatusError(
-            f"429 {throttled.reason_phrase}", request=throttled.request, response=throttled
-        )
+    if throttled is not None and isinstance(
+        _leaf_failure(exc), TimeoutError | httpx.TimeoutException | httpx2.TimeoutException
+    ):
+        if isinstance(throttled, httpx2.Response):
+            status = httpx2.HTTPStatusError(
+                f"429 {throttled.reason_phrase}", request=throttled.request, response=throttled
+            )
+        else:
+            status = httpx.HTTPStatusError(
+                f"429 {throttled.reason_phrase}", request=throttled.request, response=throttled
+            )
         status.__cause__ = exc
         raise StackOneAPIError(
             f"MCP request to {endpoint} was rate limited (429) and timed out after "
@@ -901,7 +971,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     non_text = [_plain_part(part) for part in result.content if not getattr(part, "text", "")]
 
     parsed: JsonDict = {}
-    structured = getattr(result, "structuredContent", None)
+    structured = _mcp_field(result, "structured_content", "structuredContent")
     if payload:
         try:
             # NaN and Infinity are not JSON; json.loads accepts them, JSON.parse does not,
@@ -916,7 +986,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
         # not write into the caller's result.
         parsed = dict(structured)
 
-    if getattr(result, "isError", False):
+    if _mcp_field(result, "is_error", "isError", False):
         # The transport succeeded, so there is no HTTP status here — but the payload
         # carries the real one, and a caller cannot branch on 0.
         detail = payload or json.dumps(parsed, ensure_ascii=False, separators=(",", ":"), default=str)
@@ -947,7 +1017,6 @@ def call_mcp_tool(
         async with _mcp_transport(endpoint, headers, timeout, throttle) as (
             read_stream,
             write_stream,
-            _,
         ):
             session = ClientSession(
                 read_stream,
@@ -960,7 +1029,7 @@ def call_mcp_tool(
                 # against the tool's output schema, and on a fresh session that means a
                 # tools/list first — relisting the whole catalog on every call, which the
                 # Node SDK never does. The result is parsed below either way.
-                request = mcp_types.ClientRequest(
+                request = TypeAdapter(mcp_types.ClientRequest).validate_python(
                     mcp_types.CallToolRequest(
                         params=mcp_types.CallToolRequestParams(name=name, arguments=arguments),
                     )

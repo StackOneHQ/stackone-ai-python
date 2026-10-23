@@ -18,9 +18,11 @@ classifiers = [
 dependencies = [
   "pydantic>=2.10.6",
   "httpx>=0.28.0",
+  # MCP 2 uses httpx2; retain httpx for account discovery and MCP 1.
+  "httpx2>=2.10.0",
   # fetch_tools() is the only route to a tool and talks MCP, so the client is
   # not optional: without it the SDK cannot do anything.
-  "mcp>=1.24.3,<2.0.0",
+  "mcp>=1.24.3,<3.0.0",
 ]
 
 [build-system]
