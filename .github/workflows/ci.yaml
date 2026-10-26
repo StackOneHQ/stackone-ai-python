@@ -59,7 +59,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install Python dependencies
@@ -165,11 +165,11 @@ jobs:
           version: 10.26.0
           package_json_file: sdk-conformance/package.json
 
-      # 24, not 22: the Node SDK's devEngines pins Node ^24.11.0, and the suite runs on it too.
+      # The Node SDK's devEngines pins the exact Node version, and the suite runs on it too.
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: stackone-ai-node/package.json
 
       - name: Install Node SDK dependencies
         working-directory: stackone-ai-node
@@ -231,7 +231,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install Python dependencies
