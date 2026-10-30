@@ -1,6 +1,9 @@
 name: Release Please
 
 on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/release.yaml]
   push:
     branches:
       - main
@@ -17,12 +20,16 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'StackOneHQ/stackone-ai-python'
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
+      release_sha: ${{ steps.release.outputs.sha }}
+      release_version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
@@ -63,33 +70,62 @@ jobs:
             git push
           fi
 
-  # Publishing lives in its own job so it can be gated. It previously ran in the
-  # release-please job with no dependency on CI at all: CI is a separate workflow,
-  # so a red main still merged the release PR and shipped to PyPI. The suite runs
-  # again here against the exact commit being published.
-  publish:
+  build:
+    name: Test and build release
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    # PRs exercise packaging without running release-please or granting publish access.
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'pull_request' || needs.release-please.outputs.release_created == 'true')
     runs-on: ubuntu-latest
-    # Configure a required reviewer on this environment in the repository settings.
-    environment: pypi
-    permissions:
-      contents: read
+    timeout-minutes: 15
     steps:
-      - name: Checkout repository
+      - name: Checkout release source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ needs.release-please.outputs.release_sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup uv
+      - name: Verify release source
+        if: github.event_name == 'push'
+        env:
+          RELEASE_SHA: ${{ needs.release-please.outputs.release_sha }}
+        run: |
+          test "$(git rev-parse --verify 'HEAD^{commit}')" = "$RELEASE_SHA"
+          git merge-base --is-ancestor HEAD "$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
+
+      - name: Set up uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.13"
+          enable-cache: false
 
-      - name: Setup pnpm
+      - name: Validate package metadata
+        id: package
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.release_version }}
+        run: |
+          uv --no-config run --no-project --python 3.13 python -I - <<'PYTHON'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+          if project["name"] != "stackone-ai":
+              raise SystemExit("Unexpected package name")
+          version = project["version"]
+          if os.environ["EVENT_NAME"] == "push" and version != os.environ["RELEASE_VERSION"]:
+              raise SystemExit("Package version does not match the GitHub release")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+              output.write(f"version={version}\n")
+          PYTHON
+
+      - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
-      - name: Setup Node
+      - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -99,12 +135,66 @@ jobs:
           uv sync --all-extras --locked
           pnpm install --frozen-lockfile
 
-      - name: Test the commit being published
-        run: uv run pytest
-
-      - name: Build and publish package
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Lint, type check, and test release source
         run: |
-          uv build
-          uv publish
+          uv run ruff check .
+          uv run ty check stackone_ai
+          uv run pytest
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Verify wheel and source distribution installations
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            uv --no-config run --isolated --no-project --with "$artifact" python -I - <<'PYTHON'
+          import os
+          from importlib.metadata import version
+          from stackone_ai import StackOneToolSet
+          assert version("stackone-ai") == os.environ["PACKAGE_VERSION"]
+          assert callable(StackOneToolSet)
+          print("Installed stackone-ai", version("stackone-ai"))
+          PYTHON
+          done
+
+      - name: Upload tested distributions
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish tested distributions
+    needs: [release-please, build]
+    if: >-
+      github.repository == 'StackOneHQ/stackone-ai-python' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: pypi
+      url: https://pypi.org/project/stackone-ai/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Download tested distributions
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish with PyPI Trusted Publishing
+        run: uv publish --trusted-publishing always
