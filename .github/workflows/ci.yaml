@@ -114,7 +114,7 @@ jobs:
     env:
       # Pinned to a commit on stackone-ai-node's main, not the branch, so a Node change never
       # silently changes what this job grades. Bump it deliberately.
-      NODE_SDK_REF: c41b1009b10287057ac72070f69ee147fad3be6b
+      NODE_SDK_REF: 099fd1e3405f8a56125f9691e20ccd1333dda12f
     steps:
       - name: Check conformance token is configured
         env:
@@ -134,7 +134,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: StackOneHQ/sdk-conformance
-          ref: 5f60cc0dfdf4d1a25afad93a68eeefe30e89568d
+          ref: 4ead1c25bb443ef1fd1986d5f053b2d1475d0e90
           token: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
           path: sdk-conformance
           persist-credentials: false
@@ -161,8 +161,9 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        # pnpm from sdk-conformance's packageManager; in each SDK checkout pnpm switches to that
+        # repo's own packageManager version, so one setup serves all three installs.
         with:
-          version: 10.26.0
           package_json_file: sdk-conformance/package.json
 
       # 24, not 22: the Node SDK's devEngines pins Node ^24.11.0, and the suite runs on it too.
