@@ -27,7 +27,6 @@ from stackone_ai import tools as tools_module
 from stackone_ai.tools import (
     McpToolDefinition,
     RateLimitRetryingClient,
-    StackOneMcpTool,
     StackOneTool,
     Tools,
     _backoff_delay,
@@ -463,19 +462,6 @@ def _skip_account(mp, log) -> Emitted:
     return _warnings(log)[0], {"account_id": "acc-2", "error": "boom"}
 
 
-def _skip_connector(mp, log) -> Emitted:
-    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("c_{account}_search_actions"))
-
-    def search(self: StackOneTool, _arguments: Any = None) -> dict[str, Any]:
-        if self.name == "c_acc-2_search_actions":
-            raise StackOneAPIError("boom", 500, None)
-        return {"actions": [{"action_id": "c_a"}]}
-
-    mp.setattr(StackOneMcpTool, "execute", search)
-    StackOneToolSet(api_key="k").search("q", account_ids=["acc-1", "acc-2"])
-    return _warnings(log)[0], {"tool": "c_acc-2_search_actions", "error": "boom"}
-
-
 def _duplicate_tool_names(mp, log) -> Emitted:
     tools = Tools([_served_tool({"type": "object", "properties": {}}, "t") for _ in range(2)])
     # Once by the collection, and again by each adapter that keeps the first of each name.
@@ -485,37 +471,11 @@ def _duplicate_tool_names(mp, log) -> Emitted:
     return adapter, {"count": 1, "names": "t"}
 
 
-def _ambiguous_connector(mp, log) -> Emitted:
-    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("linear_{account}_execute_action"))
-    mp.setattr(StackOneMcpTool, "execute", lambda _self, _arguments=None: {})
-    error = _raised(
-        ToolsetConfigError,
-        lambda: StackOneToolSet(api_key="k").execute("linear_list_issues", account_ids=["acc-2", "acc-1"]),
-    )
-    tools = "linear_acc-1_execute_action on acc-1, linear_acc-2_execute_action on acc-2"
-    return error, {"action_id": "linear_list_issues", "count": 2, "tools": tools}
-
-
 def _account_id_env_ignored(mp, log) -> Emitted:
     mp.setenv("STACKONE_ACCOUNT_ID", "acc-1")
     StackOneToolSet(api_key="k")
     [warning] = _warnings(log)
     return warning, {}
-
-
-def _connector_account_unavailable(mp, log) -> Emitted:
-    mp.setattr(
-        "stackone_ai.toolset.fetch_mcp_tools",
-        _failing_for({"acc-2"}, ToolsetLoadError("boom"), "linear_{account}_execute_action"),
-    )
-    # Explicit ids, so execute() makes one GET /accounts to learn acc-2's provider. It does
-    # not list acc-2, so its provider stays unknown and it blocks.
-    _accounts_answer(mp, lambda _r: httpx.Response(200, json=[{"id": "acc-1", "provider": "linear"}]))
-    error = _raised(
-        ToolsetLoadError,
-        lambda: StackOneToolSet(api_key="k").execute("linear_list_issues", account_ids=["acc-1", "acc-2"]),
-    )
-    return error, {"action_id": "linear_list_issues", "failures": "acc-2: boom"}
 
 
 def _non_shared_accounts_skipped(mp, log) -> Emitted:
@@ -638,19 +598,6 @@ def _all_accounts_failed(mp, log) -> Emitted:
     return error, {"failures": "acc-1: gone; acc-2: boom"}
 
 
-def _no_connector_returned_results(mp, log) -> Emitted:
-    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("c_{account}_search_actions"))
-
-    def fail(self: StackOneTool, _arguments: Any = None) -> dict[str, Any]:
-        raise StackOneAPIError("boom", 500, None)
-
-    mp.setattr(StackOneMcpTool, "execute", fail)
-    error = _raised(
-        ToolsetLoadError, lambda: StackOneToolSet(api_key="k").search("q", account_ids=["acc-1", "acc-2"])
-    )
-    return error, {"failures": "c_acc-1_search_actions: boom | c_acc-2_search_actions: boom"}
-
-
 def _fetch_tools_failed(mp, log) -> Emitted:
     def explode(*_args: object, **_kwargs: object) -> list[McpToolDefinition]:
         raise RuntimeError("kaput")
@@ -720,12 +667,42 @@ def _feedback_not_enabled(mp, log) -> Emitted:
     return _raised(ToolsetLoadError, lambda: toolset.submit_feedback("positive", ["t"])), {}
 
 
-def _no_connector_for_action(mp, log) -> Emitted:
-    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("jira_{account}_execute_action"))
+def _trio_tool_not_served(mp, log) -> Emitted:
+    # The policy-disabled shape: a search_execute request answered with individual tools.
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("jira_list_issues"))
     toolset = StackOneToolSet(api_key="k", account_id="acc-1")
-    return _raised(ToolsetLoadError, lambda: toolset.execute("linear_list_issues")), {
-        "action_id": "linear_list_issues"
-    }
+    return _raised(ToolsetLoadError, lambda: toolset.search("issues")), {"tool": "stackone_search_actions"}
+
+
+def _too_many_accounts(mp, log) -> Emitted:
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", _listing("stackone_search_actions"))
+    toolset = StackOneToolSet(api_key="k", execute={"account_ids": [f"acc-{i}" for i in range(51)]})
+    return _raised(ToolsetConfigError, lambda: toolset.search("issues")), {"count": 51}
+
+
+def _one_account_pair_tool(mp, name: str) -> StackOneTool:
+    """``name`` of the pair a one-account search_execute listing serves acc-1, as presented."""
+    served = [
+        McpToolDefinition(f"jira_acc-1_{suffix}", "", {"type": "object", "properties": {}})
+        for suffix in ("search_actions", "execute_action")
+    ]
+    mp.setattr("stackone_ai.toolset.fetch_mcp_tools", lambda *_args, **_kwargs: served)
+    tool = StackOneToolSet(api_key="k", account_id="acc-1").fetch_tools(mode="search_execute").get_tool(name)
+    assert tool is not None
+    return tool
+
+
+def _account_outside_scope(mp, log) -> Emitted:
+    tool = _one_account_pair_tool(mp, "stackone_execute_action")
+    arguments = {"action_id": "a", "stackone_account_id": "acc-2"}
+    error = _raised(ToolArgumentsError, lambda: tool.execute(arguments))
+    return error, {"value": "acc-2", "tool": "stackone_execute_action", "account_id": "acc-1"}
+
+
+def _provider_outside_scope(mp, log) -> Emitted:
+    tool = _one_account_pair_tool(mp, "stackone_search_actions")
+    error = _raised(ToolArgumentsError, lambda: tool.execute({"query": "q", "provider": "linear"}))
+    return error, {"value": "linear", "provider": "jira"}
 
 
 def _arguments_not_finite(mp, log) -> Emitted:
@@ -785,11 +762,8 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "rate-limit-retry": _rate_limit_retry,
     "rate-limit-deadline": _rate_limit_deadline,
     "skip-account": _skip_account,
-    "skip-connector": _skip_connector,
     "duplicate-tool-names": _duplicate_tool_names,
-    "ambiguous-connector": _ambiguous_connector,
     "account-id-env-ignored": _account_id_env_ignored,
-    "connector-account-unavailable": _connector_account_unavailable,
     "non-shared-accounts-skipped": _non_shared_accounts_skipped,
     "mcp-timeout": _mcp_timeout,
     "mcp-http-failure": _mcp_http_failure,
@@ -804,7 +778,6 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "no-active-accounts": _no_active_accounts,
     "no-shared-accounts": _no_shared_accounts,
     "all-accounts-failed": _all_accounts_failed,
-    "no-connector-returned-results": _no_connector_returned_results,
     "fetch-tools-failed": _fetch_tools_failed,
     "missing-api-key": _missing_api_key,
     "empty-account-id": _empty_account_id,
@@ -817,7 +790,10 @@ EMITTERS: dict[str, Callable[[pytest.MonkeyPatch, pytest.LogCaptureFixture], Emi
     "top-k-out-of-range": _top_k_out_of_range,
     "tool-names-not-a-list": _tool_names_not_a_list,
     "feedback-not-enabled": _feedback_not_enabled,
-    "no-connector-for-action": _no_connector_for_action,
+    "trio-tool-not-served": _trio_tool_not_served,
+    "too-many-accounts": _too_many_accounts,
+    "account-outside-scope": _account_outside_scope,
+    "provider-outside-scope": _provider_outside_scope,
     "arguments-not-finite": _arguments_not_finite,
     "arguments-not-encodable": _arguments_not_encodable,
     "arguments-invalid-json": _arguments_invalid_json,
