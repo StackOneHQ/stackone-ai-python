@@ -32,6 +32,8 @@ import httpx
 from pydantic import BaseModel, Field, PrivateAttr
 
 from stackone_ai.types import (
+    EXECUTE_ACTION_TOOL_NAME,
+    SEARCH_ACTIONS_TOOL_NAME,
     ExecuteConfig,
     Headers,
     JsonDict,
@@ -883,7 +885,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     wins when both are present. Parts that are not text (images, embedded resources)
     are kept under ``content_parts`` as plain JSON, the form they arrived in.
 
-    The result is returned as the server wrote it. For an action tool, ``*_execute_action``
+    The result is returned as the server wrote it. For an action tool, ``stackone_execute_action``
     and feedback that is ``{"isError": false, "result": ..., "defenderMetadata"?: ...,
     "policyMetadata"?: ...}``; a search result is bare JSON.
 
@@ -1084,7 +1086,7 @@ class StackOneTool(BaseModel):
         property as something other than an object, an ordinary field that happens to be
         named ``headers`` rather than a header container.
         ``nested`` is ``None`` when the ``headers`` object is open — ``type: "object"`` with
-        no ``properties`` and ``additionalProperties`` not ``false``, as ``*_execute_action``
+        no ``properties`` and ``additionalProperties`` not ``false``, as ``stackone_execute_action``
         serves it — which declares every name. Any other schema with no ``properties``
         declares none.
         """
@@ -1382,10 +1384,13 @@ class StackOneMcpTool(StackOneTool):
     """A tool executed over MCP ``tools/call`` on the endpoint that listed it.
 
     Every tool the toolset builds is one of these: per-action tools, the
-    ``*_search_actions`` / ``*_execute_action`` meta tools and ``stackone_submit_feedback``.
+    ``search_execute`` trio and ``stackone_submit_feedback``.
     """
 
     _endpoint: str = PrivateAttr()
+    # The name the server listed the tool under, which tools/call must use: the same as
+    # ``name`` except for a one-account pair presented under the trio's names.
+    _served_name: str = PrivateAttr()
     # Set by the toolset that built the tool: the end-user id it recorded for an account.
     # Looked up per request, so a tool keeps up with a later GET /accounts and with
     # set_account_id().
@@ -1405,6 +1410,7 @@ class StackOneMcpTool(StackOneTool):
         account_id: str | None,
         headers: Headers | None = None,
         timeout: float = 60.0,
+        served_name: str | None = None,
     ) -> None:
         super().__init__(
             description=description,
@@ -1414,6 +1420,7 @@ class StackOneMcpTool(StackOneTool):
             _account_id=account_id,
         )
         self._endpoint = endpoint
+        self._served_name = served_name or name
 
     def _prepare_headers(self) -> Headers:
         """The request headers: the configured extras first, then the SDK's own.
@@ -1488,7 +1495,9 @@ class StackOneMcpTool(StackOneTool):
 
         def call() -> JsonDict:
             timeout = self._execute_config.timeout
-            return call_mcp_tool(self._endpoint, self._prepare_headers(), self.name, parsed, timeout=timeout)
+            return call_mcp_tool(
+                self._endpoint, self._prepare_headers(), self._served_name, parsed, timeout=timeout
+            )
 
         account_id = self._account_id
         without_end_user = account_id is not None and self._recorded_end_user_id() is None
@@ -1505,6 +1514,124 @@ class StackOneMcpTool(StackOneTool):
             ):
                 raise
         return call()
+
+
+@dataclass(frozen=True)
+class AccountPair:
+    """The search and execute tools the server serves a ``search_execute`` listing of one account.
+
+    Several accounts get the trio; one gets its own pair, named
+    ``<connector>_<account>_search_actions`` and ``<connector>_<account>_execute_action``. The
+    SDK presents the pair under the trio's names, so a caller and a model see one search and
+    one execute tool however many accounts are in scope.
+    """
+
+    account_id: str
+    connector: str
+
+    @classmethod
+    def serving(cls, served_name: str, account_id: str) -> AccountPair | None:
+        """The pair a served tool belongs to, if it is one of an account's pair."""
+        for suffix in (f"_{account_id}_search_actions", f"_{account_id}_execute_action"):
+            if served_name.endswith(suffix) and len(served_name) > len(suffix):
+                return cls(account_id, served_name[: -len(suffix)])
+        return None
+
+    @property
+    def trio_names(self) -> dict[str, str]:
+        """Each served name, and the trio name it is presented as."""
+        served = f"{self.connector}_{self.account_id}"
+        return {
+            f"{served}_search_actions": SEARCH_ACTIONS_TOOL_NAME,
+            f"{served}_execute_action": EXECUTE_ACTION_TOOL_NAME,
+        }
+
+    def renamed(self, value: Any) -> Any:
+        """``value`` with every served name in its strings, however deep, read as its trio name.
+
+        Descriptions, schemas and results name the pair's tools to each other ("run a hit with
+        ..."); left as served, they would send a model to a tool it was never given.
+        """
+        if isinstance(value, str):
+            for served, trio_name in self.trio_names.items():
+                value = value.replace(served, trio_name)
+            return value
+        if isinstance(value, dict):
+            return {self.renamed(key): self.renamed(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self.renamed(item) for item in value]
+        return value
+
+    def presented(self, tool_def: McpToolDefinition) -> McpToolDefinition:
+        """A served tool of the pair as the trio tool it stands for."""
+        return McpToolDefinition(
+            name=self.trio_names[tool_def.name],
+            description=self.renamed(tool_def.description),
+            input_schema=self.renamed(tool_def.input_schema),
+        )
+
+
+class StackOneAccountPairTool(StackOneMcpTool):
+    """One tool of an account's pair, presented and called as the trio tool it stands for.
+
+    It takes the trio's arguments: ``stackone_account_id`` and ``provider`` choose among
+    accounts, and with one in scope they can only name that account, so they are checked and
+    dropped, never sent. Its results read in trio names, and a search's hits carry the
+    ``available_accounts`` and ``provider`` a trio search gives them.
+    """
+
+    _pair: AccountPair = PrivateAttr()
+
+    def __init__(self, *, pair: AccountPair, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._pair = pair
+
+    def execute(self, arguments: str | JsonDict | None = None) -> JsonDict:
+        """Call the served tool with the trio's arguments, answering as the trio tool would.
+
+        Raises:
+            ToolArgumentsError: If ``stackone_account_id`` names another account, or
+                ``provider`` another connector, before any request is made.
+            StackOneAPIError: As :meth:`StackOneMcpTool.execute`, its text in trio names.
+        """
+        scoped = self._without_scope_arguments(self._parse_arguments(arguments))
+        try:
+            result = self._pair.renamed(super().execute(scoped))
+        except StackOneAPIError as exc:
+            renamed = StackOneAPIError(
+                self._pair.renamed(str(exc)), exc.status_code, self._pair.renamed(exc.response_body)
+            )
+            raise renamed from exc
+        return self._with_hits_scoped(result) if self.name == SEARCH_ACTIONS_TOOL_NAME else result
+
+    def _without_scope_arguments(self, arguments: JsonDict) -> JsonDict:
+        """The arguments without ``stackone_account_id`` and ``provider``, once each is checked
+        to name this pair's account and connector. ``None`` is not given, as for ``session_id``."""
+        scoped = dict(arguments)
+        account = scoped.pop("stackone_account_id", None)
+        if account is not None and account != self._pair.account_id:
+            raise ToolArgumentsError(
+                f"stackone_account_id {_json_text(account)} is not an account {_json_text(self.name)} "
+                f"can run on; it runs on {_json_text(self._pair.account_id)}."
+            )
+        provider = scoped.pop("provider", None)
+        if provider is not None and not (
+            isinstance(provider, str) and provider.lower() == self._pair.connector.lower()
+        ):
+            raise ToolArgumentsError(
+                f"provider {_json_text(provider)} is not linked in this account scope, "
+                f"which has {_json_text(self._pair.connector)}."
+            )
+        return scoped
+
+    def _with_hits_scoped(self, result: JsonDict) -> JsonDict:
+        """A search result whose hits name the account and connector they run on, when the
+        server left them out."""
+        hits = result.get("actions")
+        if not isinstance(hits, list):
+            return result
+        scope = {"available_accounts": [{"id": self._pair.account_id}], "provider": self._pair.connector}
+        return {**result, "actions": [{**scope, **hit} if isinstance(hit, dict) else hit for hit in hits]}
 
 
 def _read_openai_tool_call(call: Any) -> tuple[str, str, str | JsonDict]:

@@ -146,24 +146,6 @@ class TestSearchSessionId:
         assert hits
         assert all(hit["session_id"] == MOCK_SESSION_ID for hit in hits)
 
-    def test_each_hit_keeps_its_own_search_session_across_connectors(self, monkeypatch):
-        per_connector = {
-            "a_acc1_search_actions": {"session_id": "s-a", "actions": [{"action_id": "a_x"}]},
-            "b_acc2_search_actions": {"session_id": "s-b", "actions": [{"action_id": "b_x"}]},
-        }
-        monkeypatch.setattr(StackOneMcpTool, "execute", lambda self, _args: per_connector[self.name])
-        monkeypatch.setattr(
-            "stackone_ai.toolset.fetch_mcp_tools",
-            lambda _e, headers, **_k: [
-                McpToolDefinition(name=name, description="", input_schema={})
-                for name in per_connector
-                if headers["x-account-id"] in name
-            ],
-        )
-        toolset = StackOneToolSet(api_key="test-key")
-        toolset.set_accounts(["acc1", "acc2"])
-        assert {h["action_id"]: h["session_id"] for h in toolset.search("x")} == {"a_x": "s-a", "b_x": "s-b"}
-
     def test_the_field_is_omitted_when_the_server_returned_none(self, monkeypatch):
         monkeypatch.setattr(
             StackOneMcpTool, "execute", lambda self, _args: {"actions": [{"action_id": "a_x"}]}
@@ -171,11 +153,11 @@ class TestSearchSessionId:
         monkeypatch.setattr(
             "stackone_ai.toolset.fetch_mcp_tools",
             lambda _e, _h, **_k: [
-                McpToolDefinition(name="a_acc1_search_actions", description="", input_schema={})
+                McpToolDefinition(name="stackone_search_actions", description="", input_schema={})
             ],
         )
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
-        assert toolset.search("x") == [{"action_id": "a_x", "account_id": "acc1"}]
+        assert toolset.search("x") == [{"action_id": "a_x"}]
 
 
 class TestExecuteSessionId:
@@ -299,7 +281,9 @@ class TestSubmitFeedback:
         toolset.submit_feedback("positive", ["acc1_tool_1"], account_ids=["acc2", "acc1"])
 
         listings = [r for r in _requests(mcp_mock_server) if r.get("method") == "tools/list"]
-        assert [(r["accountId"], r["search"]) for r in listings] == [("acc1", "?tool-mode=search_execute")]
+        assert [(r["accountIds"], r["search"]) for r in listings] == [
+            (["acc1"], "?tool-mode=search_execute&x-account-id=acc1")
+        ]
         calls = _tool_calls(mcp_mock_server, SUBMIT_FEEDBACK_TOOL_NAME)
         assert [c["accountId"] for c in calls] == ["acc1"]
 
@@ -329,10 +313,10 @@ class TestSubmitFeedback:
                 {"id": "alpha", "status": "active"},
             ],
         )
-        listed: list[tuple[str, str]] = []
+        listed: list[str] = []
 
-        def fake_fetch(endpoint: str, headers: dict[str, str], **_k: object) -> list[McpToolDefinition]:
-            listed.append((headers["x-account-id"], endpoint))
+        def fake_fetch(endpoint: str, _headers: dict[str, str], **_k: object) -> list[McpToolDefinition]:
+            listed.append(endpoint)
             return [McpToolDefinition(name=SUBMIT_FEEDBACK_TOOL_NAME, description="", input_schema={})]
 
         monkeypatch.setattr("stackone_ai.toolset.fetch_mcp_tools", fake_fetch)
@@ -343,8 +327,9 @@ class TestSubmitFeedback:
 
         StackOneToolSet(api_key="test-key").submit_feedback("positive", ["x"])
 
-        assert listed == [("alpha", "https://api.stackone.com/mcp?tool-mode=search_execute")]
-        assert called == ["alpha"]
+        assert listed == ["https://api.stackone.com/mcp?tool-mode=search_execute&x-account-id=alpha"]
+        # Bound to no account: the endpoint names it.
+        assert called == [None]
 
     def test_accepts_any_sequence_of_tool_names(self, mcp_mock_server: str):
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)

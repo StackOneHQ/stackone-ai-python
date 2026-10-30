@@ -82,8 +82,9 @@ Some names were public on `main` for a while before 3.0 but never in a release:
 
 Client-side search is gone: the BM25/TF-IDF index, the semantic search client, the
 `search=` constructor argument, and the `tool_search`/`tool_execute` meta tools. The
-server's `*_search_actions` tool now does the search, and `toolset.execute()` runs an
-action by id through the server's `*_execute_action` tool.
+server's `stackone_search_actions` tool now does the search, and `toolset.execute()`
+runs an action by id through the server's `stackone_execute_action` tool. Each is one
+call spanning every account in scope.
 
 ```python
 # 2.x
@@ -100,17 +101,19 @@ hit = hits[0]
 result = toolset.execute(
     hit["action_id"],
     {"query": {"page_size": 25}},  # the nested form in hit["input_schema"]
-    account_ids=[hit["account_id"]],
+    account_ids=[hit["available_accounts"][0]["id"]],
     session_id=hit.get("session_id"),
 )
 ```
 
-`search()` returns dicts carrying `action_id` and the `account_id` that found it, plus
-`description`, `similarity_score`, `input_schema`, `example_request` and `session_id`
-when the server sends them. `top_k` caps the whole result, as in 2.x, after ranking
-across every connector; the same action linked on two accounts is two hits. When an
-action's connector is linked on more than one account, `execute()` raises
-`ToolsetConfigError` unless `account_ids` picks one, such as `[hit["account_id"]]`.
+`search()` returns the server's hits: dicts carrying `action_id`, `provider` and
+`available_accounts` (each `{"id", "name"}`), plus `description`, `similarity_score`,
+`input_schema` and `example_request` when the server sends them, and the search's
+`session_id`. `top_k` caps the whole result, as in 2.x; the same action linked on two
+accounts is one hit naming both. When an action's connector is linked on more than one
+account in scope, the server refuses to pick one and `execute()` raises
+`StackOneAPIError` unless `account_ids` names one, such as
+`[hit["available_accounts"][0]["id"]]`.
 
 `toolset.execute()` has a new signature. It used to take a meta tool name, such as
 `"tool_execute"`, with arguments as a JSON string or a dict. It now takes
@@ -118,8 +121,9 @@ action's connector is linked on more than one account, `execute()` raises
 must be a dict. It raises instead of returning `{"error": ...}`: `ToolsetConfigError`
 before any request when `action_id`, `arguments` or `session_id` is malformed,
 `ToolArgumentsError` when the arguments cannot be encoded as JSON, `ToolsetLoadError` when
-no linked connector matches the action, and `StackOneAPIError` when the action fails,
-including when the server rejects the arguments.
+the server did not serve `stackone_execute_action` (the project's policy disables
+search_execute), and `StackOneAPIError` when the action fails, including when the server
+rejects the arguments or the action id.
 
 To give a model the search and execute tools, set the tool mode on the toolset.
 `openai()`, `langchain()` and `pydantic_ai()` no longer take `mode=`.
@@ -131,13 +135,20 @@ openai_tools = toolset.openai(mode="search_and_execute")
 # ...for each tool call the model makes:
 toolset.execute(call.function.name, call.function.arguments)
 
-# 3.0: two tools per connector, served by the server
+# 3.0: stackone_search_actions and stackone_execute_action, served by the server and
+# spanning every account in scope (at most 50), with stackone_list_accounts for several
 toolset = StackOneToolSet(tool_mode="search_execute")
 tools = toolset.fetch_tools()
 openai_tools = tools.to_openai()
 # ...then run the model's tool calls and get the messages to send back:
 messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 ```
+
+For a single account the server serves that account's own pair,
+`<provider>_<account>_search_actions` and `_execute_action`; the SDK presents them as
+`stackone_search_actions` and `stackone_execute_action`, so code and prompts use the same
+names for one account or many. A scope of more than 50 accounts raises
+`ToolsetConfigError` before any request.
 
 `get_search_tool()` and `semantic_client` are removed. Call `toolset.search()` instead.
 
@@ -223,7 +234,7 @@ an ordinary argument that happens to be named `headers`: it skips header filteri
 sent as given, subject to the same JSON-value check as every other argument. A
 `headers_<name>` argument is dropped with a warning when its value is a list or dict.
 
-`*_execute_action` serves an open `headers` object, so `toolset.execute()` passes your
+`stackone_execute_action` serves an open `headers` object, so `toolset.execute()` passes your
 own headers on to the action, with the exception of those four:
 
 ```python
@@ -316,7 +327,7 @@ tool.execute({"id": "1"}, options={"feedback_session_id": "chat-42"})
 
 # 3.0
 hit = toolset.search("list workers")[0]
-toolset.execute(hit["action_id"], account_ids=[hit["account_id"]], session_id=hit.get("session_id"))
+toolset.execute(hit["action_id"], session_id=hit.get("session_id"))
 toolset.submit_feedback(
     "positive",
     [hit["action_id"]],
