@@ -90,8 +90,8 @@ Always use absolute imports starting with the full package name. Never use relat
 imports (`.` or `..`).
 
 ```python
-from stackone_ai.tools import StackOneTool     # good
-from .tools import StackOneTool                # bad
+from stackone_ai.tools import StackOneTool  # good
+from .tools import StackOneTool  # bad
 ```
 
 Order: standard library, then third-party, then local.
@@ -208,14 +208,17 @@ via release-please after a merge to main, never from a developer machine.
 ## Key Patterns
 
 ```python
-toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
+toolset = StackOneToolSet()  # reads STACKONE_API_KEY; accounts are discovered
 
 hits = toolset.search("list recent comments", top_k=3)
 hit = hits[0] if hits else None
 session_id = hit.get("session_id") if hit else None
 account_ids = [hit["account_id"]] if hit else None
 toolset.execute(
-    "linear_list_comments", {"body": {"variables": {"first": 25}}}, account_ids=account_ids, session_id=session_id
+    "linear_list_comments",
+    {"body": {"variables": {"first": 25}}},
+    account_ids=account_ids,
+    session_id=session_id,
 )
 toolset.submit_feedback("positive", ["linear_list_comments"], session_id=session_id)
 

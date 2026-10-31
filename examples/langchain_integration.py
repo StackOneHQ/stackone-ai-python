@@ -47,7 +47,7 @@ def langchain_integration() -> None:
         print(f"  - {tool.name}")
 
     # Create model with tools
-    model = ChatOpenAI(model="gpt-5.4")  # ty: ignore[unknown-argument]
+    model = ChatOpenAI(model="gpt-5.4")
     model_with_tools = model.bind_tools(langchain_tools)
 
     result = model_with_tools.invoke("Use one of your tools to list a few records, then summarise them.")
