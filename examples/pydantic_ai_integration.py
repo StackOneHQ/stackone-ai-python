@@ -28,17 +28,9 @@ except ImportError:
 from stackone_ai import StackOneToolSet
 
 
-def pydantic_ai_integration() -> None:
-    for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
-        if not os.getenv(var):
-            print(f"Set {var} to run this example.")
-            return
-
-    toolset = StackOneToolSet()
-    tools = toolset.fetch_tools(
-        actions=["*_list_*"],
-        account_ids=[os.environ["STACKONE_ACCOUNT_ID"]],
-    ).to_pydantic_ai()
+def individual_tools(account_id: str) -> None:
+    """One Pydantic AI tool per action: suits a handful of actions."""
+    tools = StackOneToolSet().fetch_tools(actions=["*_list_*"], account_ids=[account_id]).to_pydantic_ai()
 
     agent = Agent(
         "openai:gpt-5.4",
@@ -46,7 +38,36 @@ def pydantic_ai_integration() -> None:
         tools=tools,
     )
     result = agent.run_sync("Use one of your tools to list a few records, then summarise them.")
-    print(f"Result:\n{result.output}")
+    print(f"Individual tools:\n{result.output}\n")
+
+
+def search_and_execute(account_id: str) -> None:
+    """StackOne's search and execute tools: the model finds an action, then runs it."""
+    toolset = StackOneToolSet(tool_mode="search_execute")
+    tools = toolset.fetch_tools(account_ids=[account_id]).to_pydantic_ai()
+
+    agent = Agent(
+        "openai:gpt-5.4",
+        system_prompt=(
+            "You answer by calling tools. First call stackone_search_actions to find an action, "
+            "then call stackone_execute_action with its action_id and arguments built from its "
+            "example_request."
+        ),
+        tools=tools,
+    )
+    result = agent.run_sync("List a few records from any of my connected apps, then summarise them.")
+    print(f"Search and execute:\n{result.output}")
+
+
+def pydantic_ai_integration() -> None:
+    for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
+        if not os.getenv(var):
+            print(f"Set {var} to run this example.")
+            return
+
+    account_id = os.environ["STACKONE_ACCOUNT_ID"]
+    individual_tools(account_id)
+    search_and_execute(account_id)
 
 
 if __name__ == "__main__":
