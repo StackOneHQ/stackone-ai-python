@@ -200,7 +200,8 @@ version, and `feat!` signals a breaking change. `docs`, `chore` and `test` do no
 trigger a release.
 
 Merging the release PR updates `CHANGELOG.md`, creates the GitHub release, and
-publishes to PyPI (requires the `PYPI_API_TOKEN` secret).
+publishes to PyPI through Trusted Publishing. Configure the PyPI publisher and
+GitHub environment as described in `.github/RELEASING.md`; no API token is needed.
 
 Publishing only ever happens there. There is no `make publish`: releases go out
 via release-please after a merge to main, never from a developer machine.
