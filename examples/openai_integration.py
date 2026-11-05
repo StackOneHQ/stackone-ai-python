@@ -21,6 +21,7 @@ You can find out more about the OpenAI Function Calling API format
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 try:
     from dotenv import load_dotenv
@@ -49,11 +50,11 @@ def openai_integration() -> None:
             "an empty catalog here means the example would prove nothing."
         )
 
-    openai_tools = tools.to_openai()[:20]
+    openai_tools: list[Any] = tools.to_openai()[:20]
     names = {t["function"]["name"] for t in openai_tools}
     print(f"Loaded {len(openai_tools)} tools, e.g. {sorted(names)[:3]}")
 
-    messages: list[dict] = [
+    messages: list[Any] = [
         {"role": "system", "content": "You answer questions by calling the tools you are given."},
         {
             "role": "user",
@@ -72,7 +73,8 @@ def openai_integration() -> None:
 
     print(f"LLM made {len(tool_calls)} tool call(s):")
     for tc in tool_calls:
-        print(f"  - {tc.function.name}({tc.function.arguments})")
+        if tc.type == "function":
+            print(f"  - {tc.function.name}({tc.function.arguments})")
 
     # The assistant turn must come before its tool results, or OpenAI returns a 400.
     messages.append(response.choices[0].message.model_dump(exclude_none=True))
