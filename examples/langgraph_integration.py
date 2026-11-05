@@ -58,7 +58,7 @@ def langgraph_integration() -> None:
         print(f"  - {tool.name}")
 
     # Create a ReAct agent with LangGraph
-    model = ChatOpenAI(model="gpt-5.4")  # ty: ignore[unknown-argument]
+    model = ChatOpenAI(model="gpt-5.4")
     agent = create_agent(model, langchain_tools)
 
     result = agent.invoke(
