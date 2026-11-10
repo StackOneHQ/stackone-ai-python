@@ -658,6 +658,51 @@ async def _mcp_transport(
             yield streams
 
 
+def _run_mcp_session(
+    endpoint: str,
+    headers: dict[str, str],
+    timeout: float,
+    work: Callable[[Any], Coroutine[Any, Any, T]],
+) -> T:
+    """Open an initialized MCP session to ``endpoint``, run ``work`` on it and close it.
+
+    ``timeout`` bounds the whole exchange, handshake included. Any failure is raised
+    through :func:`_raise_mcp_failure`.
+    """
+    try:
+        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
+        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+    except ImportError as exc:  # pragma: no cover - only a broken install gets here
+        raise ToolsetConfigError(
+            "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
+        ) from exc
+
+    throttle = _Throttle()
+
+    async def _run() -> T:
+        with anyio.fail_after(timeout):
+            async with _mcp_transport(endpoint, headers, timeout, throttle) as (
+                read_stream,
+                write_stream,
+                _,
+            ):
+                session = ClientSession(
+                    read_stream,
+                    write_stream,
+                    client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
+                )
+                async with session:
+                    await session.initialize()
+                    return await work(session)
+
+    try:
+        return run_async(_run())
+    except Exception as exc:
+        # Exception, not BaseException: Ctrl-C and SystemExit must stop the caller, not come
+        # back as a ToolsetLoadError that an agent framework hands the model as a tool result.
+        _raise_mcp_failure(exc, endpoint, timeout, throttle)
+
+
 def fetch_mcp_tools(
     endpoint: str, headers: dict[str, str], *, timeout: float = 60.0
 ) -> list[McpToolDefinition]:
@@ -665,57 +710,27 @@ def fetch_mcp_tools(
 
     ``timeout`` bounds the whole exchange, handshake included.
     """
-    try:
-        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
-    except ImportError as exc:  # pragma: no cover - depends on optional extra
-        raise ToolsetConfigError(
-            "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
-        ) from exc
 
-    throttle = _Throttle()
+    async def _list(session: Any) -> list[McpToolDefinition]:
+        cursor: str | None = None
+        collected: list[McpToolDefinition] = []
+        while True:
+            result = await session.list_tools(cursor)
+            for tool in result.tools:
+                input_schema = tool.inputSchema or {}
+                collected.append(
+                    McpToolDefinition(
+                        name=tool.name,
+                        description=tool.description,
+                        input_schema=dict(input_schema),
+                    )
+                )
+            cursor = result.nextCursor
+            if cursor is None:
+                break
+        return collected
 
-    async def _list() -> list[McpToolDefinition]:
-        with anyio.fail_after(timeout):
-            return await _list_within_deadline()
-
-    async def _list_within_deadline() -> list[McpToolDefinition]:
-        async with _mcp_transport(endpoint, headers, timeout, throttle) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            session = ClientSession(
-                read_stream,
-                write_stream,
-                client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
-            )
-            async with session:
-                await session.initialize()
-                cursor: str | None = None
-                collected: list[McpToolDefinition] = []
-                while True:
-                    result = await session.list_tools(cursor)
-                    for tool in result.tools:
-                        input_schema = tool.inputSchema or {}
-                        collected.append(
-                            McpToolDefinition(
-                                name=tool.name,
-                                description=tool.description,
-                                input_schema=dict(input_schema),
-                            )
-                        )
-                    cursor = result.nextCursor
-                    if cursor is None:
-                        break
-                return collected
-
-    try:
-        return run_async(_list())
-    except Exception as exc:
-        # Exception, not BaseException: Ctrl-C and SystemExit must stop the caller, not come
-        # back as a ToolsetLoadError that an agent framework hands the model as a tool result.
-        _raise_mcp_failure(exc, endpoint, timeout, throttle)
+    return _run_mcp_session(endpoint, headers, timeout, _list)
 
 
 def _response_body(response: httpx.Response) -> str:
@@ -937,44 +952,21 @@ def call_mcp_tool(
     ``arguments`` are sent exactly as given; the server maps them onto the action.
     """
     from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-    from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
 
-    throttle = _Throttle()
-
-    async def _call() -> JsonDict:
-        with anyio.fail_after(timeout):
-            return await _call_within_deadline()
-
-    async def _call_within_deadline() -> JsonDict:
-        async with _mcp_transport(endpoint, headers, timeout, throttle) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            session = ClientSession(
-                read_stream,
-                write_stream,
-                client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
+    async def _call(session: Any) -> JsonDict:
+        # send_request rather than call_tool: call_tool validates structuredContent
+        # against the tool's output schema, and on a fresh session that means a
+        # tools/list first — relisting the whole catalog on every call, which the
+        # Node SDK never does. The result is parsed below either way.
+        request = mcp_types.ClientRequest(
+            mcp_types.CallToolRequest(
+                params=mcp_types.CallToolRequestParams(name=name, arguments=arguments),
             )
-            async with session:
-                await session.initialize()
-                # send_request rather than call_tool: call_tool validates structuredContent
-                # against the tool's output schema, and on a fresh session that means a
-                # tools/list first — relisting the whole catalog on every call, which the
-                # Node SDK never does. The result is parsed below either way.
-                request = mcp_types.ClientRequest(
-                    mcp_types.CallToolRequest(
-                        params=mcp_types.CallToolRequestParams(name=name, arguments=arguments),
-                    )
-                )
-                result = await session.send_request(request, mcp_types.CallToolResult)
-                return parse_tool_result(result, name)
+        )
+        result = await session.send_request(request, mcp_types.CallToolResult)
+        return parse_tool_result(result, name)
 
-    try:
-        return run_async(_call())
-    except Exception as exc:
-        # Not BaseException, as in fetch_mcp_tools: KeyboardInterrupt and SystemExit propagate.
-        _raise_mcp_failure(exc, endpoint, timeout, throttle)
+    return _run_mcp_session(endpoint, headers, timeout, _call)
 
 
 def is_end_user_refusal(exc: BaseException, account_id: str) -> bool:
@@ -999,6 +991,21 @@ def is_end_user_refusal(exc: BaseException, account_id: str) -> bool:
     ):
         return False
     return message.rstrip().rsplit(" ", 1)[-1].strip("\"'") == account_id
+
+
+def retry_for_end_user(
+    call: Callable[[], T], accounts: Iterable[str], look_up: Callable[[str, Exception], bool] | None
+) -> T:
+    """``call()``, made once more if the API refused it for want of the end user of one of
+    ``accounts`` (those it was sent without one for) and ``look_up`` then finds that end user.
+    """
+    try:
+        return call()
+    except StackOneAPIError as exc:
+        refused = next((account for account in accounts if is_end_user_refusal(exc, account)), None)
+        if refused is None or look_up is None or not look_up(refused, exc):
+            raise
+    return call()
 
 
 def _strip_internal_keys(schema: Any) -> Any:
@@ -1495,21 +1502,13 @@ class StackOneMcpTool(StackOneTool):
                 self._endpoint, self._prepare_headers(), self._served_name, parsed, timeout=timeout
             )
 
+        # Sent with no recorded end user and refused for want of one: the account is
+        # non-shared and its end user can be looked up. Retried once, with it.
         account_id = self._account_id
-        without_end_user = account_id is not None and self._recorded_end_user_id() is None
-        try:
-            return call()
-        except StackOneAPIError as exc:
-            # Sent with no recorded end user and refused for want of one: the account is
-            # non-shared and its end user can be looked up. Retried once, with it.
-            if not (
-                without_end_user
-                and account_id is not None
-                and self._look_up_end_user is not None
-                and self._look_up_end_user(account_id, exc)
-            ):
-                raise
-        return call()
+        without_end_user = (
+            [account_id] if account_id is not None and self._recorded_end_user_id() is None else []
+        )
+        return retry_for_end_user(call, without_end_user, self._look_up_end_user)
 
 
 @dataclass(frozen=True)
