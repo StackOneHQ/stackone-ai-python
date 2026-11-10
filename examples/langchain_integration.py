@@ -9,6 +9,7 @@ uv run examples/langchain_integration.py
 from __future__ import annotations
 
 import os
+import sys
 
 try:
     from dotenv import load_dotenv
@@ -20,25 +21,22 @@ except ModuleNotFoundError:
 from langchain_openai import ChatOpenAI
 
 from stackone_ai import StackOneToolSet
+from stackone_ai.types import StackOneAPIError, ToolsetError
 
 
 def langchain_integration() -> None:
-    account_id = os.getenv("STACKONE_ACCOUNT_ID")
-    if not os.getenv("STACKONE_API_KEY"):
-        print("Set STACKONE_API_KEY to run this example.")
-        return
-    if not account_id:
-        print("Set STACKONE_ACCOUNT_ID to run this example.")
-        return
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Set OPENAI_API_KEY to run this example.")
-        return
+    for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
+        if not os.getenv(var):
+            raise SystemExit(f"Set {var} to run this example.")
+    account_id = os.environ["STACKONE_ACCOUNT_ID"]
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
         actions=["*_list_*"],
         account_ids=[account_id],
     )
+    if not tools:
+        raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
 
     # Convert to LangChain format
     langchain_tools = tools.to_langchain()
@@ -66,4 +64,9 @@ def langchain_integration() -> None:
 
 
 if __name__ == "__main__":
-    langchain_integration()
+    try:
+        langchain_integration()
+    except ToolsetError as exc:
+        sys.exit(f"Could not load tools: {exc}")
+    except StackOneAPIError as exc:
+        sys.exit(f"Tool call rejected with {exc.status_code}: {exc.response_body}")

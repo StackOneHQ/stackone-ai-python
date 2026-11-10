@@ -81,13 +81,11 @@ def per_tool_override(account_id: str) -> None:
 def main() -> None:
     api_key = os.getenv("STACKONE_API_KEY")
     if not api_key:
-        print("STACKONE_API_KEY is not set. Please export it or add it to .env")
-        return
+        raise SystemExit("STACKONE_API_KEY is not set. Please export it or add it to .env")
 
     account_id = os.getenv("STACKONE_ACCOUNT_ID")
     if not account_id:
-        print("Set STACKONE_ACCOUNT_ID to run this example.")
-        return
+        raise SystemExit("Set STACKONE_ACCOUNT_ID to run this example.")
 
     api_key_setup()
     single_account(account_id)

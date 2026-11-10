@@ -30,7 +30,10 @@ from stackone_ai import StackOneToolSet
 
 def individual_tools(account_id: str) -> None:
     """One Pydantic AI tool per action: suits a handful of actions."""
-    tools = StackOneToolSet().fetch_tools(actions=["*_list_*"], account_ids=[account_id]).to_pydantic_ai()
+    listed = StackOneToolSet().fetch_tools(actions=["*_list_*"], account_ids=[account_id])
+    if not listed:
+        raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
+    tools = listed.to_pydantic_ai()
 
     agent = Agent(
         "openai:gpt-5.4",
@@ -62,8 +65,7 @@ def search_and_execute(account_id: str) -> None:
 def pydantic_ai_integration() -> None:
     for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
         if not os.getenv(var):
-            print(f"Set {var} to run this example.")
-            return
+            raise SystemExit(f"Set {var} to run this example.")
 
     account_id = os.environ["STACKONE_ACCOUNT_ID"]
     individual_tools(account_id)
