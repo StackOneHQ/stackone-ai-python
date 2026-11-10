@@ -30,7 +30,7 @@ install:
 format:
 	uv run ruff check --fix .
 	uv run ruff format .
-	uv run ty check stackone_ai
+	uv run ty check stackone_ai examples
 
 ## Run all tests
 test:

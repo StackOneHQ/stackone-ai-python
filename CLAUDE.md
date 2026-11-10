@@ -101,7 +101,7 @@ Order: standard library, then third-party, then local.
 Use `uv` for all dependency management.
 
 ```bash
-uv add --dev pytest     # dev dependency
+uv add --optional dev pytest   # dev dependency (the `dev` extra)
 uv add pydantic         # package dependency
 uv run pytest           # run from root
 ```
@@ -213,7 +213,7 @@ toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
 hits = toolset.search("list recent comments", top_k=3)
 hit = hits[0] if hits else None
 session_id = hit.get("session_id") if hit else None
-account_ids = [hit["account_id"]] if hit else None
+account_ids = [hit["available_accounts"][0]["id"]] if hit else None
 toolset.execute(
     "linear_list_comments", {"body": {"variables": {"first": 25}}}, account_ids=account_ids, session_id=session_id
 )
@@ -225,13 +225,13 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 - `providers` matches a full connector prefix, case-insensitively. `actions` is a
   case-sensitive glob. **A leading `!` is not exclusion syntax** — it is a literal
   character, so `["*", "!*_delete_*"]` matches every tool.
-- `top_k` is per connector, and must be 1..50.
+- `top_k` caps the whole result, and must be 1..50.
 - `stackone_submit_feedback` is one global tool the server lists with every
   account's catalog, in both modes, when feedback is enabled. Like every tool it is a
   `StackOneMcpTool`; unlike the others it is deduped to one across accounts. It is never
   invented client-side — when the server omits it, `submit_feedback()` raises.
   `submit_feedback()` lists one account in `search_execute` mode and makes one
-  `tools/call`, through the first account (as given, else in `GET /accounts` order).
+  `tools/call`, through the lowest account id in scope.
 - `Tools.get_tool()` returns the first tool listed under a name, as Node's `getTool()`.
 - `session_id` is copied onto each `search()` hit and forwarded by `execute()` /
   `submit_feedback()` only when given. Optional wire keys are omitted, never null.
