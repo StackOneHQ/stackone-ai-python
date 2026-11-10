@@ -11,11 +11,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import calendar
+import functools
 import json
 import logging
 import math
 import random
 import re
+import ssl
 import threading
 import time
 from collections import Counter
@@ -629,6 +631,12 @@ def is_rate_limited(exc: BaseException) -> bool:
     return False
 
 
+@functools.cache
+def _ssl_context() -> ssl.SSLContext:
+    """One SSL context for every MCP client: building one loads the CA bundle, about 7ms a call."""
+    return httpx.create_ssl_context()
+
+
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float, throttle: _Throttle | None = None
@@ -651,6 +659,7 @@ async def _mcp_transport(
         throttle=throttle,
         headers=headers,
         timeout=httpx.Timeout(timeout),
+        verify=_ssl_context(),
         follow_redirects=True,
         event_hooks={"response": [_buffer_error_body]},
     ) as client:

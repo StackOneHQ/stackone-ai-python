@@ -357,3 +357,27 @@ def test_an_argument_error_is_a_stackone_error_and_a_value_error(call, seen):
     assert isinstance(excinfo.value, StackOneError)
     assert isinstance(excinfo.value, ValueError)
     assert seen == {}
+
+
+def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch):
+    """Building a context loads the CA bundle, which cost every MCP call about 7ms."""
+    import ssl
+
+    from stackone_ai.toolset import StackOneToolSet
+
+    loads: list[object] = []
+    load_verify_locations = ssl.SSLContext.load_verify_locations
+
+    def counting(self, *args, **kwargs):
+        loads.append(args)
+        return load_verify_locations(self, *args, **kwargs)
+
+    monkeypatch.setattr(ssl.SSLContext, "load_verify_locations", counting)
+
+    toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="default")
+    tool = toolset.fetch_tools()[0]
+    tool.execute({})
+    tool.execute({})
+
+    # None if an earlier call built it, one if these did; on main it was one per call.
+    assert len(loads) <= 1
