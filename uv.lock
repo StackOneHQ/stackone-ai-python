@@ -3343,6 +3343,7 @@ dependencies = [
 dev = [
     { name = "hypothesis" },
     { name = "langchain-core" },
+    { name = "pydantic-ai-slim" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -3375,6 +3376,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'examples'", specifier = ">=2.32.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-ai", marker = "extra == 'examples'", specifier = ">=1.83.0" },
+    { name = "pydantic-ai-slim", marker = "extra == 'dev'", specifier = ">=1.83.0" },
     { name = "pydantic-ai-slim", marker = "extra == 'pydantic-ai'", specifier = ">=1.83.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.3" },

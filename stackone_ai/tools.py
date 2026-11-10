@@ -1655,7 +1655,8 @@ class Tools:
         self._warn_duplicate_names()
 
     def _warn_duplicate_names(self) -> None:
-        """Warn once if more than one tool has the same name."""
+        """Warn if more than one tool has the same name: at construction, and again from each
+        adapter, which offers only the first of each name."""
         if len(self._tool_map) == len(self.tools):
             return
         counts = Counter(tool.name for tool in self.tools)
