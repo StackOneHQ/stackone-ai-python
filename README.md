@@ -106,7 +106,7 @@ model can call itself.
 
 Every block below runs as written against any linked account — the `*_list_*`
 filter discovers whatever your key can reach rather than assuming a provider.
-Each has a matching runnable script in [examples/](examples/).
+Each has a matching runnable script in [examples/](https://github.com/StackOneHQ/stackone-ai-python/tree/main/examples).
 
 <details>
 <summary>OpenAI</summary>
@@ -137,7 +137,7 @@ messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 messages to send back. A failed call becomes an error message the model can read and
 retry from, rather than an exception. Chat Completions accepts at
 most **128 tools**, so filter before binding. See
-[examples/openai_integration.py](examples/openai_integration.py) for the full
+[examples/openai_integration.py](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py) for the full
 round trip, including feeding results back for a final answer.
 
 </details>
@@ -315,7 +315,7 @@ The SDK exposes the same actions through two surfaces. Both execute over MCP
 your arguments as given, except header arguments: each is forwarded only if the tool's
 schema declares it, and `Authorization`, `x-account-id`, `User-Agent` and `x-end-user-id`
 never are (see
-[the migration guide](MIGRATION.md#tool-arguments-and-headers)). They take **different
+[the migration guide](https://github.com/StackOneHQ/stackone-ai-python/blob/main/MIGRATION.md#tool-arguments-and-headers)). They take **different
 argument shapes**, because each mirrors the schema the server served for it. Both return the server's result exactly
 as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.
 
@@ -376,14 +376,14 @@ Falls back to the `STACKONE_BASE_URL` environment variable, then to
 
 ## Examples
 
-For more examples, check out the [examples/](examples/) directory:
+For more examples, check out the [examples/](https://github.com/StackOneHQ/stackone-ai-python/tree/main/examples) directory:
 
-- [OpenAI Integration](examples/openai_integration.py) — OpenAI function calling
-- [Search and Execute](examples/search_and_execute.py) — the recommended flow
-- [LangChain Integration](examples/langchain_integration.py) — LangChain tools
-- [LangGraph Integration](examples/langgraph_integration.py) — LangGraph agent
-- [Pydantic AI Integration](examples/pydantic_ai_integration.py) — Pydantic AI agent
-- [Auth Management](examples/auth_management.py) — API key and account ID patterns
+- [OpenAI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py) — OpenAI function calling
+- [Search and Execute](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/search_and_execute.py) — the recommended flow
+- [LangChain Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langchain_integration.py) — LangChain tools
+- [LangGraph Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langgraph_integration.py) — LangGraph agent
+- [Pydantic AI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/pydantic_ai_integration.py) — Pydantic AI agent
+- [Auth Management](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/auth_management.py) — API key and account ID patterns
 
 ## Development
 
