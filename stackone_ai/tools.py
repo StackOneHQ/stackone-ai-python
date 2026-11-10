@@ -1072,7 +1072,8 @@ class StackOneTool(BaseModel):
                 ) from exc
         else:
             parsed = arguments
-        if not isinstance(parsed, dict):
+        # A non-string key is not JSON either, and header sanitising would crash on it.
+        if not isinstance(parsed, dict) or not all(isinstance(key, str) for key in parsed):
             raise ToolArgumentsError(f"Tool arguments for {_json_text(self.name)} must be a JSON object")
         return dict(parsed)
 

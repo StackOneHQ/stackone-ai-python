@@ -944,6 +944,21 @@ class TestAccountDiscovery:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         assert toolset._discover_account_ids() == ["default"]
 
+    def test_malformed_account_entries_are_skipped(self, monkeypatch):
+        """A non-dict entry or a non-string id failed with an AttributeError, or became an id."""
+        toolset = StackOneToolSet(api_key="test-key")
+        listed: list[Any] = ["junk", None, {"id": 5, "status": "active"}]
+        monkeypatch.setattr(
+            toolset, "fetch_accounts", lambda: [*listed, {"id": "acc", "provider": "p", "status": "active"}]
+        )
+        assert toolset._discover_account_ids() == ["acc"]
+
+    def test_only_malformed_account_entries_say_none_are_active(self, monkeypatch):
+        toolset = StackOneToolSet(api_key="test-key")
+        monkeypatch.setattr(toolset, "fetch_accounts", lambda: ["junk", {"id": 5, "status": "active"}])
+        with pytest.raises(ToolsetConfigError, match="None of this API key's 2 linked accounts are active"):
+            toolset._discover_account_ids()
+
     def test_a_discovery_in_flight_during_a_clear_is_not_cached(self, monkeypatch):
         """An account list fetched before clear_catalog_cache() must not outlive it."""
         toolset = StackOneToolSet(api_key="test-key")

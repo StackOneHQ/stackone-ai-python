@@ -1108,15 +1108,21 @@ class StackOneToolSet:
     def _fetch_active_account_ids(self) -> list[str]:
         generation = self._cache_generation
         accounts = self.fetch_accounts()
+        # Skipped the way fetch_accounts() skips them when recording end users and providers.
+        records = [a for a in accounts if isinstance(a, dict)]
 
-        active = [a["id"] for a in accounts if a.get("status") == "active" and a.get("id")]
+        active = [
+            a["id"]
+            for a in records
+            if a.get("status") == "active" and isinstance(a.get("id"), str) and a["id"]
+        ]
         if not active:
             if not accounts:
                 raise ToolsetConfigError(
                     "This API key has no linked accounts. Link one in the StackOne "
                     "dashboard, or pass an account id explicitly."
                 )
-            listed = ", ".join(f"{a.get('provider')} ({a.get('status')})" for a in accounts)
+            listed = ", ".join(f"{a.get('provider')} ({a.get('status')})" for a in records)
             raise ToolsetConfigError(
                 f"None of this API key's {len(accounts)} linked accounts are active: {listed}. "
                 "Re-link them in the StackOne dashboard, or pass an account id explicitly."
@@ -1125,9 +1131,7 @@ class StackOneToolSet:
         # Each non-shared account belongs to a single end user: discovering it would put one
         # end user's tools in front of whoever uses this toolset.
         if not self._include_non_shared:
-            skipped = sorted(
-                {a["id"] for a in accounts if a.get("id") in active and a.get("shared") is False}
-            )
+            skipped = sorted({a["id"] for a in records if a.get("id") in active and a.get("shared") is False})
             if skipped and len(skipped) == len(set(active)):
                 raise ToolsetConfigError(
                     f"None of this API key's {len(skipped)} active account(s) are shared: each "
