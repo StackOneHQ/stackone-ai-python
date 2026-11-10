@@ -122,7 +122,6 @@ def test_tools_to_pydantic_ai_with_agent(sample_tool: StackOneTool, monkeypatch:
 def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._execute_config = None  # type: ignore[attr-defined]
 
     tools = toolset.pydantic_ai()
 
@@ -134,7 +133,6 @@ def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool)
 def test_toolset_pydantic_ai_account_ids_override(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._execute_config = {"account_ids": ["from-config"]}  # type: ignore[attr-defined]
 
     toolset.pydantic_ai(account_ids=["override"])
 
