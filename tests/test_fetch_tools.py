@@ -2038,15 +2038,24 @@ class TestAdapterErrorsReachTheModel:
             tool.to_langchain()._run(path_id="x")
         assert excinfo.value.status_code == 400
 
-    def test_langchain_does_not_forward_unsupplied_optionals_as_null(self, monkeypatch):
-        """The API reads an explicit null as "required field missing", so this 400'd every call."""
+    @pytest.mark.parametrize(
+        ("sent", "forwarded"),
+        [
+            # An omitted optional must not arrive as null: the API reads a null as a value.
+            ({"path_id": "x"}, {"path_id": "x"}),
+            # A null the model chose to send is its argument, forwarded as with every adapter.
+            ({"path_id": "x", "body_after": None}, {"path_id": "x", "body_after": None}),
+        ],
+    )
+    def test_langchain_forwards_the_model_arguments_as_sent(self, monkeypatch, sent, forwarded):
         from stackone_ai.tools import StackOneMcpTool
 
         seen: dict[str, object] = {}
         tool, _ = self._failing_tool()
+        tool.parameters.properties["body_after"] = {"type": ["string", "null"]}
         monkeypatch.setattr(StackOneMcpTool, "execute", lambda _self, args=None: seen.update(args=args) or {})
-        tool.to_langchain()._run(path_id="x", body_after=None)
-        assert seen["args"] == {"path_id": "x"}
+        tool.to_langchain().invoke({"name": tool.name, "args": sent, "id": "call-1", "type": "tool_call"})
+        assert seen["args"] == forwarded
 
     def test_pydantic_ai_raises_model_retry(self, monkeypatch):
         pytest.importorskip("pydantic_ai")

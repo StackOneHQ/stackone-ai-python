@@ -1301,13 +1301,11 @@ class StackOneTool(BaseModel):
             args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-assignment]
 
             def _run(self, **kwargs: Any) -> Any:
-                # Drop unsupplied optionals. pydantic materialises every optional field
-                # as None and BaseTool passes them all through, and the API reads an
-                # explicit null as "required field missing" — which 400'd every single
-                # tool call made through this adapter.
-                supplied = {key: value for key, value in kwargs.items() if value is not None}
+                # args_schema is a JSON Schema dict, not a pydantic model, so BaseTool
+                # hands over exactly what the model sent: an omitted optional stays
+                # absent and an explicit null stays null, as to_pydantic_ai_tool forwards it.
                 try:
-                    return parent_tool.execute(supplied)
+                    return parent_tool.execute(kwargs)
                 except (StackOneError, ValueError) as exc:
                     # LangChain's handle_tool_error only catches ToolException, so a
                     # StackOneError would kill the graph rather than reaching the
