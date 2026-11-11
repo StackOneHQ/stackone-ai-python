@@ -222,7 +222,7 @@ if hits:
         account_ids=account_ids,
         session_id=session_id,
     )
-    toolset.submit_feedback("positive", [hit["action_id"]], session_id=session_id)
+    toolset.submit_feedback("positive", [hit["action_id"]], session_id=session_id, account_ids=account_ids)
 
 tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ```
