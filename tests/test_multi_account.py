@@ -663,7 +663,7 @@ class TestExtraHeadersCannotReplaceTheSdksOwn:
 
 
 def _duplicated() -> Tools:
-    """hris_list on acc1 and acc2. Constructing it warns, so a test clears caplog after."""
+    """hris_list on acc1 and acc2. Constructing it warns once; the adapters do not repeat it."""
 
     def tool(name: str, account: str) -> StackOneMcpTool:
         return StackOneMcpTool(
@@ -684,6 +684,20 @@ class TestAdaptersKeepTheFirstOfEachName:
         "from the lowest account id, is used — pass account ids to choose."
     )
 
+    def test_construction_warns_once(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            _duplicated()
+        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+
+    def test_merging_collections_warns_once(self, caplog):
+        tools = _duplicated()
+        first = Tools([t for t in tools if t.get_account_id() == "acc1"])
+        second = Tools([t for t in tools if t.get_account_id() == "acc2"])
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="stackone.tools"):
+            Tools([*first, *second]).to_openai()
+        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+
     def test_openai(self, caplog):
         tools = _duplicated()
         caplog.clear()
@@ -693,7 +707,7 @@ class TestAdaptersKeepTheFirstOfEachName:
             ("hris_list", "on acc1"),
             ("other", "on acc1"),
         ]
-        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+        assert caplog.records == []
 
     def test_langchain(self, caplog):
         tools = _duplicated()
@@ -704,7 +718,7 @@ class TestAdaptersKeepTheFirstOfEachName:
             ("hris_list", "on acc1"),
             ("other", "on acc1"),
         ]
-        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+        assert caplog.records == []
 
     def test_pydantic_ai(self, caplog):
         tools = _duplicated()
@@ -715,7 +729,7 @@ class TestAdaptersKeepTheFirstOfEachName:
             ("hris_list", "on acc1"),
             ("other", "on acc1"),
         ]
-        assert [r.getMessage() for r in caplog.records] == [self.DUPLICATE_WARNING]
+        assert caplog.records == []
 
     def test_no_warning_without_a_clash(self, caplog):
         unique = _duplicated().tools[:2]

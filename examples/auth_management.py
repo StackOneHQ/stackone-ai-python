@@ -44,6 +44,8 @@ def single_account(account_id: str) -> None:
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(actions=["*_list_*"], account_ids=[account_id])
+    if not tools:
+        raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
     print(f"Fetched {len(tools)} tools for configured account")
 
 
@@ -56,6 +58,8 @@ def set_accounts_globally(account_id: str) -> None:
     print("Set global accounts via set_accounts()")
 
     tools = toolset.fetch_tools(actions=["*_list_*"])
+    if not tools:
+        raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
     print(f"Fetched {len(tools)} tools (account inherited from toolset)")
 
 
@@ -66,7 +70,7 @@ def per_tool_override(account_id: str) -> None:
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(actions=["*_list_*"], account_ids=[account_id])
     if not tools:
-        raise SystemExit(f"Account {account_id} served no list tools — nothing to demonstrate.")
+        raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
 
     # Override on the entire tools collection
     tools.set_account_id("overridden-account")
@@ -81,13 +85,11 @@ def per_tool_override(account_id: str) -> None:
 def main() -> None:
     api_key = os.getenv("STACKONE_API_KEY")
     if not api_key:
-        print("STACKONE_API_KEY is not set. Please export it or add it to .env")
-        return
+        raise SystemExit("STACKONE_API_KEY is not set. Please export it or add it to .env")
 
     account_id = os.getenv("STACKONE_ACCOUNT_ID")
     if not account_id:
-        print("Set STACKONE_ACCOUNT_ID to run this example.")
-        return
+        raise SystemExit("Set STACKONE_ACCOUNT_ID to run this example.")
 
     api_key_setup()
     single_account(account_id)
