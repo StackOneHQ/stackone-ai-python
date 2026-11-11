@@ -310,7 +310,7 @@ class StackOneToolSet:
         account_ids: list[str] | None = None,
         providers: list[str] | None = None,
         actions: list[str] | None = None,
-        mode: Any = _UNSET,
+        mode: ToolMode | None = _UNSET,  # ty: ignore[invalid-parameter-default]
     ) -> Tools:
         """Fetch tools with optional filtering by account IDs, providers, and actions
 
@@ -325,6 +325,9 @@ class StackOneToolSet:
                 needed. No matching account means no tools.
             actions: Optional list of action patterns with glob support
                 (e.g., ['*_list_employees', 'hibob_create_employees'])
+            mode: ``tool_mode`` for this call only. ``None`` lists one tool per action,
+                even on a toolset built with ``tool_mode="search_execute"``. Defaults to the
+                toolset's ``tool_mode``.
 
         Returns:
             Collection of tools matching the filter criteria

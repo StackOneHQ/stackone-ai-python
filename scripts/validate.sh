@@ -4,8 +4,8 @@
 #   ./scripts/validate.sh                 # all sections
 #   ./scripts/validate.sh examples        # one of: examples | conformance | sdk | pydantic | adk
 #
-# Sibling repo locations can be overridden:
-#   CONFORMANCE=/path/to/sdk-conformance ADK=/path/to/stackone-adk-plugin ./scripts/validate.sh
+# Sibling repo locations default to ../sdk-conformance and ../adk-26-ci, and can be overridden:
+#   CONFORMANCE=/path/to/sdk-conformance ADK=/path/to/adk-checkout ./scripts/validate.sh
 #
 # Everything here runs against the sdk-conformance mock API on 127.0.0.1 with a
 # dummy key. Nothing touches the live StackOne API, so results are deterministic
