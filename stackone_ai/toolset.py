@@ -32,7 +32,6 @@ from stackone_ai.tools import (
     _json_type,
     build_request_headers,
     fetch_mcp_tools,
-    is_end_user_refusal,
     is_rate_limited,
     is_sdk_owned_header,
     retry_for_end_user,
@@ -1007,13 +1006,10 @@ class StackOneToolSet:
         """Given the API's refusal of an account's request for want of its end user, list the
         accounts and say whether that one now has an end user recorded to retry with.
 
-        Only the API's 400 naming this account counts. A GET /accounts already in flight is
-        joined rather than another made. If it fails, the refusal is raised with that failure
-        as its cause: a key without the scope to list accounts would otherwise be told only
-        that the header does not match.
+        A GET /accounts already in flight is joined rather than another made. If it fails, the
+        refusal is raised with that failure as its cause: a key without the scope to list
+        accounts would otherwise be told only that the header does not match.
         """
-        if not is_end_user_refusal(refusal, account_id):
-            return False
         try:
             self._join_accounts_listing()
         except Exception as exc:
