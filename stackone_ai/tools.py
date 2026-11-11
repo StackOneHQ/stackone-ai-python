@@ -1674,7 +1674,6 @@ class Tools:
         name would not find. OpenAI was sent two functions of one name, and LangChain and
         Pydantic AI each kept whichever their own lookup happened to find.
         """
-        self._warn_duplicate_names()
         return list(self._tool_map.values())
 
     def __getitem__(self, index: int) -> StackOneTool:
