@@ -633,7 +633,7 @@ def is_rate_limited(exc: BaseException) -> bool:
 
 @functools.cache
 def _ssl_context() -> ssl.SSLContext:
-    """One SSL context for every MCP client: building one loads the CA bundle, about 7ms a call."""
+    """One SSL context for every MCP client: building one loads the CA bundle each time."""
     return httpx.create_ssl_context()
 
 

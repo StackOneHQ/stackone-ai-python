@@ -1,12 +1,13 @@
 """Tests for tool calling functionality"""
 
 import logging
+import ssl
 from typing import Any
 
 import pytest
 
-from stackone_ai import StackOneError, StackOneTool, ToolArgumentsError
-from stackone_ai.tools import StackOneMcpTool, _header_text
+from stackone_ai import StackOneError, StackOneTool, StackOneToolSet, ToolArgumentsError
+from stackone_ai.tools import StackOneMcpTool, _header_text, _ssl_context
 from stackone_ai.types import ExecuteConfig, ToolParameters
 
 
@@ -360,11 +361,7 @@ def test_an_argument_error_is_a_stackone_error_and_a_value_error(call, seen):
 
 
 def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch):
-    """Building a context loads the CA bundle, which cost every MCP call about 7ms."""
-    import ssl
-
-    from stackone_ai.toolset import StackOneToolSet
-
+    """Building a context loads the CA bundle, so listing and calling must build it once between them."""
     loads: list[object] = []
     load_verify_locations = ssl.SSLContext.load_verify_locations
 
@@ -373,11 +370,11 @@ def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch):
         return load_verify_locations(self, *args, **kwargs)
 
     monkeypatch.setattr(ssl.SSLContext, "load_verify_locations", counting)
+    _ssl_context.cache_clear()
 
     toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="default")
     tool = toolset.fetch_tools()[0]
     tool.execute({})
     tool.execute({})
 
-    # None if an earlier call built it, one if these did; on main it was one per call.
-    assert len(loads) <= 1
+    assert len(loads) == 1
