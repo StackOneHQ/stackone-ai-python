@@ -1301,9 +1301,8 @@ class StackOneTool(BaseModel):
             args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-assignment]
 
             def _run(self, **kwargs: Any) -> Any:
-                # args_schema is a JSON Schema dict, not a pydantic model, so BaseTool
-                # hands over exactly what the model sent: an omitted optional stays
-                # absent and an explicit null stays null, as to_pydantic_ai_tool forwards it.
+                # args_schema is a JSON Schema dict, so BaseTool passes the model's arguments
+                # through untouched: an omitted optional stays absent, an explicit null stays null.
                 try:
                     return parent_tool.execute(kwargs)
                 except (StackOneError, ValueError) as exc:

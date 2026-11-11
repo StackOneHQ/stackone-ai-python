@@ -2041,10 +2041,12 @@ class TestAdapterErrorsReachTheModel:
     @pytest.mark.parametrize(
         ("sent", "forwarded"),
         [
-            # An omitted optional must not arrive as null: the API reads a null as a value.
-            ({"path_id": "x"}, {"path_id": "x"}),
-            # A null the model chose to send is its argument, forwarded as with every adapter.
-            ({"path_id": "x", "body_after": None}, {"path_id": "x", "body_after": None}),
+            pytest.param({"path_id": "x"}, {"path_id": "x"}, id="omitted-optional-stays-absent"),
+            pytest.param(
+                {"path_id": "x", "body_after": None},
+                {"path_id": "x", "body_after": None},
+                id="explicit-null-is-forwarded",
+            ),
         ],
     )
     def test_langchain_forwards_the_model_arguments_as_sent(self, monkeypatch, sent, forwarded):
