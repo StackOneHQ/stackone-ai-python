@@ -69,6 +69,8 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+# Vendored byte for byte from sdk-conformance; CI diffs it against the pinned commit.
+extend-exclude = ["tests/vectors"]
 
 [tool.ruff.lint]
 select = [

@@ -1235,6 +1235,7 @@ class StackOneToolSet:
         normalized: dict[str, Any] = {}
 
         for name, details in properties.items():
+            prop: dict[str, Any]
             if isinstance(details, dict):
                 prop = copy.deepcopy(details)
             else:

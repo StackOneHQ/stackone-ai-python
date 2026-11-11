@@ -412,10 +412,9 @@ class TestModelSuppliedHeader:
         seen: list[dict[str, Any]] = []
         monkeypatch.setattr(
             "stackone_ai.tools.call_mcp_tool",
-            lambda _endpoint, headers, _name, arguments, **_kwargs: seen.append(
-                {"headers": headers, "arguments": arguments}
-            )
-            or {},
+            lambda _endpoint, headers, _name, arguments, **_kwargs: (
+                seen.append({"headers": headers, "arguments": arguments}) or {}
+            ),
         )
         return seen
 
