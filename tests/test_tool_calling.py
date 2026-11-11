@@ -1,12 +1,13 @@
 """Tests for tool calling functionality"""
 
 import logging
+import ssl
 from typing import Any
 
 import pytest
 
-from stackone_ai import StackOneError, StackOneTool, ToolArgumentsError
-from stackone_ai.tools import StackOneMcpTool, _header_text
+from stackone_ai import StackOneError, StackOneTool, StackOneToolSet, ToolArgumentsError
+from stackone_ai.tools import StackOneMcpTool, _header_text, _ssl_context
 from stackone_ai.types import ExecuteConfig, ToolParameters
 
 
@@ -357,3 +358,24 @@ def test_an_argument_error_is_a_stackone_error_and_a_value_error(call, seen):
     assert isinstance(excinfo.value, StackOneError)
     assert isinstance(excinfo.value, ValueError)
     assert seen == {}
+
+
+def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch, request):
+    """Building a context loads the CA bundle, so discovery, listing and calling build it once."""
+    loads: list[object] = []
+    load_verify_locations = ssl.SSLContext.load_verify_locations
+
+    def counting(self, *args, **kwargs):
+        loads.append(args)
+        return load_verify_locations(self, *args, **kwargs)
+
+    monkeypatch.setattr(ssl.SSLContext, "load_verify_locations", counting)
+    _ssl_context.cache_clear()
+    request.addfinalizer(_ssl_context.cache_clear)
+
+    toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
+    tool = toolset.fetch_tools()[0]
+    tool.execute({})
+    tool.execute({})
+
+    assert len(loads) == 1
