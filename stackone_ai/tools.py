@@ -1502,8 +1502,6 @@ class StackOneMcpTool(StackOneTool):
                 self._endpoint, self._prepare_headers(), self._served_name, parsed, timeout=timeout
             )
 
-        # Sent with no recorded end user and refused for want of one: the account is
-        # non-shared and its end user can be looked up. Retried once, with it.
         account_id = self._account_id
         without_end_user = (
             [account_id] if account_id is not None and self._recorded_end_user_id() is None else []
