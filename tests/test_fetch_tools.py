@@ -380,7 +380,6 @@ class TestServedRequiredOrder:
 
     @pytest.mark.parametrize(("served", "expected"), _SERVED_REQUIRED_CASES)
     def test_pydantic_ai(self, monkeypatch, served, expected):
-        pytest.importorskip("pydantic_ai")
         schema = self._tool(monkeypatch, served).to_pydantic_ai_tool().function_schema.json_schema
         assert schema.get("required") == expected
         if expected is None:
@@ -2051,7 +2050,6 @@ class TestAdapterErrorsReachTheModel:
         assert seen["args"] == {"path_id": "x"}
 
     def test_pydantic_ai_raises_model_retry(self, monkeypatch):
-        pytest.importorskip("pydantic_ai")
         from pydantic_ai.exceptions import ModelRetry
 
         from stackone_ai.tools import StackOneMcpTool

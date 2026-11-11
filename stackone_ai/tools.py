@@ -44,7 +44,6 @@ from stackone_ai.types import (
     ToolArgumentsError,
     ToolParameters,
     ToolsetConfigError,
-    ToolsetError,
     ToolsetLoadError,
 )
 
@@ -782,7 +781,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
         seen.add(id(current))
         # Our own errors are already descriptive. They reach here wrapped in an
         # ExceptionGroup because they are raised inside the session's TaskGroup.
-        if isinstance(current, StackOneError | ToolsetError):
+        if isinstance(current, StackOneError):
             return current
         if isinstance(current, httpx.HTTPStatusError):
             body = _response_body(current.response)
