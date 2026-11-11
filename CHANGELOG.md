@@ -1,5 +1,31 @@
 # Changelog
 
+## [3.1.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v3.0.0...stackone-ai-v3.1.0) (2026-11-11)
+
+
+### Features
+
+* **deps:** support mcp 2 alongside mcp 1 ([#274](https://github.com/StackOneHQ/stackone-ai-python/issues/274)) ([7dfbf28](https://github.com/StackOneHQ/stackone-ai-python/commit/7dfbf28977f227e603d66f9a27faf545fe9456d0))
+
+
+### Bug Fixes
+
+* **deps:** clear open security alerts with lockfile bumps ([#264](https://github.com/StackOneHQ/stackone-ai-python/issues/264)) ([2ca1845](https://github.com/StackOneHQ/stackone-ai-python/commit/2ca1845036f846b5dc276871dd2347d78d09706b))
+* **deps:** require the patched mcp and python-dotenv releases ([#265](https://github.com/StackOneHQ/stackone-ai-python/issues/265)) ([43ebf5e](https://github.com/StackOneHQ/stackone-ai-python/commit/43ebf5eaed9e23e65024bd428209ae05a8ec3d63))
+* **examples:** exit non-zero when credentials are missing or nothing is listed ([#258](https://github.com/StackOneHQ/stackone-ai-python/issues/258)) ([9818a04](https://github.com/StackOneHQ/stackone-ai-python/commit/9818a042cfe5a40179d23cf05bdb0be60b5aab92))
+* **packaging:** declare the Apache 2.0 licence and use absolute README links ([#255](https://github.com/StackOneHQ/stackone-ai-python/issues/255)) ([dc214cb](https://github.com/StackOneHQ/stackone-ai-python/commit/dc214cba11f664fcc6ef34d42cc764bcea928d22))
+* **tools:** warn about duplicate tool names once, when a collection is built ([#266](https://github.com/StackOneHQ/stackone-ai-python/issues/266)) ([67e6973](https://github.com/StackOneHQ/stackone-ai-python/commit/67e6973f2d152b3d262a20c949483780ce1d4eab))
+
+
+### Performance Improvements
+
+* share one SSL context across MCP calls ([#263](https://github.com/StackOneHQ/stackone-ai-python/issues/263)) ([751a60e](https://github.com/StackOneHQ/stackone-ai-python/commit/751a60e1c21fd6add56ddb483a4f510f50e3c23e))
+
+
+### Documentation
+
+* align CLAUDE.md and make format with the code and CI ([#256](https://github.com/StackOneHQ/stackone-ai-python/issues/256)) ([7fb0139](https://github.com/StackOneHQ/stackone-ai-python/commit/7fb013969ce84b31e37a4450ab173a442aba6a4d))
+
 ## [3.0.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v2.10.1...stackone-ai-v3.0.0) (2026-10-29)
 
 
