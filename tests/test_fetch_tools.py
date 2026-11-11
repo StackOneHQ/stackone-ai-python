@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import mcp.types as mcp_types
 import pytest
 
 from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, _mcp_http, fetch_mcp_tools
@@ -642,14 +643,14 @@ class TestFetchMcpToolsInternal:
             assert result[0].input_schema == {"type": "object", "properties": {"id": {"type": "string"}}}
 
     def test_fetch_mcp_tools_with_pagination(self):
-        """Test fetching tools with multiple pages."""
-        mock_result1 = SimpleNamespace(
-            tools=[SimpleNamespace(name="tool_1", description="Tool 1", inputSchema={})],
+        """Test fetching tools with multiple pages, as the installed mcp's own models carry them."""
+        schema = {"type": "object", "properties": {"id": {"type": "string"}}}
+        mock_result1 = mcp_types.ListToolsResult(
+            tools=[mcp_types.Tool(name="tool_1", description="Tool 1", inputSchema=schema)],
             nextCursor="cursor_page_2",
         )
-        mock_result2 = SimpleNamespace(
-            tools=[SimpleNamespace(name="tool_2", description="Tool 2", inputSchema=None)],
-            nextCursor=None,
+        mock_result2 = mcp_types.ListToolsResult(
+            tools=[mcp_types.Tool(name="tool_2", description="Tool 2", inputSchema={"type": "object"})]
         )
 
         # Create mock session with pagination
@@ -676,7 +677,8 @@ class TestFetchMcpToolsInternal:
             assert len(result) == 2
             assert result[0].name == "tool_1"
             assert result[1].name == "tool_2"
-            assert result[1].input_schema == {}  # None should become empty dict
+            assert result[0].input_schema == schema
+            assert result[1].input_schema == {"type": "object"}
             first_call, second_call = mock_session.list_tools.call_args_list
             assert first_call.kwargs == {"params": None}
             assert second_call.kwargs["params"].cursor == "cursor_page_2"

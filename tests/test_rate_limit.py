@@ -143,22 +143,26 @@ class TestSyncClient:
 
 
 class TestAsyncClient:
-    def _run(self, handler: Any, *, stream: bool) -> tuple[int, bytes]:
+    def _send(self, handler: Any, *, stream: bool, method: str = "POST") -> tuple[int, bytes]:
         async def go() -> tuple[int, bytes]:
             async with RateLimitRetryingAsyncClient(
                 transport=_mcp_http.MockTransport(handler),
                 event_hooks={"response": [_buffer_error_body]},
             ) as client:
-                try:
-                    if not stream:
-                        response = await client.post(URL, json={"jsonrpc": "2.0"})
-                        return response.status_code, response.content
-                    async with client.stream("POST", URL, json={"jsonrpc": "2.0"}) as response:
-                        return response.status_code, await response.aread()
-                except _mcp_http.HTTPStatusError as exc:
-                    return exc.response.status_code, exc.response.content
+                if not stream:
+                    response = await client.request(method, URL, json={"jsonrpc": "2.0"})
+                    return response.status_code, response.content
+                async with client.stream(method, URL, json={"jsonrpc": "2.0"}) as response:
+                    return response.status_code, await response.aread()
 
         return asyncio.run(go())
+
+    def _run(self, handler: Any, *, stream: bool) -> tuple[int, bytes]:
+        """The status and body the caller sees, whether the response is returned or raised."""
+        try:
+            return self._send(handler, stream=stream)
+        except _mcp_http.HTTPStatusError as exc:
+            return exc.response.status_code, exc.response.content
 
     @pytest.mark.parametrize("stream", [False, True])
     def test_a_429_then_success_resends_the_same_body(self, sleeps: list[float], stream: bool):
@@ -183,6 +187,19 @@ class TestAsyncClient:
         assert self._run(handler, stream=True)[0] == status
         assert len(seen) == 1
         assert sleeps == []
+
+    @pytest.mark.parametrize("stream", [False, True])
+    def test_a_failed_post_raises_with_its_body_readable(self, stream: bool):
+        _, handler = _responder(_mcp_http.Response(500, json={"message": "boom"}))
+        with pytest.raises(_mcp_http.HTTPStatusError) as caught:
+            self._send(handler, stream=stream)
+        assert caught.value.response.status_code == 500
+        assert caught.value.response.content == b'{"message":"boom"}'
+
+    @pytest.mark.parametrize(("method", "status"), [("POST", 404), ("GET", 500), ("DELETE", 500)])
+    def test_a_lost_session_and_non_post_failures_are_returned(self, method: str, status: int):
+        _, handler = _responder(_mcp_http.Response(status))
+        assert self._send(handler, stream=True, method=method)[0] == status
 
 
 class TestFetchAccounts:
