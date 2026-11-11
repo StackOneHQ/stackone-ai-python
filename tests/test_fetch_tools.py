@@ -8,13 +8,14 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, fetch_mcp_tools
+from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, _mcp_http, fetch_mcp_tools
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import (
     SUBMIT_FEEDBACK_TOOL_NAME,
@@ -593,15 +594,13 @@ class TestFetchMcpToolsInternal:
 
     def test_fetch_mcp_tools_single_page(self):
         """Test fetching tools with single page response."""
-        # Create mock tool response
-        mock_tool = MagicMock()
-        mock_tool.name = "test_tool"
-        mock_tool.description = "Test description"
-        mock_tool.inputSchema = {"type": "object", "properties": {"id": {"type": "string"}}}
-
-        mock_result = MagicMock()
-        mock_result.tools = [mock_tool]
-        mock_result.nextCursor = None
+        # Plain objects, not MagicMocks, which would answer any field name either mcp generation reads.
+        mock_tool = SimpleNamespace(
+            name="test_tool",
+            description="Test description",
+            inputSchema={"type": "object", "properties": {"id": {"type": "string"}}},
+        )
+        mock_result = SimpleNamespace(tools=[mock_tool], nextCursor=None)
 
         # Create mock session
         mock_session = AsyncMock()
@@ -611,7 +610,7 @@ class TestFetchMcpToolsInternal:
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
         # Create mock streamable client
-        seen_clients: list[httpx.AsyncClient] = []
+        seen_clients: list[_mcp_http.AsyncClient] = []
 
         @asynccontextmanager
         async def mock_streamable_client(endpoint, *, http_client, **_kwargs: object):
@@ -634,7 +633,7 @@ class TestFetchMcpToolsInternal:
             # The caller's headers and timeout reach the HTTP client, on every leg.
             [client] = seen_clients
             assert client.headers["Authorization"] == "Basic test"
-            assert client.timeout == httpx.Timeout(7)
+            assert client.timeout == _mcp_http.Timeout(7)
             assert client.follow_redirects is True
 
             assert len(result) == 1
@@ -644,25 +643,14 @@ class TestFetchMcpToolsInternal:
 
     def test_fetch_mcp_tools_with_pagination(self):
         """Test fetching tools with multiple pages."""
-        # First page
-        mock_tool1 = MagicMock()
-        mock_tool1.name = "tool_1"
-        mock_tool1.description = "Tool 1"
-        mock_tool1.inputSchema = {}
-
-        mock_result1 = MagicMock()
-        mock_result1.tools = [mock_tool1]
-        mock_result1.nextCursor = "cursor_page_2"
-
-        # Second page
-        mock_tool2 = MagicMock()
-        mock_tool2.name = "tool_2"
-        mock_tool2.description = "Tool 2"
-        mock_tool2.inputSchema = None  # Test None inputSchema
-
-        mock_result2 = MagicMock()
-        mock_result2.tools = [mock_tool2]
-        mock_result2.nextCursor = None
+        mock_result1 = SimpleNamespace(
+            tools=[SimpleNamespace(name="tool_1", description="Tool 1", inputSchema={})],
+            nextCursor="cursor_page_2",
+        )
+        mock_result2 = SimpleNamespace(
+            tools=[SimpleNamespace(name="tool_2", description="Tool 2", inputSchema=None)],
+            nextCursor=None,
+        )
 
         # Create mock session with pagination
         mock_session = AsyncMock()
@@ -1220,13 +1208,11 @@ class TestListingFailuresAreDiagnosable:
     """A failure must name the status, not hide it behind TaskGroup boilerplate."""
 
     def test_http_error_carries_status_and_is_not_taskgroup_noise(self, monkeypatch):
-        import httpx
-
         from stackone_ai.tools import _describe_mcp_failure
 
-        request = httpx.Request("POST", "https://api.example.com/mcp")
-        response = httpx.Response(412, text='{"message":"re-link the account"}', request=request)
-        inner = httpx.HTTPStatusError("412", request=request, response=response)
+        request = _mcp_http.Request("POST", "https://api.example.com/mcp")
+        response = _mcp_http.Response(412, text='{"message":"re-link the account"}', request=request)
+        inner = _mcp_http.HTTPStatusError("412", request=request, response=response)
         # Mirrors reality: the MCP client raises inside a TaskGroup, so the real
         # error arrives wrapped in an ExceptionGroup.
         grouped = ExceptionGroup("unhandled errors in a TaskGroup", [inner])
