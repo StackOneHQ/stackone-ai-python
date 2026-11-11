@@ -11,6 +11,7 @@ Install with `uv add 'stackone-ai[pydantic-ai]'` (or
 from __future__ import annotations
 
 import os
+import sys
 
 try:
     from dotenv import load_dotenv
@@ -26,6 +27,7 @@ except ImportError:
     raise SystemExit(1) from None
 
 from stackone_ai import StackOneToolSet
+from stackone_ai.types import StackOneError, ToolsetError
 
 
 def individual_tools(account_id: str) -> None:
@@ -46,7 +48,9 @@ def individual_tools(account_id: str) -> None:
 def search_and_execute(account_id: str) -> None:
     """StackOne's search and execute tools: the model finds an action, then runs it."""
     toolset = StackOneToolSet(tool_mode="search_execute")
-    tools = toolset.fetch_tools(account_ids=[account_id]).to_pydantic_ai()
+    tools = toolset.fetch_tools(account_ids=[account_id])
+    if not tools:
+        raise SystemExit(f"Account {account_id} served no search and execute tools.")
 
     agent = Agent(
         "openai:gpt-5.4",
@@ -55,7 +59,7 @@ def search_and_execute(account_id: str) -> None:
             "then call stackone_execute_action with its action_id and arguments built from its "
             "example_request."
         ),
-        tools=tools,
+        tools=tools.to_pydantic_ai(),
     )
     result = agent.run_sync("List a few records from any of my connected apps, then summarise them.")
     print(f"Search and execute:\n{result.output}")
@@ -72,4 +76,9 @@ def pydantic_ai_integration() -> None:
 
 
 if __name__ == "__main__":
-    pydantic_ai_integration()
+    try:
+        pydantic_ai_integration()
+    except ToolsetError as exc:
+        sys.exit(f"Could not load tools: {exc}")
+    except StackOneError as exc:
+        sys.exit(f"StackOne API error: {exc}")

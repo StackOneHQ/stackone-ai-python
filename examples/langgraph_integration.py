@@ -24,7 +24,7 @@ from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 
 from stackone_ai import StackOneToolSet
-from stackone_ai.types import StackOneAPIError, ToolsetError
+from stackone_ai.types import StackOneError, ToolsetError
 
 
 def langgraph_integration() -> None:
@@ -77,5 +77,5 @@ if __name__ == "__main__":
         langgraph_integration()
     except ToolsetError as exc:
         sys.exit(f"Could not load tools: {exc}")
-    except StackOneAPIError as exc:
-        sys.exit(f"Tool call rejected with {exc.status_code}: {exc.response_body}")
+    except StackOneError as exc:
+        sys.exit(f"StackOne API error: {exc}")

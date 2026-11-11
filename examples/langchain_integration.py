@@ -21,7 +21,7 @@ except ModuleNotFoundError:
 from langchain_openai import ChatOpenAI
 
 from stackone_ai import StackOneToolSet
-from stackone_ai.types import StackOneAPIError, ToolsetError
+from stackone_ai.types import StackOneError, ToolsetError
 
 
 def langchain_integration() -> None:
@@ -57,9 +57,10 @@ def langchain_integration() -> None:
         for tool_call in result.tool_calls:
             print(f"  - {tool_call['name']}({tool_call['args']})")
             tool = tools.get_tool(tool_call["name"])
-            if tool:
-                call_result = tool.execute(tool_call["args"])
-                print(f"    Result: {str(call_result)[:200]}...")
+            if tool is None:
+                raise SystemExit(f"The model called {tool_call['name']}, which is not a fetched tool.")
+            call_result = tool.execute(tool_call["args"])
+            print(f"    Result: {str(call_result)[:200]}...")
     else:
         print("No tool calls were made by the model.")
 
@@ -69,5 +70,5 @@ if __name__ == "__main__":
         langchain_integration()
     except ToolsetError as exc:
         sys.exit(f"Could not load tools: {exc}")
-    except StackOneAPIError as exc:
-        sys.exit(f"Tool call rejected with {exc.status_code}: {exc.response_body}")
+    except StackOneError as exc:
+        sys.exit(f"StackOne API error: {exc}")
