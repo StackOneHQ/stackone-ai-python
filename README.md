@@ -106,7 +106,7 @@ model can call itself.
 
 Every block below runs as written against any linked account — the `*_list_*`
 filter discovers whatever your key can reach rather than assuming a provider.
-Each has a matching runnable script in [examples/](examples/).
+Each has a matching runnable script in [examples/](https://github.com/StackOneHQ/stackone-ai-python/tree/main/examples).
 
 <details>
 <summary>OpenAI</summary>
@@ -119,7 +119,7 @@ from stackone_ai import StackOneToolSet
 
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"])
-openai_tools = tools.to_openai()[:20]   # keep the catalog inside the context window
+openai_tools = tools.to_openai()[:20]  # keep the catalog inside the context window
 
 client = OpenAI()
 messages = [{"role": "user", "content": "Use a tool to list a few records, then summarise them."}]
@@ -128,7 +128,7 @@ response = client.chat.completions.create(
 )
 
 message = response.choices[0].message
-messages.append(message.model_dump(exclude_none=True))   # the assistant turn comes first
+messages.append(message.model_dump(exclude_none=True))  # the assistant turn comes first
 messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 ```
 
@@ -137,7 +137,7 @@ messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
 messages to send back. A failed call becomes an error message the model can read and
 retry from, rather than an exception. Chat Completions accepts at
 most **128 tools**, so filter before binding. See
-[examples/openai_integration.py](examples/openai_integration.py) for the full
+[examples/openai_integration.py](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py) for the full
 round trip, including feeding results back for a final answer.
 
 </details>
@@ -222,19 +222,18 @@ applied locally to one cached listing — changing a filter never refetches. Cal
 ```python
 toolset = StackOneToolSet()
 
-toolset.fetch_tools()                                    # every tool, every active shared account
-toolset.fetch_tools(providers=["linear"])                # one connector
-toolset.fetch_tools(actions=["linear_list_*"])           # one connector's list actions
-toolset.fetch_tools(actions=["linear_get_issue"])        # exactly one tool
-toolset.fetch_tools(providers=["linear"],
-                    actions=["*_get_*"])                 # both filters, AND-ed
+toolset.fetch_tools()  # every tool, every active shared account
+toolset.fetch_tools(providers=["linear"])  # one connector
+toolset.fetch_tools(actions=["linear_list_*"])  # one connector's list actions
+toolset.fetch_tools(actions=["linear_get_issue"])  # exactly one tool
+toolset.fetch_tools(providers=["linear"], actions=["*_get_*"])  # both filters, AND-ed
 toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 ```
 
 - **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
   your active shared accounts (non-shared ones too with `include_non_shared=True`). An empty list means "no filter", not "no accounts". A
-  single failing account is logged and skipped, not fatal — unless it is rate
-  limited (see [Rate limits](#rate-limits)) — and left out of the cached catalog for
+  single failing account is logged and skipped, not fatal (unless it is rate limited, see
+  [Rate limits](https://github.com/StackOneHQ/stackone-ai-python#rate-limits)), and left out of the cached catalog for
   30 seconds, after which the next call lists it again. If every account fails with
   the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
   otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
@@ -315,7 +314,7 @@ The SDK exposes the same actions through two surfaces. Both execute over MCP
 your arguments as given, except header arguments: each is forwarded only if the tool's
 schema declares it, and `Authorization`, `x-account-id`, `User-Agent` and `x-end-user-id`
 never are (see
-[the migration guide](MIGRATION.md#tool-arguments-and-headers)). They take **different
+[the migration guide](https://github.com/StackOneHQ/stackone-ai-python/blob/main/MIGRATION.md#tool-arguments-and-headers)). They take **different
 argument shapes**, because each mirrors the schema the server served for it. Both return the server's result exactly
 as it wrote it: `{"isError": false, "result": ..., "defenderMetadata"?, "policyMetadata"?}`.
 
@@ -376,14 +375,14 @@ Falls back to the `STACKONE_BASE_URL` environment variable, then to
 
 ## Examples
 
-For more examples, check out the [examples/](examples/) directory:
+For more examples, check out the [examples/](https://github.com/StackOneHQ/stackone-ai-python/tree/main/examples) directory:
 
-- [OpenAI Integration](examples/openai_integration.py) — OpenAI function calling
-- [Search and Execute](examples/search_and_execute.py) — the recommended flow
-- [LangChain Integration](examples/langchain_integration.py) — LangChain tools
-- [LangGraph Integration](examples/langgraph_integration.py) — LangGraph agent
-- [Pydantic AI Integration](examples/pydantic_ai_integration.py) — Pydantic AI agent
-- [Auth Management](examples/auth_management.py) — API key and account ID patterns
+- [OpenAI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py): OpenAI function calling
+- [Search and Execute](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/search_and_execute.py): the recommended flow
+- [LangChain Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langchain_integration.py): LangChain tools
+- [LangGraph Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langgraph_integration.py): LangGraph agent
+- [Pydantic AI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/pydantic_ai_integration.py): Pydantic AI agent
+- [Auth Management](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/auth_management.py): API key and account ID patterns
 
 ## Development
 
