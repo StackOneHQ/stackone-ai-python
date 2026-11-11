@@ -24,8 +24,8 @@ updates:
           - minor
           - patch
 
-  # The mock server's Node dependencies. Deliberately major-only-blocked: the MCP SDK
-  # is pinned exactly, because a newer version rejects the mock's raw inputSchema.
+  # The mock server's Node dependencies. The MCP SDK is pinned exactly and its majors
+  # are blocked: a major can change how the mock's raw inputSchema is served.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -40,6 +40,7 @@ updates:
       - dependencies
     ignore:
       - dependency-name: "@modelcontextprotocol/sdk"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions
   - package-ecosystem: github-actions
