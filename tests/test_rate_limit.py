@@ -19,6 +19,7 @@ from stackone_ai.tools import (
     RateLimitRetryingAsyncClient,
     RateLimitRetryingClient,
     _buffer_error_body,
+    _mcp_http,
     _rate_limit_delay,
     _retry_after_seconds,
     _Throttle,
@@ -54,20 +55,20 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     return recorded
 
 
-def _responder(*responses: httpx.Response) -> tuple[list[httpx.Request], Any]:
+def _responder(*responses: Any) -> tuple[list[Any], Any]:
     """A handler that answers with ``responses`` in turn, repeating the last, and the requests it saw."""
-    seen: list[httpx.Request] = []
+    seen: list[Any] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: Any) -> Any:
         seen.append(request)
         return responses[min(len(seen), len(responses)) - 1]
 
     return seen, handler
 
 
-def _429(retry_after: str | None = None) -> httpx.Response:
+def _429(retry_after: str | None = None, *, http: Any = httpx) -> Any:
     headers = {"Retry-After": retry_after} if retry_after is not None else {}
-    return httpx.Response(429, headers=headers, json={"message": "Too many requests"})
+    return http.Response(429, headers=headers, json={"message": "Too many requests"})
 
 
 def _recorded(base_url: str, account_id: str, method: str) -> list[dict[str, Any]]:
@@ -142,23 +143,32 @@ class TestSyncClient:
 
 
 class TestAsyncClient:
-    def _run(self, handler: Any, *, stream: bool) -> tuple[int, bytes]:
+    def _send(self, handler: Any, *, stream: bool, method: str = "POST") -> tuple[int, bytes]:
         async def go() -> tuple[int, bytes]:
             async with RateLimitRetryingAsyncClient(
-                transport=httpx.MockTransport(handler),
+                transport=_mcp_http.MockTransport(handler),
                 event_hooks={"response": [_buffer_error_body]},
             ) as client:
                 if not stream:
-                    response = await client.post(URL, json={"jsonrpc": "2.0"})
+                    response = await client.request(method, URL, json={"jsonrpc": "2.0"})
                     return response.status_code, response.content
-                async with client.stream("POST", URL, json={"jsonrpc": "2.0"}) as response:
+                async with client.stream(method, URL, json={"jsonrpc": "2.0"}) as response:
                     return response.status_code, await response.aread()
 
         return asyncio.run(go())
 
+    def _run(self, handler: Any, *, stream: bool) -> tuple[int, bytes]:
+        """The status and body the caller sees, whether the response is returned or raised."""
+        try:
+            return self._send(handler, stream=stream)
+        except _mcp_http.HTTPStatusError as exc:
+            return exc.response.status_code, exc.response.content
+
     @pytest.mark.parametrize("stream", [False, True])
     def test_a_429_then_success_resends_the_same_body(self, sleeps: list[float], stream: bool):
-        seen, handler = _responder(_429("1"), _429(), httpx.Response(200, json={"ok": True}))
+        seen, handler = _responder(
+            _429("1", http=_mcp_http), _429(http=_mcp_http), _mcp_http.Response(200, json={"ok": True})
+        )
         assert self._run(handler, stream=stream) == (200, b'{"ok":true}')
         assert [r.content for r in seen] == [b'{"jsonrpc":"2.0"}'] * 3
         assert sleeps[0] == 1.0
@@ -166,17 +176,30 @@ class TestAsyncClient:
 
     @pytest.mark.parametrize("stream", [False, True])
     def test_the_last_429_keeps_its_body(self, sleeps: list[float], stream: bool):
-        seen, handler = _responder(_429("0"))
+        seen, handler = _responder(_429("0", http=_mcp_http))
         assert self._run(handler, stream=stream) == (429, b'{"message":"Too many requests"}')
         assert len(seen) == 4
         assert sleeps == [0.0, 0.0, 0.0]
 
     @pytest.mark.parametrize("status", [400, 500])
     def test_no_retry_on_any_other_status(self, sleeps: list[float], status: int):
-        seen, handler = _responder(httpx.Response(status))
+        seen, handler = _responder(_mcp_http.Response(status))
         assert self._run(handler, stream=True)[0] == status
         assert len(seen) == 1
         assert sleeps == []
+
+    @pytest.mark.parametrize("stream", [False, True])
+    def test_a_failed_post_raises_with_its_body_readable(self, stream: bool):
+        _, handler = _responder(_mcp_http.Response(500, json={"message": "boom"}))
+        with pytest.raises(_mcp_http.HTTPStatusError) as caught:
+            self._send(handler, stream=stream)
+        assert caught.value.response.status_code == 500
+        assert caught.value.response.content == b'{"message":"boom"}'
+
+    @pytest.mark.parametrize(("method", "status"), [("POST", 404), ("GET", 500), ("DELETE", 500)])
+    def test_a_lost_session_and_non_post_failures_are_returned(self, method: str, status: int):
+        _, handler = _responder(_mcp_http.Response(status))
+        assert self._send(handler, stream=True, method=method)[0] == status
 
 
 class TestFetchAccounts:
@@ -263,19 +286,19 @@ class TestATimeoutAfterARetried429IsThe429:
     @staticmethod
     def _429_then_hang(monkeypatch: pytest.MonkeyPatch, account: str) -> None:
         """The MCP host answers ``account`` 429 once, then never answers its retry."""
-        real = httpx.AsyncHTTPTransport.handle_async_request
+        real = _mcp_http.AsyncHTTPTransport.handle_async_request
         attempts: dict[str, int] = {}
 
-        async def handler(self: Any, request: httpx.Request) -> httpx.Response:
+        async def handler(self: Any, request: _mcp_http.Request) -> _mcp_http.Response:
             if request.headers.get("x-account-id") != account:
                 return await real(self, request)
             attempts[account] = attempts.get(account, 0) + 1
             if attempts[account] == 1:
-                return _429("0")
+                return _429("0", http=_mcp_http)
             await asyncio.sleep(60)
             raise AssertionError("the exchange's deadline should have cancelled this")
 
-        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handler)
+        monkeypatch.setattr(_mcp_http.AsyncHTTPTransport, "handle_async_request", handler)
 
     def test_listing(self, sleeps: list[float], monkeypatch: pytest.MonkeyPatch):
         self._429_then_hang(monkeypatch, "throttled")
@@ -288,11 +311,11 @@ class TestATimeoutAfterARetried429IsThe429:
         assert is_rate_limited(excinfo.value)
 
     def test_a_timeout_with_no_429_is_still_a_timeout(self, monkeypatch: pytest.MonkeyPatch):
-        async def hang(_self: Any, _request: httpx.Request) -> httpx.Response:
+        async def hang(_self: Any, _request: _mcp_http.Request) -> _mcp_http.Response:
             await asyncio.sleep(60)
             raise AssertionError("unreachable")
 
-        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", hang)
+        monkeypatch.setattr(_mcp_http.AsyncHTTPTransport, "handle_async_request", hang)
         with pytest.raises(ToolsetLoadError, match="timed out after 0.5s"):
             fetch_mcp_tools(URL, {"x-account-id": "a"}, timeout=0.5)
 
@@ -337,21 +360,21 @@ class TestAnOverlappingRequestDoesNotClearTheThrottle:
         list_attempts = 0
         retry_started = asyncio.Event()
 
-        async def handler(request: httpx.Request) -> httpx.Response:
+        async def handler(request: _mcp_http.Request) -> _mcp_http.Response:
             nonlocal list_attempts
             if request.method == "GET":
                 await retry_started.wait()
-                return httpx.Response(405)
+                return _mcp_http.Response(405)
             list_attempts += 1
             if list_attempts == 1:
-                return _429("0")
+                return _429("0", http=_mcp_http)
             retry_started.set()
             await asyncio.sleep(60)
             raise AssertionError("cancelled before this")
 
-        async def go() -> httpx.Response | None:
+        async def go() -> _mcp_http.Response | None:
             async with RateLimitRetryingAsyncClient(
-                transport=httpx.MockTransport(handler), throttle=throttle
+                transport=_mcp_http.MockTransport(handler), throttle=throttle
             ) as client:
                 listing = asyncio.create_task(client.post(URL, json={"method": "tools/list"}))
                 # Bounded, so a change that never retries fails here rather than hanging the run.
@@ -375,24 +398,24 @@ class TestAStaleThrottleMarkerDoesNotTaintALaterTimeout:
     def _429_once_on_initialize_then_hang_on_list(monkeypatch: pytest.MonkeyPatch, account: str) -> None:
         import json as _json
 
-        real = httpx.AsyncHTTPTransport.handle_async_request
+        real = _mcp_http.AsyncHTTPTransport.handle_async_request
         attempts: dict[str, int] = {}
 
-        async def handler(self: Any, request: httpx.Request) -> httpx.Response:
+        async def handler(self: Any, request: _mcp_http.Request) -> _mcp_http.Response:
             if request.headers.get("x-account-id") != account:
                 return await real(self, request)
             method = _json.loads(request.content or b"{}").get("method")
             if method == "initialize":
                 attempts["initialize"] = attempts.get("initialize", 0) + 1
                 if attempts["initialize"] == 1:
-                    return _429("0")
+                    return _429("0", http=_mcp_http)
                 return await real(self, request)
             if method == "tools/list":
                 await asyncio.sleep(60)
                 raise AssertionError("the exchange's deadline should have cancelled this")
             return await real(self, request)
 
-        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handler)
+        monkeypatch.setattr(_mcp_http.AsyncHTTPTransport, "handle_async_request", handler)
 
     def test_fetch_mcp_tools_times_out_rather_than_reporting_a_stale_429(
         self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch
@@ -424,26 +447,26 @@ class TestA429ThenAStalledStreamIsATimeout:
     def _429_then_stall_on_list(monkeypatch: pytest.MonkeyPatch, account: str) -> None:
         import json as _json
 
-        real = httpx.AsyncHTTPTransport.handle_async_request
+        real = _mcp_http.AsyncHTTPTransport.handle_async_request
         attempts: list[int] = []
 
-        class Stalled(httpx.AsyncByteStream):
+        class Stalled(_mcp_http.AsyncByteStream):
             async def __aiter__(self) -> Any:
                 yield b"event: message\n"
                 await asyncio.sleep(60)
                 raise AssertionError("the exchange's deadline should have cancelled this")
 
-        async def handler(self: Any, request: httpx.Request) -> httpx.Response:
+        async def handler(self: Any, request: _mcp_http.Request) -> _mcp_http.Response:
             if request.headers.get("x-account-id") != account:
                 return await real(self, request)
             if _json.loads(request.content or b"{}").get("method") != "tools/list":
                 return await real(self, request)
             attempts.append(1)
             if len(attempts) == 1:
-                return _429("0")
-            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Stalled())
+                return _429("0", http=_mcp_http)
+            return _mcp_http.Response(200, headers={"content-type": "text/event-stream"}, stream=Stalled())
 
-        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handler)
+        monkeypatch.setattr(_mcp_http.AsyncHTTPTransport, "handle_async_request", handler)
 
     def test_listing(self, mcp_mock_server: str, sleeps: list[float], monkeypatch: pytest.MonkeyPatch):
         self._429_then_stall_on_list(monkeypatch, "acc1")

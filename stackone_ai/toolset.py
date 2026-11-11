@@ -33,9 +33,9 @@ from stackone_ai.tools import (
     _ssl_context,
     build_request_headers,
     fetch_mcp_tools,
-    is_end_user_refusal,
     is_rate_limited,
     is_sdk_owned_header,
+    retry_for_end_user,
 )
 from stackone_ai.types import (
     DEFAULT_BASE_URL,
@@ -499,15 +499,12 @@ class StackOneToolSet:
         def _fetch_for_account(
             account: str | None,
         ) -> list[_Listing]:
-            without_end_user = account is not None and self._end_user_id(account) is None
-            try:
-                listed = fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout)
-            except StackOneAPIError as exc:
-                # Refused for want of an end user it was sent without: look it up, and retry
-                # once with it.
-                if not (without_end_user and account is not None and self._look_up_end_user(account, exc)):
-                    raise
-                listed = fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout)
+            without_end_user = [account] if account is not None and self._end_user_id(account) is None else []
+            listed = retry_for_end_user(
+                lambda: fetch_mcp_tools(endpoint, self._build_mcp_headers(account), timeout=self._timeout),
+                without_end_user,
+                self._look_up_end_user,
+            )
             return [(tool_def, account, endpoint) for tool_def in listed]
 
         def _store(catalog: _Catalog) -> None:
@@ -584,13 +581,7 @@ class StackOneToolSet:
             return [(tool_def, None, endpoint) for tool_def in listed]
 
         without_end_user = [account for account in account_scope if self._end_user_id(account) is None]
-        try:
-            listings = _list()
-        except StackOneAPIError as exc:
-            refused = next((a for a in without_end_user if is_end_user_refusal(exc, a)), None)
-            if refused is None or not self._look_up_end_user(refused, exc):
-                raise
-            listings = _list()
+        listings = retry_for_end_user(_list, without_end_user, self._look_up_end_user)
 
         with self._cache_lock:
             if generation == self._cache_generation:
@@ -1019,13 +1010,10 @@ class StackOneToolSet:
         """Given the API's refusal of an account's request for want of its end user, list the
         accounts and say whether that one now has an end user recorded to retry with.
 
-        Only the API's 400 naming this account counts. A GET /accounts already in flight is
-        joined rather than another made. If it fails, the refusal is raised with that failure
-        as its cause: a key without the scope to list accounts would otherwise be told only
-        that the header does not match.
+        A GET /accounts already in flight is joined rather than another made. If it fails, the
+        refusal is raised with that failure as its cause: a key without the scope to list
+        accounts would otherwise be told only that the header does not match.
         """
-        if not is_end_user_refusal(refusal, account_id):
-            return False
         try:
             self._join_accounts_listing()
         except Exception as exc:

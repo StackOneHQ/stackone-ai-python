@@ -84,6 +84,10 @@ jobs:
       - name: Run Tests
         run: uv run pytest
 
+      # pyproject allows mcp 1 and 2 and the lockfile pins 2, so the oldest mcp 1 is tested too.
+      - name: Run Tests against mcp 1
+        run: uv run --with "mcp==1.30.0" pytest
+
   # Enforces the wire contract in docs/SDK-UCA-CONTRACT.md.
   # StackOneHQ/sdk-conformance is private and requires CONFORMANCE_REPO_TOKEN.
   # Fork PRs and Dependabot runs cannot access this secret and skip this gate;
