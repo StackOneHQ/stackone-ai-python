@@ -464,11 +464,10 @@ def _skip_account(mp, log) -> Emitted:
 
 def _duplicate_tool_names(mp, log) -> Emitted:
     tools = Tools([_served_tool({"type": "object", "properties": {}}, "t") for _ in range(2)])
-    # Once by the collection, and again by each adapter that keeps the first of each name.
+    # Once by the collection; the adapter drops the duplicate without repeating it.
     tools.to_openai()
-    collection, adapter = _warnings(log)
-    assert collection == adapter
-    return adapter, {"count": 1, "names": "t"}
+    (warning,) = _warnings(log)
+    return warning, {"count": 1, "names": "t"}
 
 
 def _account_id_env_ignored(mp, log) -> Emitted:
