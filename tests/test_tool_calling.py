@@ -360,8 +360,8 @@ def test_an_argument_error_is_a_stackone_error_and_a_value_error(call, seen):
     assert seen == {}
 
 
-def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch):
-    """Building a context loads the CA bundle, so listing and calling must build it once between them."""
+def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch, request):
+    """Building a context loads the CA bundle, so discovery, listing and calling build it once."""
     loads: list[object] = []
     load_verify_locations = ssl.SSLContext.load_verify_locations
 
@@ -371,8 +371,9 @@ def test_calls_share_one_ssl_context(mcp_mock_server, monkeypatch):
 
     monkeypatch.setattr(ssl.SSLContext, "load_verify_locations", counting)
     _ssl_context.cache_clear()
+    request.addfinalizer(_ssl_context.cache_clear)
 
-    toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="default")
+    toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
     tool = toolset.fetch_tools()[0]
     tool.execute({})
     tool.execute({})
