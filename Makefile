@@ -26,7 +26,7 @@ help:
 install:
 	uv sync --locked $(if $(extras),--all-extras,)
 
-## Fix lint, format, and type check
+## Fix lint, format, and type check (needs make install extras=1)
 format:
 	uv run ruff check --fix .
 	uv run ruff format .

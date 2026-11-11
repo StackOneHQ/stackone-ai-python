@@ -37,8 +37,9 @@ account is used. There is no OpenAPI parsing and no client-side search.
 
 The same actions are reachable two ways, with **different argument shapes**:
 
-- `toolset.search()` + `toolset.execute(action_id, args)` drives the per-connector
-  `_search_actions` / `_execute_action` meta tools (`?tool-mode=search_execute`).
+- `toolset.search()` + `toolset.execute(action_id, args)` drives the
+  `stackone_search_actions` / `stackone_execute_action` meta tools, one pair across every
+  account in scope (`?tool-mode=search_execute`).
   Arguments are the **nested** form: `{"body": {"variables": {...}}}`.
 - `toolset.fetch_tools()` + `tool.execute(args)` calls per-action tools. Arguments
   are the keys the tool's served schema names.
@@ -50,7 +51,7 @@ a wrong key returns a normal-looking success with your filter ignored.
 Results follow one rule for every tool (`parse_tool_result`): text parts win, else
 `structuredContent`; `isError` raises `StackOneAPIError` with the payload's status.
 A success is returned exactly as the server wrote it, never unwrapped: for an action
-tool, `*_execute_action` and feedback that is UCA's `{"isError": false, "result": ...}`
+tool, `stackone_execute_action` and feedback that is UCA's `{"isError": false, "result": ...}`
 (optionally with `defenderMetadata` / `policyMetadata`); search results are bare JSON.
 Keep the result shape identical to the Node SDK's.
 
@@ -62,7 +63,7 @@ make install            # Core dependencies only
 make install extras=1   # Adds adapters, examples and dev tooling
 make format        # Fix lint, format, and type check — run this before committing
 make test          # Run all tests
-make validate      # Validate against conformance, ADK and Pydantic AI consumers
+make validate      # Type-check examples, then validate against conformance, ADK and Pydantic AI consumers
 make build         # Build package
 ```
 
@@ -119,7 +120,7 @@ import, never in core.
 ## Testing
 
 - Async tests use `pytest-asyncio`
-- Examples are type-checked against the current SDK by `make validate` and in CI;
+- Examples are type-checked against the current SDK by `make format`, `make validate` and in CI;
   each must fail loudly rather than succeed with an empty catalog
 
 **Test doubles must model what the server demands, not what the client happens to
@@ -211,13 +212,14 @@ via release-please after a merge to main, never from a developer machine.
 toolset = StackOneToolSet()   # reads STACKONE_API_KEY; accounts are discovered
 
 hits = toolset.search("list recent comments", top_k=3)
-hit = hits[0] if hits else None
-session_id = hit.get("session_id") if hit else None
-account_ids = [hit["available_accounts"][0]["id"]] if hit else None
-toolset.execute(
-    "linear_list_comments", {"body": {"variables": {"first": 25}}}, account_ids=account_ids, session_id=session_id
-)
-toolset.submit_feedback("positive", ["linear_list_comments"], session_id=session_id)
+if hits:
+    hit = hits[0]
+    account_ids = [hit["available_accounts"][0]["id"]]
+    session_id = hit.get("session_id")
+    toolset.execute(
+        hit["action_id"], {"body": {"variables": {"first": 25}}}, account_ids=account_ids, session_id=session_id
+    )
+    toolset.submit_feedback("positive", [hit["action_id"]], session_id=session_id)
 
 tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ```
@@ -248,7 +250,7 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 - **Headers**: header arguments — entries of a nested `headers` object, and top-level
   `headers_<name>` arguments — are an **allowlist** driven by the served schema. A nested
   entry passes if `headers.properties` declares it, or if `headers` is an object with no
-  `properties` (open, as `*_execute_action` serves it); a flat one passes if the
+  `properties` (open, as `stackone_execute_action` serves it); a flat one passes if the
   `headers_<name>` property is declared. `Authorization` / `x-account-id` / `User-Agent`
   never do. Every other argument is sent unchanged. The SDK sets those three itself,
   after any configured headers. Match header grammar with
