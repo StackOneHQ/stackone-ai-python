@@ -30,6 +30,7 @@ from stackone_ai.tools import (
     _js_number,
     _json_text,
     _json_type,
+    _ssl_context,
     build_request_headers,
     fetch_mcp_tools,
     is_end_user_refusal,
@@ -936,7 +937,9 @@ class StackOneToolSet:
     def _request_accounts(self, sequence: int) -> list[JsonDict]:
         url = f"{self.base_url.rstrip('/')}/accounts"
         try:
-            with RateLimitRetryingClient(timeout=self._timeout, retry_within=self._timeout) as client:
+            with RateLimitRetryingClient(
+                timeout=self._timeout, retry_within=self._timeout, verify=_ssl_context()
+            ) as client:
                 response = client.get(
                     url,
                     headers=build_request_headers(api_key=self.api_key, extra_headers=self._headers),
