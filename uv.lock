@@ -3406,7 +3406,7 @@ requires-dist = [
     { name = "langchain-core", marker = "extra == 'dev'", specifier = ">=0.3.36" },
     { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.3.36" },
     { name = "langchain-openai", marker = "extra == 'examples'", specifier = ">=1.1.14" },
-    { name = "mcp", specifier = ">=1.24.3,<2.0.0" },
+    { name = "mcp", specifier = ">=1.30.0,<2.0.0" },
     { name = "openai", marker = "extra == 'examples'", specifier = ">=2.32.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-ai", marker = "extra == 'examples'", specifier = ">=1.83.0" },
@@ -3414,7 +3414,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.0.1" },
+    { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.2.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.6" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.3" },
 ]
