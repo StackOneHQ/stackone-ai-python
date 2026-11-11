@@ -30,15 +30,14 @@ from stackone_ai import StackOneToolSet
 
 def individual_tools(account_id: str) -> None:
     """One Pydantic AI tool per action: suits a handful of actions."""
-    listed = StackOneToolSet().fetch_tools(actions=["*_list_*"], account_ids=[account_id])
-    if not listed:
+    tools = StackOneToolSet().fetch_tools(actions=["*_list_*"], account_ids=[account_id])
+    if not tools:
         raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
-    tools = listed.to_pydantic_ai()
 
     agent = Agent(
         "openai:gpt-5.4",
         system_prompt="You are a helpful assistant that answers by calling tools.",
-        tools=tools,
+        tools=tools.to_pydantic_ai(),
     )
     result = agent.run_sync("Use one of your tools to list a few records, then summarise them.")
     print(f"Individual tools:\n{result.output}\n")

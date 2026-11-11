@@ -31,6 +31,7 @@ def langgraph_integration() -> None:
     for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
         if not os.getenv(var):
             raise SystemExit(f"Set {var} to run this example.")
+
     account_id = os.environ["STACKONE_ACCOUNT_ID"]
 
     toolset = StackOneToolSet()
