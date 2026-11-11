@@ -130,7 +130,7 @@ def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool)
     assert tools[0].name == "bamboohr_list_employees"
 
 
-def test_toolset_pydantic_ai_account_ids_override(sample_tool: StackOneTool):
+def test_toolset_pydantic_ai_passes_account_ids_through(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
 
