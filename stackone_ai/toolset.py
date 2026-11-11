@@ -5,7 +5,6 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import copy
-import enum
 import fnmatch
 import functools
 import logging
@@ -14,7 +13,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypeVar
+from typing import Any, TypeVar
 from urllib.parse import urlencode
 
 import httpx
@@ -59,12 +58,7 @@ from stackone_ai.types import (
 
 logger = logging.getLogger("stackone.tools")
 
-
-class _Unset(enum.Enum):
-    UNSET = enum.auto()
-
-
-_UNSET = _Unset.UNSET
+_UNSET = object()
 """Sentinel: `mode=None` is a real mode (individual), so it cannot mean "use the default"."""
 
 _Listing = tuple[McpToolDefinition, str | None, str]
@@ -317,7 +311,7 @@ class StackOneToolSet:
         account_ids: list[str] | None = None,
         providers: list[str] | None = None,
         actions: list[str] | None = None,
-        mode: ToolMode | None | Literal[_Unset.UNSET] = _UNSET,
+        mode: ToolMode | None = _UNSET,  # ty: ignore[invalid-parameter-default]
     ) -> Tools:
         """Fetch tools with optional filtering by account IDs, providers, and actions
 
