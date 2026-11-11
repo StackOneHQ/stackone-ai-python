@@ -233,8 +233,8 @@ toolset.fetch_tools(account_ids=["acc-123", "acc-456"])
 
 - **`account_ids`** — restrict to these accounts. Omit it and the SDK discovers
   your active shared accounts (non-shared ones too with `include_non_shared=True`). An empty list means "no filter", not "no accounts". A
-  single failing account is logged and skipped, not fatal — unless it is rate
-  limited (see [Rate limits](#rate-limits)) — and left out of the cached catalog for
+  single failing account is logged and skipped, not fatal (unless it is rate limited, see
+  [Rate limits](https://github.com/StackOneHQ/stackone-ai-python#rate-limits)), and left out of the cached catalog for
   30 seconds, after which the next call lists it again. If every account fails with
   the same HTTP status (a revoked key's 401, say), that `StackOneAPIError` is raised;
   otherwise a `ToolsetLoadError` whose `failures` holds each account's error.
@@ -378,12 +378,12 @@ Falls back to the `STACKONE_BASE_URL` environment variable, then to
 
 For more examples, check out the [examples/](https://github.com/StackOneHQ/stackone-ai-python/tree/main/examples) directory:
 
-- [OpenAI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py) — OpenAI function calling
-- [Search and Execute](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/search_and_execute.py) — the recommended flow
-- [LangChain Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langchain_integration.py) — LangChain tools
-- [LangGraph Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langgraph_integration.py) — LangGraph agent
-- [Pydantic AI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/pydantic_ai_integration.py) — Pydantic AI agent
-- [Auth Management](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/auth_management.py) — API key and account ID patterns
+- [OpenAI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py): OpenAI function calling
+- [Search and Execute](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/search_and_execute.py): the recommended flow
+- [LangChain Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langchain_integration.py): LangChain tools
+- [LangGraph Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/langgraph_integration.py): LangGraph agent
+- [Pydantic AI Integration](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/pydantic_ai_integration.py): Pydantic AI agent
+- [Auth Management](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/auth_management.py): API key and account ID patterns
 
 ## Development
 
