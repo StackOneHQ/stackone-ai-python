@@ -11,15 +11,17 @@ from __future__ import annotations
 import asyncio
 import base64
 import calendar
+import functools
 import json
 import logging
 import math
 import random
 import re
+import ssl
 import threading
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -42,7 +44,6 @@ from stackone_ai.types import (
     ToolArgumentsError,
     ToolParameters,
     ToolsetConfigError,
-    ToolsetError,
     ToolsetLoadError,
 )
 
@@ -629,10 +630,16 @@ def is_rate_limited(exc: BaseException) -> bool:
     return False
 
 
+@functools.cache
+def _ssl_context() -> ssl.SSLContext:
+    """One SSL context for every MCP client: building one loads the CA bundle each time."""
+    return httpx.create_ssl_context()
+
+
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float, throttle: _Throttle | None = None
-) -> AsyncIterator[tuple[Any, Any, Any]]:
+) -> AsyncGenerator[tuple[Any, Any, Any]]:
     """Open the streamable-HTTP transport with the caller's timeout on every leg.
 
     The client's own defaults are a 30s connect and a 300s SSE read, and neither was
@@ -645,12 +652,13 @@ async def _mcp_transport(
     than headers and timeouts. It retries a 429, so the MCP client never sees one that
     a retry got past.
     """
-    from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
+    from mcp.client.streamable_http import streamable_http_client
 
     async with RateLimitRetryingAsyncClient(
         throttle=throttle,
         headers=headers,
         timeout=httpx.Timeout(timeout),
+        verify=_ssl_context(),
         follow_redirects=True,
         event_hooks={"response": [_buffer_error_body]},
     ) as client:
@@ -666,8 +674,8 @@ def fetch_mcp_tools(
     ``timeout`` bounds the whole exchange, handshake included.
     """
     try:
-        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+        from mcp import types as mcp_types
+        from mcp.client.session import ClientSession
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ToolsetConfigError(
             "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
@@ -695,7 +703,8 @@ def fetch_mcp_tools(
                 cursor: str | None = None
                 collected: list[McpToolDefinition] = []
                 while True:
-                    result = await session.list_tools(cursor)
+                    params = mcp_types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None
+                    result = await session.list_tools(params=params)
                     for tool in result.tools:
                         input_schema = tool.inputSchema or {}
                         collected.append(
@@ -755,7 +764,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
         seen.add(id(current))
         # Our own errors are already descriptive. They reach here wrapped in an
         # ExceptionGroup because they are raised inside the session's TaskGroup.
-        if isinstance(current, StackOneError | ToolsetError):
+        if isinstance(current, StackOneError):
             return current
         if isinstance(current, httpx.HTTPStatusError):
             body = _response_body(current.response)
@@ -936,8 +945,8 @@ def call_mcp_tool(
 
     ``arguments`` are sent exactly as given; the server maps them onto the action.
     """
-    from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-    from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+    from mcp import types as mcp_types
+    from mcp.client.session import ClientSession
 
     throttle = _Throttle()
 
@@ -1298,7 +1307,7 @@ class StackOneTool(BaseModel):
         class StackOneLangChainTool(BaseTool):
             name: str = parent_tool.name
             description: str = parent_tool.description
-            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-assignment]
+            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-mutable-override]
 
             def _run(self, **kwargs: Any) -> Any:
                 # Drop unsupplied optionals. pydantic materialises every optional field
@@ -1321,8 +1330,8 @@ class StackOneTool(BaseModel):
                     # handing the error back.
                     body = getattr(exc, "response_body", None)
                     failure = ToolException(f"{exc}: {body}" if body else str(exc))
-                    failure.status_code = getattr(exc, "status_code", None)  # type: ignore[attr-defined]
-                    failure.response_body = getattr(exc, "response_body", None)  # type: ignore[attr-defined]
+                    failure.status_code = getattr(exc, "status_code", None)  # ty: ignore[unresolved-attribute]
+                    failure.response_body = getattr(exc, "response_body", None)  # ty: ignore[unresolved-attribute]
                     raise failure from exc
 
         return StackOneLangChainTool()
@@ -1674,7 +1683,6 @@ class Tools:
         name would not find. OpenAI was sent two functions of one name, and LangChain and
         Pydantic AI each kept whichever their own lookup happened to find.
         """
-        self._warn_duplicate_names()
         return list(self._tool_map.values())
 
     def __getitem__(self, index: int) -> StackOneTool:

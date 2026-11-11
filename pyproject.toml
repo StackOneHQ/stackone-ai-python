@@ -4,11 +4,12 @@ version = "3.0.0"
 description = "agents performing actions on your SaaS"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "StackOne", email = "support@stackone.com" }]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -20,7 +21,7 @@ dependencies = [
   "httpx>=0.28.0",
   # fetch_tools() is the only route to a tool and talks MCP, so the client is
   # not optional: without it the SDK cannot do anything.
-  "mcp>=1.24.3,<2.0.0",
+  "mcp>=1.30.0,<2.0.0",
 ]
 
 [project.urls]
@@ -29,7 +30,7 @@ Changelog = "https://github.com/StackOneHQ/stackone-ai-python/blob/main/CHANGELO
 Issues = "https://github.com/StackOneHQ/stackone-ai-python/issues"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -50,7 +51,7 @@ examples = [
   "langchain-openai>=1.1.14",
   "openai>=2.32.0",
   "pydantic-ai>=1.83.0",
-  "python-dotenv>=1.0.1",
+  "python-dotenv>=1.2.2",
 ]
 dev = [
   "hypothesis>=6.141.1",
@@ -71,6 +72,8 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+# Vendored byte for byte from sdk-conformance; CI diffs it against the pinned commit.
+extend-exclude = ["tests/vectors"]
 
 [tool.ruff.lint]
 select = [

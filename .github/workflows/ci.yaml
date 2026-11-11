@@ -48,18 +48,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: package.json
           cache: pnpm
 
       - name: Install Python dependencies
@@ -114,7 +114,7 @@ jobs:
     env:
       # Pinned to a commit on stackone-ai-node's main, not the branch, so a Node change never
       # silently changes what this job grades. Bump it deliberately.
-      NODE_SDK_REF: 099fd1e3405f8a56125f9691e20ccd1333dda12f
+      NODE_SDK_REF: 8c7af617a4c62c0eedccda4fea1254b77de10e8e
     steps:
       - name: Check conformance token is configured
         env:
@@ -134,7 +134,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: StackOneHQ/sdk-conformance
-          ref: 4ead1c25bb443ef1fd1986d5f053b2d1475d0e90
+          ref: 6aba490ee49b298643e3a0bb9fbbaecf36c0edd7
           token: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
           path: sdk-conformance
           persist-credentials: false
@@ -154,23 +154,23 @@ jobs:
         run: diff -r sdk/tests/vectors sdk-conformance/vectors
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.13"
           enable-cache: true
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         # pnpm from sdk-conformance's packageManager; in each SDK checkout pnpm switches to that
         # repo's own packageManager version, so one setup serves all three installs.
         with:
           package_json_file: sdk-conformance/package.json
 
-      # 24, not 22: the Node SDK's devEngines pins Node ^24.11.0, and the suite runs on it too.
+      # The Node SDK's devEngines pins the exact Node version, and the suite runs on it too.
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: stackone-ai-node/package.json
 
       - name: Install Node SDK dependencies
         working-directory: stackone-ai-node
@@ -221,18 +221,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.13"
           enable-cache: true
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: package.json
           cache: pnpm
 
       - name: Install Python dependencies
