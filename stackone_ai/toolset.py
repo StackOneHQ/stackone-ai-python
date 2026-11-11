@@ -746,6 +746,8 @@ class StackOneToolSet:
             raise ToolsetConfigError(f"action_id must be a non-empty string, got {_json_text(action_id)}")
         if arguments is not None and not isinstance(arguments, dict):
             raise ToolsetConfigError(f"arguments must be a JSON object, got {_json_type(arguments)}")
+        if arguments is not None and not all(isinstance(key, str) for key in arguments):
+            raise ToolsetConfigError("arguments must have string keys")
         if session_id is not None and (not isinstance(session_id, str) or not session_id):
             raise ToolsetConfigError(f"session_id must be a non-empty string, got {_json_text(session_id)}")
 
@@ -1117,14 +1119,14 @@ class StackOneToolSet:
             if a.get("status") == "active" and isinstance(a.get("id"), str) and a["id"]
         ]
         if not active:
-            if not accounts:
+            if not records:
                 raise ToolsetConfigError(
                     "This API key has no linked accounts. Link one in the StackOne "
                     "dashboard, or pass an account id explicitly."
                 )
             listed = ", ".join(f"{a.get('provider')} ({a.get('status')})" for a in records)
             raise ToolsetConfigError(
-                f"None of this API key's {len(accounts)} linked accounts are active: {listed}. "
+                f"None of this API key's {len(records)} linked accounts are active: {listed}. "
                 "Re-link them in the StackOne dashboard, or pass an account id explicitly."
             )
 
