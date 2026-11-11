@@ -53,7 +53,6 @@ from stackone_ai.types import (
     ToolMode,
     ToolParameters,
     ToolsetConfigError,
-    ToolsetError,
     ToolsetLoadError,
 )
 
@@ -232,7 +231,6 @@ class StackOneToolSet:
         self._account_ids: list[str] = self._validate_account_ids(
             execute.get("account_ids") if execute else None
         )
-        self._execute_config: ExecuteToolsConfig | None = execute
         execute_timeout = execute.get("timeout") if execute else None
         self._timeout: float = (
             timeout if timeout is not None else (execute_timeout if execute_timeout is not None else 60.0)
@@ -399,7 +397,7 @@ class StackOneToolSet:
 
             return Tools(all_tools)
 
-        except (ToolsetError, StackOneError):
+        except StackOneError:
             # StackOneAPIError carries the HTTP status. Re-wrapping it below would throw
             # that away, so a caller could not tell a 401 from a 429.
             raise
