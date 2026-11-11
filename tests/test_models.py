@@ -331,7 +331,7 @@ class TestStackOneToolExecution:
             _mcp_tool().execute("[1, 2, 3]")
 
     def test_non_string_keys_are_not_a_json_object(self):
-        """A key JSON cannot name failed in header sanitising with an AttributeError."""
+        """Header sanitising calls string methods on every key, so a non-string key is refused up front."""
         with pytest.raises(ToolArgumentsError, match=r'^Tool arguments for "[^"]+" must be a JSON object$'):
             _mcp_tool().execute({1: "x"})  # type: ignore[dict-item]
 

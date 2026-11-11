@@ -945,7 +945,7 @@ class TestAccountDiscovery:
         assert toolset._discover_account_ids() == ["default"]
 
     def test_malformed_account_entries_are_skipped(self, monkeypatch):
-        """A non-dict entry or a non-string id failed with an AttributeError, or became an id."""
+        """An entry that is not an object, or whose id is not a string, is not an account."""
         toolset = StackOneToolSet(api_key="test-key")
         listed: list[Any] = ["junk", None, {"id": 5, "status": "active"}]
         monkeypatch.setattr(
