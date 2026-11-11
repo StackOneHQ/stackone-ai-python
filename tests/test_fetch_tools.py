@@ -690,7 +690,9 @@ class TestFetchMcpToolsInternal:
             assert result[0].name == "tool_1"
             assert result[1].name == "tool_2"
             assert result[1].input_schema == {}  # None should become empty dict
-            assert mock_session.list_tools.call_count == 2
+            first_call, second_call = mock_session.list_tools.call_args_list
+            assert first_call.kwargs == {"params": None}
+            assert second_call.kwargs["params"].cursor == "cursor_page_2"
 
 
 class TestCatalogCache:
