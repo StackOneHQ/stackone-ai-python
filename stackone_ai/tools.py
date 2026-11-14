@@ -1114,6 +1114,9 @@ class StackOneTool(BaseModel):
             parsed = arguments
         if not isinstance(parsed, dict):
             raise ToolArgumentsError(f"Tool arguments for {_json_text(self.name)} must be a JSON object")
+        # Header sanitising calls string methods on every top-level key.
+        if not all(isinstance(key, str) for key in parsed):
+            raise ToolArgumentsError(f"Tool arguments for {_json_text(self.name)} must have string keys")
         return dict(parsed)
 
     def _declared_headers(self) -> tuple[set[str] | None, set[str], bool]:

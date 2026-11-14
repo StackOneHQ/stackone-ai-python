@@ -12,6 +12,7 @@ from stackone_ai.types import (
     ExecuteConfig,
     StackOneAPIError,
     StackOneError,
+    ToolArgumentsError,
     ToolParameters,
 )
 
@@ -328,6 +329,11 @@ class TestStackOneToolExecution:
         """Test non-dict JSON raises ValueError"""
         with pytest.raises(ValueError, match=r'^Tool arguments for "[^"]+" must be a JSON object$'):
             _mcp_tool().execute("[1, 2, 3]")
+
+    def test_non_string_keys_are_refused(self):
+        """Header sanitising calls string methods on every key, so a non-string key is refused up front."""
+        with pytest.raises(ToolArgumentsError, match=r'^Tool arguments for "[^"]+" must have string keys$'):
+            _mcp_tool().execute({1: "x"})  # type: ignore[dict-item]
 
     @given(invalid_json=invalid_json_strategy)
     @settings(max_examples=50)
