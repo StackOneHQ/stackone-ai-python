@@ -31,6 +31,7 @@ from stackone_ai.tools import (
     Tools,
     _backoff_delay,
     _describe_mcp_failure,
+    _mcp_http,
     _outlasts_deadline,
     _raise_mcp_failure,
     _retry_after_seconds,
@@ -464,11 +465,10 @@ def _skip_account(mp, log) -> Emitted:
 
 def _duplicate_tool_names(mp, log) -> Emitted:
     tools = Tools([_served_tool({"type": "object", "properties": {}}, "t") for _ in range(2)])
-    # Once by the collection, and again by each adapter that keeps the first of each name.
+    # Once by the collection; the adapter drops the duplicate without repeating it.
     tools.to_openai()
-    collection, adapter = _warnings(log)
-    assert collection == adapter
-    return adapter, {"count": 1, "names": "t"}
+    (warning,) = _warnings(log)
+    return warning, {"count": 1, "names": "t"}
 
 
 def _account_id_env_ignored(mp, log) -> Emitted:
@@ -496,8 +496,8 @@ def _mcp_timeout(mp, log) -> Emitted:
 
 
 def _mcp_http_failure(mp, log) -> Emitted:
-    response = httpx.Response(503, text=" down ", request=httpx.Request("POST", ENDPOINT))
-    failure = httpx.HTTPStatusError("503", request=response.request, response=response)
+    response = _mcp_http.Response(503, text=" down ", request=_mcp_http.Request("POST", ENDPOINT))
+    failure = _mcp_http.HTTPStatusError("503", request=response.request, response=response)
     values = {"endpoint": ENDPOINT, "status": 503, "reason_phrase": "Service Unavailable", "body": "down"}
     return _describe_mcp_failure(failure, ENDPOINT, 60), values
 
@@ -509,7 +509,7 @@ def _mcp_failure(mp, log) -> Emitted:
 
 
 def _mcp_rate_limit_timeout(mp, log) -> Emitted:
-    throttled = httpx.Response(429, request=httpx.Request("POST", ENDPOINT))
+    throttled = _mcp_http.Response(429, request=_mcp_http.Request("POST", ENDPOINT))
     throttle = _Throttle(response=throttled)
     error = _raised(StackOneAPIError, lambda: _raise_mcp_failure(TimeoutError(), ENDPOINT, 0.5, throttle))
     assert error.status_code == 429

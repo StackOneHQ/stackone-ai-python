@@ -11,21 +11,23 @@ from __future__ import annotations
 import asyncio
 import base64
 import calendar
+import functools
 import json
 import logging
 import math
 import random
 import re
+import ssl
 import threading
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from importlib import metadata
-from typing import Any, NoReturn, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
 import anyio
 import httpx
@@ -42,11 +44,17 @@ from stackone_ai.types import (
     ToolArgumentsError,
     ToolParameters,
     ToolsetConfigError,
-    ToolsetError,
     ToolsetLoadError,
 )
 
 logger = logging.getLogger("stackone.tools")
+
+# The HTTP library the installed mcp transport takes: httpx before mcp 2, httpx2 (an mcp 2
+# dependency) from then on. GET /accounts always uses httpx.
+if TYPE_CHECKING or int(metadata.version("mcp").split(".")[0]) >= 2:
+    import httpx2 as _mcp_http
+else:
+    _mcp_http = httpx
 
 T = TypeVar("T")
 
@@ -344,10 +352,10 @@ def build_auth_header(api_key: str) -> str:
     return f"Basic {token}"
 
 
-async def _buffer_error_body(response: httpx.Response) -> None:
+async def _buffer_error_body(response: _mcp_http.Response) -> None:
     """Read an error response's body while its stream is still open.
 
-    The ``mcp`` client raises on the status after the streamed response is closed, so
+    An error status is raised after the streamed response is closed, so
     reading the body afterwards got nothing and every failure said only "400 Bad
     Request". The body is where the server explains itself: "Legacy accounts cannot be
     used with MCP", or a 412 asking for the account to be re-linked. Node already
@@ -463,7 +471,7 @@ def _backoff_delay(retry: int, retry_after: float | None, random_value: float | 
     return min(retry_after, RATE_LIMIT_MAX_DELAY_SECONDS)
 
 
-def _rate_limit_delay(response: httpx.Response, retry: int) -> float:
+def _rate_limit_delay(response: httpx.Response | _mcp_http.Response, retry: int) -> float:
     """How long to wait before retry number ``retry`` (1-based) of this 429."""
     return _backoff_delay(retry, _retry_after_seconds(response.headers.get("retry-after")))
 
@@ -473,7 +481,7 @@ def _waits_for_retry(delay: float, remaining: float) -> bool:
     return delay < remaining
 
 
-def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) -> None:
+def _log_rate_limit_retry(request: httpx.Request | _mcp_http.Request, attempt: int, delay: float) -> None:
     logger.warning(
         "%s %s was rate limited (429) on attempt %d of %d; retrying in %ss",
         request.method,
@@ -484,7 +492,9 @@ def _log_rate_limit_retry(request: httpx.Request, attempt: int, delay: float) ->
     )
 
 
-def _outlasts_deadline(request: httpx.Request, attempt: int, delay: float, remaining: float) -> bool:
+def _outlasts_deadline(
+    request: httpx.Request | _mcp_http.Request, attempt: int, delay: float, remaining: float
+) -> bool:
     """Whether waiting ``delay`` would not end before the deadline, logging when so.
 
     Such a wait is not started. Sleeping into the deadline would turn the 429 into a
@@ -556,11 +566,11 @@ class _Throttle:
     GET, say, answered while a ``tools/list`` retry hangs, must not clear that retry's 429.
     """
 
-    response: httpx.Response | None = None
+    response: _mcp_http.Response | None = None
     retrying: int = 0
 
 
-class RateLimitRetryingAsyncClient(httpx.AsyncClient):
+class RateLimitRetryingAsyncClient(_mcp_http.AsyncClient):
     """The async counterpart of :class:`RateLimitRetryingClient`, used for every MCP request.
 
     The MCP client streams its responses; a discarded 429 is read and closed here, and
@@ -578,7 +588,7 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
         super().__init__(*args, **kwargs)
         self._throttle = throttle
 
-    async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+    async def send(self, request: _mcp_http.Request, **kwargs: Any) -> _mcp_http.Response:
         attempt = 1
         retried = False
         response = await super().send(request, **kwargs)
@@ -602,6 +612,13 @@ class RateLimitRetryingAsyncClient(httpx.AsyncClient):
             self._throttle.retrying -= 1
             if self._throttle.retrying == 0:
                 self._throttle.response = None
+        if request.method == "POST" and response.is_error and response.status_code != 404:
+            # mcp 2 answers a failed POST with a JSON-RPC error that drops the status and the
+            # body; raised as mcp 1 does, it keeps both. A 404 is left to mcp: a lost session.
+            await response.aclose()
+            raise _mcp_http.HTTPStatusError(
+                f"{response.status_code} {response.reason_phrase}", request=request, response=response
+            )
         return response
 
 
@@ -622,17 +639,26 @@ def is_rate_limited(exc: BaseException) -> bool:
         if id(current) in seen:
             continue
         seen.add(id(current))
-        if isinstance(current, httpx.HTTPStatusError) and current.response.status_code == 429:
+        if (
+            isinstance(current, httpx.HTTPStatusError | _mcp_http.HTTPStatusError)
+            and current.response.status_code == 429
+        ):
             return True
         stack.extend(getattr(current, "exceptions", None) or [])
         stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
     return False
 
 
+@functools.cache
+def _ssl_context() -> ssl.SSLContext:
+    """One SSL context for every MCP client: building one loads the CA bundle each time."""
+    return httpx.create_ssl_context()
+
+
 @asynccontextmanager
 async def _mcp_transport(
     endpoint: str, headers: dict[str, str], timeout: float, throttle: _Throttle | None = None
-) -> AsyncIterator[tuple[Any, Any, Any]]:
+) -> AsyncGenerator[tuple[Any, Any]]:
     """Open the streamable-HTTP transport with the caller's timeout on every leg.
 
     The client's own defaults are a 30s connect and a 300s SSE read, and neither was
@@ -645,17 +671,68 @@ async def _mcp_transport(
     than headers and timeouts. It retries a 429, so the MCP client never sees one that
     a retry got past.
     """
-    from mcp.client.streamable_http import streamable_http_client  # ty: ignore[unresolved-import]
+    from mcp.client.streamable_http import streamable_http_client
 
     async with RateLimitRetryingAsyncClient(
         throttle=throttle,
         headers=headers,
-        timeout=httpx.Timeout(timeout),
+        timeout=_mcp_http.Timeout(timeout),
+        verify=_ssl_context(),
         follow_redirects=True,
         event_hooks={"response": [_buffer_error_body]},
     ) as client:
         async with streamable_http_client(endpoint, http_client=client) as streams:
-            yield streams
+            # mcp 1 also yields a session-id getter, which nothing here reads.
+            yield streams[0], streams[1]
+
+
+def _run_mcp_session(
+    endpoint: str,
+    headers: dict[str, str],
+    timeout: float,
+    work: Callable[[Any], Coroutine[Any, Any, T]],
+) -> T:
+    """Open an initialized MCP session to ``endpoint``, run ``work`` on it and close it.
+
+    ``timeout`` bounds the whole exchange, handshake included. Any failure is raised
+    through :func:`_raise_mcp_failure`.
+    """
+    try:
+        from mcp import types as mcp_types
+        from mcp.client.session import ClientSession
+    except ImportError as exc:  # pragma: no cover - only a broken install gets here
+        raise ToolsetConfigError(
+            "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
+        ) from exc
+
+    throttle = _Throttle()
+
+    async def _run() -> T:
+        with anyio.fail_after(timeout):
+            async with _mcp_transport(endpoint, headers, timeout, throttle) as (read_stream, write_stream):
+                session = ClientSession(
+                    read_stream,
+                    write_stream,
+                    client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
+                )
+                async with session:
+                    await session.initialize()
+                    return await work(session)
+
+    try:
+        return run_async(_run())
+    except Exception as exc:
+        # Exception, not BaseException: Ctrl-C and SystemExit must stop the caller, not come
+        # back as a ToolsetLoadError that an agent framework hands the model as a tool result.
+        _raise_mcp_failure(exc, endpoint, timeout, throttle)
+
+
+def _mcp_field(model: Any, name: str, wire_name: str, default: Any = None) -> Any:
+    """A field of an mcp model: mcp 2 names it in snake_case, mcp 1 as the wire does."""
+    try:
+        return getattr(model, name)
+    except AttributeError:
+        return getattr(model, wire_name, default)
 
 
 def fetch_mcp_tools(
@@ -665,60 +742,33 @@ def fetch_mcp_tools(
 
     ``timeout`` bounds the whole exchange, handshake included.
     """
-    try:
-        from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-        from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
-    except ImportError as exc:  # pragma: no cover - depends on optional extra
-        raise ToolsetConfigError(
-            "mcp is a core dependency of stackone-ai but could not be imported — reinstall the package."
-        ) from exc
 
-    throttle = _Throttle()
+    async def _list(session: Any) -> list[McpToolDefinition]:
+        from mcp import types as mcp_types
 
-    async def _list() -> list[McpToolDefinition]:
-        with anyio.fail_after(timeout):
-            return await _list_within_deadline()
+        cursor: str | None = None
+        collected: list[McpToolDefinition] = []
+        while True:
+            params = mcp_types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None
+            result = await session.list_tools(params=params)
+            for tool in result.tools:
+                input_schema = _mcp_field(tool, "input_schema", "inputSchema") or {}
+                collected.append(
+                    McpToolDefinition(
+                        name=tool.name,
+                        description=tool.description,
+                        input_schema=dict(input_schema),
+                    )
+                )
+            cursor = _mcp_field(result, "next_cursor", "nextCursor")
+            if cursor is None:
+                break
+        return collected
 
-    async def _list_within_deadline() -> list[McpToolDefinition]:
-        async with _mcp_transport(endpoint, headers, timeout, throttle) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            session = ClientSession(
-                read_stream,
-                write_stream,
-                client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
-            )
-            async with session:
-                await session.initialize()
-                cursor: str | None = None
-                collected: list[McpToolDefinition] = []
-                while True:
-                    result = await session.list_tools(cursor)
-                    for tool in result.tools:
-                        input_schema = tool.inputSchema or {}
-                        collected.append(
-                            McpToolDefinition(
-                                name=tool.name,
-                                description=tool.description,
-                                input_schema=dict(input_schema),
-                            )
-                        )
-                    cursor = result.nextCursor
-                    if cursor is None:
-                        break
-                return collected
-
-    try:
-        return run_async(_list())
-    except Exception as exc:
-        # Exception, not BaseException: Ctrl-C and SystemExit must stop the caller, not come
-        # back as a ToolsetLoadError that an agent framework hands the model as a tool result.
-        _raise_mcp_failure(exc, endpoint, timeout, throttle)
+    return _run_mcp_session(endpoint, headers, timeout, _list)
 
 
-def _response_body(response: httpx.Response) -> str:
+def _response_body(response: _mcp_http.Response) -> str:
     """Best-effort read of an error body.
 
     The MCP transport streams, so `.text` raises until the stream is read, and by
@@ -755,9 +805,9 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
         seen.add(id(current))
         # Our own errors are already descriptive. They reach here wrapped in an
         # ExceptionGroup because they are raised inside the session's TaskGroup.
-        if isinstance(current, StackOneError | ToolsetError):
+        if isinstance(current, StackOneError):
             return current
-        if isinstance(current, httpx.HTTPStatusError):
+        if isinstance(current, _mcp_http.HTTPStatusError):
             body = _response_body(current.response)
             detail = f": {body}" if body else ""
             status = f"{current.response.status_code} {current.response.reason_phrase}".rstrip()
@@ -777,7 +827,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
     # for the deadline's TimeoutError that is the cancellation, or whatever the
     # cancelled task happened to be catching.
     leaf = _leaf_failure(exc)
-    if isinstance(leaf, TimeoutError | httpx.TimeoutException):
+    if isinstance(leaf, TimeoutError | _mcp_http.TimeoutException):
         return ToolsetLoadError(f"MCP request to {endpoint} timed out after {_js_number(timeout)}s")
     return ToolsetLoadError(f"MCP request to {endpoint} failed: {type(leaf).__name__}: {leaf}")
 
@@ -785,7 +835,7 @@ def _describe_mcp_failure(exc: BaseException, endpoint: str, timeout: float) -> 
 def _leaf_failure(exc: BaseException) -> BaseException:
     """The innermost cause through group members and ``__cause__``, stopping at a timeout."""
     leaf = exc
-    while not isinstance(leaf, TimeoutError | httpx.TimeoutException):
+    while not isinstance(leaf, TimeoutError | _mcp_http.TimeoutException):
         members = getattr(leaf, "exceptions", None)
         if members:
             leaf = members[0]
@@ -806,8 +856,8 @@ def _raise_mcp_failure(exc: Exception, endpoint: str, timeout: float, throttle: 
     :func:`is_rate_limited` reads it as the HTTP 429 it is.
     """
     throttled = throttle.response
-    if throttled is not None and isinstance(_leaf_failure(exc), TimeoutError | httpx.TimeoutException):
-        status = httpx.HTTPStatusError(
+    if throttled is not None and isinstance(_leaf_failure(exc), TimeoutError | _mcp_http.TimeoutException):
+        status = _mcp_http.HTTPStatusError(
             f"429 {throttled.reason_phrase}", request=throttled.request, response=throttled
         )
         status.__cause__ = exc
@@ -903,7 +953,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
     non_text = [_plain_part(part) for part in result.content if not getattr(part, "text", "")]
 
     parsed: JsonDict = {}
-    structured = getattr(result, "structuredContent", None)
+    structured = _mcp_field(result, "structured_content", "structuredContent")
     if payload:
         try:
             # NaN and Infinity are not JSON; json.loads accepts them, JSON.parse does not,
@@ -918,7 +968,7 @@ def parse_tool_result(result: Any, name: str) -> JsonDict:
         # not write into the caller's result.
         parsed = dict(structured)
 
-    if getattr(result, "isError", False):
+    if _mcp_field(result, "is_error", "isError", False):
         # The transport succeeded, so there is no HTTP status here — but the payload
         # carries the real one, and a caller cannot branch on 0.
         detail = payload or json.dumps(parsed, ensure_ascii=False, separators=(",", ":"), default=str)
@@ -936,45 +986,20 @@ def call_mcp_tool(
 
     ``arguments`` are sent exactly as given; the server maps them onto the action.
     """
-    from mcp import types as mcp_types  # ty: ignore[unresolved-import]
-    from mcp.client.session import ClientSession  # ty: ignore[unresolved-import]
+    from mcp import types as mcp_types
 
-    throttle = _Throttle()
+    async def _call(session: Any) -> JsonDict:
+        # send_request rather than call_tool: call_tool validates structuredContent
+        # against the tool's output schema, and on a fresh session that means a
+        # tools/list first — relisting the whole catalog on every call, which the
+        # Node SDK never does. The result is parsed below either way.
+        request = mcp_types.CallToolRequest(
+            params=mcp_types.CallToolRequestParams(name=name, arguments=arguments)
+        )
+        result = await session.send_request(request, mcp_types.CallToolResult)
+        return parse_tool_result(result, name)
 
-    async def _call() -> JsonDict:
-        with anyio.fail_after(timeout):
-            return await _call_within_deadline()
-
-    async def _call_within_deadline() -> JsonDict:
-        async with _mcp_transport(endpoint, headers, timeout, throttle) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            session = ClientSession(
-                read_stream,
-                write_stream,
-                client_info=mcp_types.Implementation(name="stackone-ai-python", version=_SDK_VERSION),
-            )
-            async with session:
-                await session.initialize()
-                # send_request rather than call_tool: call_tool validates structuredContent
-                # against the tool's output schema, and on a fresh session that means a
-                # tools/list first — relisting the whole catalog on every call, which the
-                # Node SDK never does. The result is parsed below either way.
-                request = mcp_types.ClientRequest(
-                    mcp_types.CallToolRequest(
-                        params=mcp_types.CallToolRequestParams(name=name, arguments=arguments),
-                    )
-                )
-                result = await session.send_request(request, mcp_types.CallToolResult)
-                return parse_tool_result(result, name)
-
-    try:
-        return run_async(_call())
-    except Exception as exc:
-        # Not BaseException, as in fetch_mcp_tools: KeyboardInterrupt and SystemExit propagate.
-        _raise_mcp_failure(exc, endpoint, timeout, throttle)
+    return _run_mcp_session(endpoint, headers, timeout, _call)
 
 
 def is_end_user_refusal(exc: BaseException, account_id: str) -> bool:
@@ -999,6 +1024,21 @@ def is_end_user_refusal(exc: BaseException, account_id: str) -> bool:
     ):
         return False
     return message.rstrip().rsplit(" ", 1)[-1].strip("\"'") == account_id
+
+
+def retry_for_end_user(
+    call: Callable[[], T], accounts: Iterable[str], look_up: Callable[[str, Exception], bool] | None
+) -> T:
+    """``call()``, made once more if the API refused it for want of the end user of one of
+    ``accounts`` (those it was sent without one for) and ``look_up`` then finds that end user.
+    """
+    try:
+        return call()
+    except StackOneAPIError as exc:
+        refused = next((account for account in accounts if is_end_user_refusal(exc, account)), None)
+        if refused is None or look_up is None or not look_up(refused, exc):
+            raise
+    return call()
 
 
 def _strip_internal_keys(schema: Any) -> Any:
@@ -1301,7 +1341,7 @@ class StackOneTool(BaseModel):
         class StackOneLangChainTool(BaseTool):
             name: str = parent_tool.name
             description: str = parent_tool.description
-            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-assignment]
+            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-mutable-override]
 
             def _run(self, **kwargs: Any) -> Any:
                 # Drop unsupplied optionals. pydantic materialises every optional field
@@ -1324,8 +1364,8 @@ class StackOneTool(BaseModel):
                     # handing the error back.
                     body = getattr(exc, "response_body", None)
                     failure = ToolException(f"{exc}: {body}" if body else str(exc))
-                    failure.status_code = getattr(exc, "status_code", None)  # type: ignore[attr-defined]
-                    failure.response_body = getattr(exc, "response_body", None)  # type: ignore[attr-defined]
+                    failure.status_code = getattr(exc, "status_code", None)  # ty: ignore[unresolved-attribute]
+                    failure.response_body = getattr(exc, "response_body", None)  # ty: ignore[unresolved-attribute]
                     raise failure from exc
 
         return StackOneLangChainTool()
@@ -1499,20 +1539,10 @@ class StackOneMcpTool(StackOneTool):
             )
 
         account_id = self._account_id
-        without_end_user = account_id is not None and self._recorded_end_user_id() is None
-        try:
-            return call()
-        except StackOneAPIError as exc:
-            # Sent with no recorded end user and refused for want of one: the account is
-            # non-shared and its end user can be looked up. Retried once, with it.
-            if not (
-                without_end_user
-                and account_id is not None
-                and self._look_up_end_user is not None
-                and self._look_up_end_user(account_id, exc)
-            ):
-                raise
-        return call()
+        without_end_user = (
+            [account_id] if account_id is not None and self._recorded_end_user_id() is None else []
+        )
+        return retry_for_end_user(call, without_end_user, self._look_up_end_user)
 
 
 @dataclass(frozen=True)
@@ -1677,7 +1707,6 @@ class Tools:
         name would not find. OpenAI was sent two functions of one name, and LangChain and
         Pydantic AI each kept whichever their own lookup happened to find.
         """
-        self._warn_duplicate_names()
         return list(self._tool_map.values())
 
     def __getitem__(self, index: int) -> StackOneTool:

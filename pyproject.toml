@@ -4,11 +4,12 @@ version = "3.0.0"
 description = "agents performing actions on your SaaS"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "StackOne", email = "support@stackone.com" }]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -20,11 +21,17 @@ dependencies = [
   "httpx>=0.28.0",
   # fetch_tools() is the only route to a tool and talks MCP, so the client is
   # not optional: without it the SDK cannot do anything.
-  "mcp>=1.24.3,<2.0.0",
+  # 1.30.0 and 2.2.0 are the first of each major with every published advisory fixed.
+  "mcp>=1.30.0,!=2.0.*,!=2.1.*,<3.0.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/StackOneHQ/stackone-ai-python"
+Changelog = "https://github.com/StackOneHQ/stackone-ai-python/blob/main/CHANGELOG.md"
+Issues = "https://github.com/StackOneHQ/stackone-ai-python/issues"
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -45,11 +52,12 @@ examples = [
   "langchain-openai>=1.1.14",
   "openai>=2.32.0",
   "pydantic-ai>=1.83.0",
-  "python-dotenv>=1.0.1",
+  "python-dotenv>=1.2.2",
 ]
 dev = [
   "hypothesis>=6.141.1",
   "langchain-core>=0.3.36",
+  "pydantic-ai-slim>=1.83.0",
   "pytest>=8.3.4",
   "pytest-asyncio>=0.25.3",
   "pytest-cov>=6.0.0",
@@ -62,12 +70,11 @@ testpaths = ["tests"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 
-[tool.ruff.lint.per-file-ignores]
-"examples/**.py" = ["E501", "F841", "E402"]
-
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+# Vendored byte for byte from sdk-conformance; CI diffs it against the pinned commit.
+extend-exclude = ["tests/vectors"]
 
 [tool.ruff.lint]
 select = [
@@ -83,10 +90,7 @@ select = [
 [tool.coverage.run]
 source = ["stackone_ai"]
 branch = true
-omit = ["stackone_ai/__init__.py", "**/py.typed"]
-
-[tool.coverage.report]
-exclude_lines = ["pragma: no cover"]
+omit = ["stackone_ai/__init__.py"]
 
 [tool.coverage.json]
 output = "coverage/coverage.json"
