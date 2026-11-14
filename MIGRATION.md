@@ -395,6 +395,13 @@ tool = StackOneTool(
 
 
 # 3.0
+import json
+
+import httpx
+
+from stackone_ai import ExecuteConfig, StackOneTool, ToolParameters
+
+
 class GetEmployee(StackOneTool):
     def __init__(self) -> None:
         super().__init__(
