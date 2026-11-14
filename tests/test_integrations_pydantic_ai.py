@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.tools import Tool
 
-pytest.importorskip("pydantic_ai", reason="pydantic-ai not installed")
-
-from pydantic_ai import Agent  # noqa: E402
-from pydantic_ai.tools import Tool  # noqa: E402
-
-from stackone_ai import StackOneToolSet  # noqa: E402
-from stackone_ai.models import ExecuteConfig, StackOneTool, ToolParameters, Tools  # noqa: E402
+from stackone_ai import StackOneToolSet
+from stackone_ai.tools import StackOneTool, Tools
+from stackone_ai.types import ExecuteConfig, ToolParameters
 
 
 @pytest.fixture
@@ -26,8 +34,6 @@ def sample_tool() -> StackOneTool:
         ),
         _execute_config=ExecuteConfig(
             headers={},
-            method="GET",
-            url="https://api.example.com/employees",
             name="bamboohr_list_employees",
         ),
         _api_key="test_key",
@@ -41,8 +47,6 @@ def second_tool() -> StackOneTool:
         parameters=ToolParameters(type="object", properties={}),
         _execute_config=ExecuteConfig(
             headers={},
-            method="GET",
-            url="https://api.example.com/employees/{id}",
             name="bamboohr_get_employee",
         ),
         _api_key="test_key",
@@ -115,50 +119,107 @@ def test_tools_to_pydantic_ai_with_agent(sample_tool: StackOneTool, monkeypatch:
 def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock()  # type: ignore[method-assign]
-    toolset._execute_config = None  # type: ignore[attr-defined]
 
     tools = toolset.pydantic_ai()
 
     toolset.fetch_tools.assert_called_once_with(account_ids=None)
-    toolset._build_tools.assert_not_called()
     assert len(tools) == 1
     assert tools[0].name == "bamboohr_list_employees"
 
 
-def test_toolset_pydantic_ai_search_and_execute_uses_build_tools(sample_tool: StackOneTool):
-    toolset = StackOneToolSet.__new__(StackOneToolSet)
-    toolset.fetch_tools = MagicMock()  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._execute_config = None  # type: ignore[attr-defined]
-
-    tools = toolset.pydantic_ai(mode="search_and_execute")
-
-    toolset._build_tools.assert_called_once_with(account_ids=None)
-    toolset.fetch_tools.assert_not_called()
-    assert len(tools) == 1
-
-
-def test_toolset_pydantic_ai_account_ids_override(sample_tool: StackOneTool):
+def test_toolset_pydantic_ai_passes_account_ids_through(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock()  # type: ignore[method-assign]
-    toolset._execute_config = {"account_ids": ["from-config"]}  # type: ignore[attr-defined]
 
     toolset.pydantic_ai(account_ids=["override"])
 
     toolset.fetch_tools.assert_called_once_with(account_ids=["override"])
 
 
-def test_toolset_pydantic_ai_falls_back_to_execute_config_account_ids(sample_tool: StackOneTool):
-    toolset = StackOneToolSet.__new__(StackOneToolSet)
-    toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._build_tools = MagicMock()  # type: ignore[method-assign]
-    toolset._execute_config = {"account_ids": ["from-config"]}  # type: ignore[attr-defined]
+def test_execute_config_account_ids_scope_the_catalog_fetch(sample_tool: StackOneTool):
+    """Account IDs from the execute config reach the MCP fetch when none are passed.
 
-    toolset.pydantic_ai()
+    Asserted through a real constructor rather than by mocking dispatch: the
+    fallback lives in fetch_tools, so a test that bypasses __init__ would only
+    be checking which method forwards the argument.
+    """
+    toolset = StackOneToolSet(api_key="test-key", execute={"account_ids": ["from-config"]})
 
-    toolset.fetch_tools.assert_called_once_with(account_ids=["from-config"])
+    seen: list[str | None] = []
+
+    def _capture(endpoint: str, headers: dict[str, str], **_kwargs: object):
+        seen.append(headers.get("x-account-id"))
+        return []
+
+    with patch("stackone_ai.toolset.fetch_mcp_tools", side_effect=_capture):
+        toolset.fetch_tools()
+
+    assert seen == ["from-config"]
+
+
+# --- An agent run against the mock MCP server ---
+
+
+def _scripted_model(*steps: Callable[[ToolReturnPart | None], ToolCallPart]) -> FunctionModel:
+    """A model that makes one tool call per step, each built from the previous call's return,
+    then answers with the last return's content as text."""
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if len(returns) < len(steps):
+            return ModelResponse(parts=[steps[len(returns)](returns[-1] if returns else None)])
+        return ModelResponse(parts=[TextPart(json.dumps(returns[-1].content))])
+
+    return FunctionModel(respond)
+
+
+def test_agent_runs_an_individual_tool_over_mcp(mcp_mock_server: str):
+    toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server, account_id="test-account")
+    model = _scripted_model(lambda _: ToolCallPart("dummy_action", {"foo": "bar"}))
+
+    result = Agent(model, tools=toolset.pydantic_ai()).run_sync("run the dummy action")
+
+    assert json.loads(result.output) == {
+        "isError": False,
+        "result": {"data": {"action": "dummy_action", "received": {"foo": "bar"}}},
+    }
+
+
+@pytest.mark.parametrize("account_ids", [["acc1"], ["acc1", "acc2"]], ids=["one-account", "two-accounts"])
+def test_agent_searches_then_executes_in_search_execute_mode(mcp_mock_server: str, account_ids: list[str]):
+    """The same script runs on one account's pair and on the trio over two."""
+    toolset = StackOneToolSet(
+        api_key="test-key",
+        base_url=mcp_mock_server,
+        execute={"account_ids": account_ids},
+        tool_mode="search_execute",
+    )
+    tools = toolset.pydantic_ai()
+
+    def execute_the_first_hit(found: ToolReturnPart | None) -> ToolCallPart:
+        assert found is not None
+        hit = found.content["actions"][0]
+        return ToolCallPart(
+            "stackone_execute_action",
+            {
+                "action_id": hit["action_id"],
+                "stackone_account_id": hit["available_accounts"][0]["id"],
+                **hit["example_request"],
+            },
+        )
+
+    model = _scripted_model(
+        lambda _: ToolCallPart("stackone_search_actions", {"query": "list items"}),
+        execute_the_first_hit,
+    )
+
+    result = Agent(model, tools=tools).run_sync("list my items")
+
+    assert {tool.name for tool in tools} >= {"stackone_search_actions", "stackone_execute_action"}
+    assert json.loads(result.output) == {
+        "isError": False,
+        "result": {"data": {"nodes": []}, "echoed_query": {"page_size": 25}, "account_id": "acc1"},
+    }
 
 
 # --- Import error path ---

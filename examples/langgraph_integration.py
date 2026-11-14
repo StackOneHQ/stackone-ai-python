@@ -11,6 +11,7 @@ uv run examples/langgraph_integration.py
 from __future__ import annotations
 
 import os
+import sys
 
 try:
     from dotenv import load_dotenv
@@ -19,44 +20,62 @@ try:
 except ModuleNotFoundError:
     pass
 
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
 
 from stackone_ai import StackOneToolSet
+from stackone_ai.types import StackOneError, ToolsetError
 
 
 def langgraph_integration() -> None:
-    account_id = os.getenv("STACKONE_ACCOUNT_ID")
-    if not os.getenv("STACKONE_API_KEY"):
-        print("Set STACKONE_API_KEY to run this example.")
-        return
-    if not account_id:
-        print("Set STACKONE_ACCOUNT_ID to run this example.")
-        return
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Set OPENAI_API_KEY to run this example.")
-        return
+    for var in ["STACKONE_API_KEY", "STACKONE_ACCOUNT_ID", "OPENAI_API_KEY"]:
+        if not os.getenv(var):
+            raise SystemExit(f"Set {var} to run this example.")
+
+    account_id = os.environ["STACKONE_ACCOUNT_ID"]
 
     toolset = StackOneToolSet()
     tools = toolset.fetch_tools(
-        actions=["workday_list_workers", "workday_get_worker", "workday_get_current_user"],
+        actions=["*_list_*"],
         account_ids=[account_id],
     )
+    if not tools:
+        raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
 
     # LangGraph uses LangChain tools natively
     langchain_tools = tools.to_langchain()
+
+    # Hand a rejected call back to the agent instead of killing the graph. Models
+    # do guess arguments wrong, and StackOne's 400 names the offending field — so
+    # the agent can read it and retry. Without this, one bad guess ends the run.
+    for langchain_tool in langchain_tools:
+        langchain_tool.handle_tool_error = True
     print(f"Loaded {len(langchain_tools)} LangGraph tools.")
     for tool in langchain_tools:
         print(f"  - {tool.name}")
 
     # Create a ReAct agent with LangGraph
     model = ChatOpenAI(model="gpt-5.4")
-    agent = create_react_agent(model, langchain_tools)
+    agent = create_agent(model, langchain_tools)
 
-    result = agent.invoke({"messages": [("user", "List the first 5 employees")]})
+    result = agent.invoke(
+        {
+            "messages": [
+                (
+                    "user",
+                    "Use one of your tools to list a few records, then summarise them.",
+                )
+            ]
+        }
+    )
     final_message = result["messages"][-1]
     print(f"Agent response:\n{final_message.content}")
 
 
 if __name__ == "__main__":
-    langgraph_integration()
+    try:
+        langgraph_integration()
+    except ToolsetError as exc:
+        sys.exit(f"Could not load tools: {exc}")
+    except StackOneError as exc:
+        sys.exit(f"StackOne API error: {exc}")

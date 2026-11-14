@@ -1,0 +1,12 @@
+# pnpm settings for the integration-test MCP mock server.
+# pnpm 11 reads these from here — NOT from .npmrc or package.json.
+
+# Supply-chain hardening: only install versions published >= 7 days ago
+minimumReleaseAge: 10080
+
+# Build-script policy: pnpm 11 requires an explicit allow/deny per package with
+# install scripts, or CI fails with ERR_PNPM_IGNORED_BUILDS. false = the package
+# ships prebuilt binaries / works without running its scripts.
+allowBuilds:
+  # Ships prebuilt platform binaries; postinstall only validates them
+  esbuild: false

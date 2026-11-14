@@ -6,4 +6,4 @@ useDefault = true
 
 [allowlist]
 description = "Global allowlist"
-paths = ['''uv\.lock$''', '''venv/''', '''\.venv/''', '''\.ruff_cache/''']
+paths = ['''uv\.lock$''', '''\.venv/''', '''\.ruff_cache/''']
