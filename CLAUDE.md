@@ -111,7 +111,9 @@ Never use `uv pip install`, and never use editable installs (`-e`).
 
 Two dependency tiers, nothing else. **Core** is what the SDK needs to function
 at all — `pydantic`, `httpx`, `mcp`, since `fetch_tools()` is the only route to
-a tool and it talks MCP. **Extras** are everything else: per-framework adapters
+a tool and it talks MCP. On mcp 2 the MCP transport runs on `httpx2`, which mcp 2
+itself requires, so it is not declared here; `GET /accounts` always uses `httpx`.
+**Extras** are everything else: per-framework adapters
 (`langchain`, `pydantic-ai`), the `examples` set, and `dev` tooling. Adapters are
 imported lazily inside the method that needs them, so a bare install never drags
 in a framework you do not use. A new adapter goes in an extra with a lazy
@@ -263,6 +265,8 @@ tools = toolset.fetch_tools(providers=["linear"], actions=["*_list_*"])
 ### Modifying Tool Behaviour
 
 - Execution: `StackOneMcpTool.execute()` and `call_mcp_tool()` in `tools.py`
+- The MCP session (transport, deadline, failure mapping) every list and call opens:
+  `_run_mcp_session()`; the one retry after an end-user refusal: `retry_for_end_user()`
 - Result parsing: `parse_tool_result()`
 - search/execute routing: `StackOneToolSet.execute()`
 - Tool construction and the feedback-tool dedupe: `StackOneToolSet._create_tool` and
