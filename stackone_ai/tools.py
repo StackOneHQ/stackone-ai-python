@@ -1338,7 +1338,7 @@ class StackOneTool(BaseModel):
         class StackOneLangChainTool(BaseTool):
             name: str = parent_tool.name
             description: str = parent_tool.description
-            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[invalid-mutable-override]
+            args_schema: dict[str, Any] = args_json_schema  # ty: ignore[incompatible-mutable-override]
 
             def _run(self, **kwargs: Any) -> Any:
                 # Drop unsupplied optionals. pydantic materialises every optional field
@@ -1361,8 +1361,8 @@ class StackOneTool(BaseModel):
                     # handing the error back.
                     body = getattr(exc, "response_body", None)
                     failure = ToolException(f"{exc}: {body}" if body else str(exc))
-                    failure.status_code = getattr(exc, "status_code", None)  # ty: ignore[unresolved-attribute]
-                    failure.response_body = getattr(exc, "response_body", None)  # ty: ignore[unresolved-attribute]
+                    failure.status_code = getattr(exc, "status_code", None)  # ty: ignore[missing-attribute]
+                    failure.response_body = getattr(exc, "response_body", None)  # ty: ignore[missing-attribute]
                     raise failure from exc
 
         return StackOneLangChainTool()
