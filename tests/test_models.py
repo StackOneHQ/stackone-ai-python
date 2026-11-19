@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import pytest
@@ -7,7 +7,8 @@ from hypothesis import strategies as st
 from langchain_core.tools import BaseTool as LangChainBaseTool
 from pydantic import ValidationError
 
-from stackone_ai.tools import StackOneMcpTool, StackOneTool, Tools
+from stackone_ai.tools import McpToolDefinition, StackOneMcpTool, StackOneTool, Tools
+from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import (
     ExecuteConfig,
     StackOneAPIError,
@@ -734,6 +735,55 @@ class TestOpenAISchemaPassThrough:
         props = tool.to_openai_function()["function"]["parameters"]["properties"]
         assert "nullable" in props
         assert props["nullable"]["type"] == "object"
+
+
+# The keywords the MCP server advertises from a connector's input `rules`, as `tools/list` serves them.
+RULE_KEYWORD_PROPERTIES: dict[str, Any] = {
+    "name": {"type": "string", "minLength": 2, "maxLength": 50},
+    "email": {"type": "string", "format": "email"},
+    "id": {"type": "string", "format": "uuid"},
+    "start_date": {"type": "string", "format": "date"},
+    "updated_after": {"type": "string", "format": "date-time"},
+    "language": {"type": "string", "pattern": "^[a-z]{2}$"},
+    "website": {"type": "string", "pattern": r"^https?:\/\/[^\s/?#]+(?:[/?#]\S*)?$"},
+    "callback": {"type": "string", "pattern": r"^[a-zA-Z][a-zA-Z0-9+.-]*:\S+$"},
+    "expires_in": {"type": "number", "minimum": 86400, "maximum": 31536000},
+    "tags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 10}},
+}
+
+
+def _rule_keywords_tool() -> StackOneTool:
+    """A tool built the way fetch_tools() builds one from a served inputSchema."""
+    toolset = StackOneToolSet(api_key="test-key", account_id="acc-1")
+    input_schema = {
+        "type": "object",
+        "properties": RULE_KEYWORD_PROPERTIES,
+        "required": ["name", "expires_in"],
+    }
+    return toolset._create_tool(
+        McpToolDefinition("netbird_create_setup_key", "", input_schema),
+        "acc-1",
+        "https://api.stackone.com/mcp",
+    )
+
+
+class TestServedRuleKeywords:
+    """Every framework adapter hands the model the input rules the server advertises."""
+
+    @pytest.mark.parametrize(
+        "schema_of",
+        [
+            pytest.param(
+                lambda tool: tool.to_openai_function()["function"]["parameters"], id="to_openai_function"
+            ),
+            pytest.param(lambda tool: tool.to_langchain().args_schema, id="to_langchain"),
+            pytest.param(
+                lambda tool: tool.to_pydantic_ai_tool().function_schema.json_schema, id="to_pydantic_ai_tool"
+            ),
+        ],
+    )
+    def test_adapter_keeps_every_rule_keyword(self, schema_of: Callable[[StackOneTool], Any]) -> None:
+        assert schema_of(_rule_keywords_tool())["properties"] == RULE_KEYWORD_PROPERTIES
 
 
 class TestExecuteOpenAIToolCalls:
