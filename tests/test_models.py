@@ -1,3 +1,4 @@
+import copy
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -738,37 +739,34 @@ class TestOpenAISchemaPassThrough:
 
 
 # The keywords the MCP server advertises from a connector's input `rules`, as `tools/list` serves them.
-RULE_KEYWORD_PROPERTIES: dict[str, Any] = {
-    "name": {"type": "string", "minLength": 2, "maxLength": 50},
-    "email": {"type": "string", "format": "email"},
-    "id": {"type": "string", "format": "uuid"},
-    "start_date": {"type": "string", "format": "date"},
-    "updated_after": {"type": "string", "format": "date-time"},
-    "language": {"type": "string", "pattern": "^[a-z]{2}$"},
-    "website": {"type": "string", "pattern": r"^https?:\/\/[^\s/?#]+(?:[/?#]\S*)?$"},
-    "callback": {"type": "string", "pattern": r"^[a-zA-Z][a-zA-Z0-9+.-]*:\S+$"},
-    "expires_in": {"type": "number", "minimum": 86400, "maximum": 31536000},
-    "tags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 10}},
+RULE_KEYWORDS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "minLength": 2, "maxLength": 50},
+        "email": {"type": "string", "format": "email"},
+        "id": {"type": "string", "format": "uuid"},
+        "start_date": {"type": "string", "format": "date"},
+        "updated_after": {"type": "string", "format": "date-time"},
+        "language": {"type": "string", "pattern": "^[a-z]{2}$"},
+        "website": {"type": "string", "pattern": r"^https?:\/\/[^\s/?#]+(?:[/?#]\S*)?$"},
+        "callback": {"type": "string", "pattern": r"^[a-zA-Z][a-zA-Z0-9+.-]*:\S+$"},
+        "expires_in": {"type": "number", "minimum": 86400, "maximum": 31536000},
+        "tags": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 10}},
+    },
+    "required": ["name", "expires_in"],
 }
 
 
 def _rule_keywords_tool() -> StackOneTool:
     """A tool built the way fetch_tools() builds one from a served inputSchema."""
     toolset = StackOneToolSet(api_key="test-key", account_id="acc-1")
-    input_schema = {
-        "type": "object",
-        "properties": RULE_KEYWORD_PROPERTIES,
-        "required": ["name", "expires_in"],
-    }
-    return toolset._create_tool(
-        McpToolDefinition("netbird_create_setup_key", "", input_schema),
-        "acc-1",
-        "https://api.stackone.com/mcp",
-    )
+    # A copy, so an adapter that edited the served schema in place could not also edit the expectation
+    served = McpToolDefinition("netbird_create_setup_key", "", copy.deepcopy(RULE_KEYWORDS_SCHEMA))
+    return toolset._create_tool(served, "acc-1", "https://api.stackone.com/mcp")
 
 
 class TestServedRuleKeywords:
-    """Every framework adapter hands the model the input rules the server advertises."""
+    """Every framework adapter hands over the input rules the server advertises, unchanged."""
 
     @pytest.mark.parametrize(
         "schema_of",
@@ -778,12 +776,13 @@ class TestServedRuleKeywords:
             ),
             pytest.param(lambda tool: tool.to_langchain().args_schema, id="to_langchain"),
             pytest.param(
-                lambda tool: tool.to_pydantic_ai_tool().function_schema.json_schema, id="to_pydantic_ai_tool"
+                lambda tool: tool.to_pydantic_ai_tool().tool_def.parameters_json_schema,
+                id="to_pydantic_ai_tool",
             ),
         ],
     )
-    def test_adapter_keeps_every_rule_keyword(self, schema_of: Callable[[StackOneTool], Any]) -> None:
-        assert schema_of(_rule_keywords_tool())["properties"] == RULE_KEYWORD_PROPERTIES
+    def test_adapter_hands_over_the_served_schema(self, schema_of: Callable[[StackOneTool], Any]) -> None:
+        assert schema_of(_rule_keywords_tool()) == RULE_KEYWORDS_SCHEMA
 
 
 class TestExecuteOpenAIToolCalls:
