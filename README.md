@@ -140,7 +140,9 @@ for _ in range(5):  # bounded: the model may call tools more than once before an
         [message] = tools.execute_openai_tool_calls(
             [{"id": call.call_id, "function": {"name": call.name, "arguments": call.arguments}}]
         )
-        outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": message["content"]})
+        outputs.append(
+            {"type": "function_call_output", "call_id": call.call_id, "output": message["content"]}
+        )
     response = client.responses.create(
         model="gpt-6.2-sol", previous_response_id=response.id, input=outputs, tools=openai_tools
     )
