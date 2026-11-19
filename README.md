@@ -121,24 +121,38 @@ toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"])
 openai_tools = tools.to_openai()[:20]  # keep the catalog inside the context window
 
+# to_openai() emits Chat Completions tools; the Responses API wants the function one level up
+openai_tools = [{"type": "function", **t["function"]} for t in openai_tools]
+
 client = OpenAI()
-messages = [{"role": "user", "content": "Use a tool to list a few records, then summarise them."}]
-response = client.chat.completions.create(
-    model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
+response = client.responses.create(
+    model="gpt-6.2-sol",
+    input="Use a tool to list a few records, then summarise them.",
+    tools=openai_tools,
 )
 
-message = response.choices[0].message
-messages.append(message.model_dump(exclude_none=True))  # the assistant turn comes first
-messages.extend(tools.execute_openai_tool_calls(message.tool_calls))
+outputs = []
+for call in (item for item in response.output if item.type == "function_call"):
+    [message] = tools.execute_openai_tool_calls(
+        [{"id": call.call_id, "function": {"name": call.name, "arguments": call.arguments}}]
+    )
+    outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": message["content"]})
+
+# Send `outputs` back with previous_response_id=response.id, and repeat while the model
+# keeps calling tools: examples/openai_integration.py has the loop.
 ```
 
 `to_openai()` emits Chat Completions function tools, and
 `execute_openai_tool_calls()` runs the calls the model makes and returns the `tool`
 messages to send back. A failed call becomes an error message the model can read and
-retry from, rather than an exception. Chat Completions accepts at
+retry from, rather than an exception. GPT-6 models accept function tools only on the
+Responses API (Chat Completions refuses them unless reasoning is off), so the snippet
+above unwraps each tool and passes the calls through in the Chat Completions shape.
+Older models work with `client.chat.completions.create(..., tools=tools.to_openai())`
+and `execute_openai_tool_calls(message.tool_calls)` directly. OpenAI accepts at
 most **128 tools**, so filter before binding. See
 [examples/openai_integration.py](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py) for the full
-round trip, including feeding results back for a final answer.
+round trip, including the loop that feeds results back until the model answers.
 
 </details>
 
@@ -156,7 +170,7 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"])
 
-model = ChatOpenAI(model="gpt-5.4").bind_tools(tools.to_langchain())
+model = ChatOpenAI(model="gpt-6.2-sol").bind_tools(tools.to_langchain())
 response = model.invoke("Use a tool to list a few records.")
 
 for call in response.tool_calls:
@@ -180,7 +194,7 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"]).to_pydantic_ai()
 
-agent = Agent("openai:gpt-5.4", tools=tools)
+agent = Agent("openai:gpt-6.2-sol", tools=tools)
 print(agent.run_sync("Use a tool to list a few records, then summarise them.").output)
 ```
 
@@ -206,9 +220,9 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"]).to_langchain()
 
-agent = create_agent(ChatOpenAI(model="gpt-5.4"), tools)
+agent = create_agent(ChatOpenAI(model="gpt-6.2-sol"), tools)
 result = agent.invoke({"messages": [("user", "Use a tool to list a few records.")]})
-print(result["messages"][-1].content)
+print(result["messages"][-1].text)
 ```
 
 </details>

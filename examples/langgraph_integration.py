@@ -55,7 +55,7 @@ def langgraph_integration() -> None:
         print(f"  - {tool.name}")
 
     # Create a ReAct agent with LangGraph
-    model = ChatOpenAI(model="gpt-5.4")
+    model = ChatOpenAI(model="gpt-6.2-sol")
     agent = create_agent(model, langchain_tools)
 
     result = agent.invoke(
@@ -69,7 +69,7 @@ def langgraph_integration() -> None:
         }
     )
     final_message = result["messages"][-1]
-    print(f"Agent response:\n{final_message.content}")
+    print(f"Agent response:\n{final_message.text}")
 
 
 if __name__ == "__main__":

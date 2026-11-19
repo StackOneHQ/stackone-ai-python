@@ -37,7 +37,7 @@ def individual_tools(account_id: str) -> None:
         raise SystemExit(f"Account {account_id} served no list tools, so the example would prove nothing.")
 
     agent = Agent(
-        "openai:gpt-5.4",
+        "openai:gpt-6.2-sol",
         system_prompt="You are a helpful assistant that answers by calling tools.",
         tools=tools.to_pydantic_ai(),
     )
@@ -53,7 +53,7 @@ def search_and_execute(account_id: str) -> None:
         raise SystemExit(f"Account {account_id} served no search and execute tools.")
 
     agent = Agent(
-        "openai:gpt-5.4",
+        "openai:gpt-6.2-sol",
         system_prompt=(
             "You answer by calling tools. First call stackone_search_actions to find an action, "
             "then call stackone_execute_action with its action_id and arguments built from its "
