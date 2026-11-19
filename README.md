@@ -131,15 +131,21 @@ response = client.responses.create(
     tools=openai_tools,
 )
 
-outputs = []
-for call in (item for item in response.output if item.type == "function_call"):
-    [message] = tools.execute_openai_tool_calls(
-        [{"id": call.call_id, "function": {"name": call.name, "arguments": call.arguments}}]
+for _ in range(5):  # bounded: the model may call tools more than once before answering
+    calls = [item for item in response.output if item.type == "function_call"]
+    if not calls:
+        break
+    outputs = []
+    for call in calls:
+        [message] = tools.execute_openai_tool_calls(
+            [{"id": call.call_id, "function": {"name": call.name, "arguments": call.arguments}}]
+        )
+        outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": message["content"]})
+    response = client.responses.create(
+        model="gpt-6.2-sol", previous_response_id=response.id, input=outputs, tools=openai_tools
     )
-    outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": message["content"]})
 
-# Send `outputs` back with previous_response_id=response.id, and repeat while the model
-# keeps calling tools: examples/openai_integration.py has the loop.
+print(response.output_text)
 ```
 
 `to_openai()` emits Chat Completions function tools, and
@@ -152,7 +158,7 @@ Older models work with `client.chat.completions.create(..., tools=tools.to_opena
 and `execute_openai_tool_calls(message.tool_calls)` directly. OpenAI accepts at
 most **128 tools**, so filter before binding. See
 [examples/openai_integration.py](https://github.com/StackOneHQ/stackone-ai-python/blob/main/examples/openai_integration.py) for the full
-round trip, including the loop that feeds results back until the model answers.
+round trip, with error handling and a check that the model called a tool at all.
 
 </details>
 
