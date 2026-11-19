@@ -71,10 +71,12 @@ def openai_integration() -> None:
     # The model may call tools more than once (paging, say), so loop until it answers.
     # Bounded, so a model that keeps calling tools cannot run up a bill.
     calls_made = 0
-    for _ in range(MAX_TURNS):
+    for turn in range(MAX_TURNS + 1):
         function_calls = [item for item in response.output if item.type == "function_call"]
         if not function_calls:
             break
+        if turn == MAX_TURNS:
+            raise SystemExit(f"The model was still calling tools after {MAX_TURNS} turns.")
         outputs: list[Any] = []
         for call in function_calls:
             calls_made += 1
@@ -98,8 +100,6 @@ def openai_integration() -> None:
             input=outputs,
             tools=openai_tools,
         )
-    else:
-        raise SystemExit(f"The model was still calling tools after {MAX_TURNS} turns.")
 
     if calls_made == 0:
         raise SystemExit("The model answered without calling a tool, so the example proved nothing.")

@@ -170,7 +170,7 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"])
 
-model = ChatOpenAI(model="gpt-6.2-sol").bind_tools(tools.to_langchain())
+model = ChatOpenAI(model="gpt-6.2-sol", use_responses_api=True).bind_tools(tools.to_langchain())
 response = model.invoke("Use a tool to list a few records.")
 
 for call in response.tool_calls:
@@ -194,7 +194,7 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"]).to_pydantic_ai()
 
-agent = Agent("openai:gpt-6.2-sol", tools=tools)
+agent = Agent("openai-responses:gpt-6.2-sol", tools=tools)
 print(agent.run_sync("Use a tool to list a few records, then summarise them.").output)
 ```
 
@@ -220,7 +220,7 @@ from stackone_ai import StackOneToolSet
 toolset = StackOneToolSet()
 tools = toolset.fetch_tools(actions=["*_list_*"]).to_langchain()
 
-agent = create_agent(ChatOpenAI(model="gpt-6.2-sol"), tools)
+agent = create_agent(ChatOpenAI(model="gpt-6.2-sol", use_responses_api=True), tools)
 result = agent.invoke({"messages": [("user", "Use a tool to list a few records.")]})
 print(result["messages"][-1].text)
 ```
