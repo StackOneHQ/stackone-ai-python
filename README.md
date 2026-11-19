@@ -147,6 +147,8 @@ for _ in range(5):  # bounded: the model may call tools more than once before an
         model="gpt-6.2-sol", previous_response_id=response.id, input=outputs, tools=openai_tools
     )
 
+if any(item.type == "function_call" for item in response.output):
+    raise SystemExit("The model was still calling tools after 5 rounds.")
 print(response.output_text)
 ```
 
