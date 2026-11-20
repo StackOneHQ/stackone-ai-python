@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v3.1.0...stackone-ai-v3.1.1) (2026-11-20)
+
+
+### Documentation
+
+* **examples:** move examples to gpt-6.2-sol and the Responses API ([#282](https://github.com/StackOneHQ/stackone-ai-python/issues/282)) ([8c67ce3](https://github.com/StackOneHQ/stackone-ai-python/commit/8c67ce3ece1d0bb65d6b6c991d4693ad50fe5f60))
+
 ## [3.1.0](https://github.com/StackOneHQ/stackone-ai-python/compare/stackone-ai-v3.0.0...stackone-ai-v3.1.0) (2026-11-17)
 
 
