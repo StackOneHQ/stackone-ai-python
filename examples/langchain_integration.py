@@ -46,11 +46,11 @@ def langchain_integration() -> None:
         print(f"  - {tool.name}")
 
     # Create model with tools
-    model = ChatOpenAI(model="gpt-5.4")
+    model = ChatOpenAI(model="gpt-6.2-sol", use_responses_api=True)
     model_with_tools = model.bind_tools(langchain_tools)
 
     result = model_with_tools.invoke("Use one of your tools to list a few records, then summarise them.")
-    print(f"LLM response: {result.content}")
+    print(f"LLM response: {result.text}")
 
     if result.tool_calls:
         print(f"LLM made {len(result.tool_calls)} tool call(s).")
