@@ -935,6 +935,31 @@ class TestAccountDiscovery:
         toolset = StackOneToolSet(api_key="test-key", base_url=mcp_mock_server)
         assert toolset._discover_account_ids() == ["default"]
 
+    def test_malformed_account_entries_are_skipped(self, monkeypatch):
+        """An entry that is not an object, or whose id is not a string, is not an account."""
+        toolset = StackOneToolSet(api_key="test-key")
+        listed: list[Any] = ["junk", None, {"id": 5, "status": "active"}]
+        monkeypatch.setattr(
+            toolset, "fetch_accounts", lambda: [*listed, {"id": "acc", "provider": "p", "status": "active"}]
+        )
+        assert toolset._discover_account_ids() == ["acc"]
+
+    def test_only_malformed_account_entries_count_as_no_accounts(self, monkeypatch):
+        toolset = StackOneToolSet(api_key="test-key")
+        monkeypatch.setattr(toolset, "fetch_accounts", lambda: ["junk", None])
+        with pytest.raises(ToolsetConfigError, match="This API key has no linked accounts"):
+            toolset._discover_account_ids()
+
+    def test_a_malformed_entry_is_not_counted_as_an_inactive_account(self, monkeypatch):
+        toolset = StackOneToolSet(api_key="test-key")
+        monkeypatch.setattr(
+            toolset, "fetch_accounts", lambda: ["junk", {"provider": "p", "status": "revoked"}]
+        )
+        with pytest.raises(
+            ToolsetConfigError, match=r"None of this API key's 1 linked accounts are active: p \(revoked\)\."
+        ):
+            toolset._discover_account_ids()
+
     def test_a_discovery_in_flight_during_a_clear_is_not_cached(self, monkeypatch):
         """An account list fetched before clear_catalog_cache() must not outlive it."""
         toolset = StackOneToolSet(api_key="test-key")
@@ -1719,6 +1744,8 @@ class TestRecentlyFixedBehaviour:
         toolset = StackOneToolSet(api_key="test-key", account_id="acc1")
         with pytest.raises(ToolsetConfigError, match="JSON object"):
             toolset.execute("linear_list_issues", [1, 2, 3])
+        with pytest.raises(ToolsetConfigError, match="string keys"):
+            toolset.execute("linear_list_issues", {1: "x"})  # type: ignore[dict-item]
 
     def test_fetch_accounts_rejects_a_non_list_body(self, monkeypatch):
         """list(dict) yields the keys, which blew up much later as an AttributeError."""
