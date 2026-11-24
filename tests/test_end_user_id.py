@@ -728,9 +728,9 @@ class TestAPassedIdLooksItsEndUserUp:
 
         class Listing(concurrent.futures.Future):  # type: ignore[type-arg]
             def result(self, timeout: float | None = None) -> Any:
-                # The owner waits only once its own GET /accounts is done, so a wait while it
-                # is still held is the other account's, joining it.
-                joined.set()
+                # Only a waiter on this accounts listing can release its HTTP response.
+                if self is toolset._fetching_accounts:
+                    joined.set()
                 return super().result(timeout)
 
         monkeypatch.setattr(concurrent.futures, "Future", Listing)
@@ -747,7 +747,8 @@ class TestAPassedIdLooksItsEndUserUp:
 
         monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
         mcp = _GuardedMcp(monkeypatch, {"a": "user-a", "b": "user-b"})
-        tools = StackOneToolSet(api_key="k").fetch_tools(account_ids=["a", "b"])
+        toolset = StackOneToolSet(api_key="k")
+        tools = toolset.fetch_tools(account_ids=["a", "b"])
         assert sorted(t.name for t in tools) == ["tool_a", "tool_b"]
         assert len(calls) == 1
         assert sorted((h["x-account-id"], h.get("x-end-user-id", "")) for h in mcp.listed) == [
