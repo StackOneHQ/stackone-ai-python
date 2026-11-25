@@ -1015,7 +1015,7 @@ class StackOneToolSet:
         accounts would otherwise be told only that the header does not match.
         """
         try:
-            self._join_accounts_listing()
+            self._join_accounts_listing(account_id)
         except Exception as exc:
             # A rate limit is the key's, not the account's, and stays fatal to a fan-out.
             if is_rate_limited(exc):
@@ -1023,16 +1023,13 @@ class StackOneToolSet:
             raise refusal from exc
         return self._end_user_id(account_id) is not None
 
-    def _join_accounts_listing(self) -> None:
-        """Wait for the GET /accounts in flight, or make one: what it records is then current.
-
-        Raises:
-            Exception: Whatever that GET /accounts failed with.
-        """
+    def _join_accounts_listing(self, missing_end_user_for: str | None = None) -> None:
         with self._cache_lock:
             fetching = self._fetching_accounts
             sequence = 0
             if fetching is None:
+                if missing_end_user_for is not None and missing_end_user_for in self._end_user_ids:
+                    return
                 self._accounts_sequence += 1
                 sequence = self._accounts_sequence
                 fetching = self._fetching_accounts = concurrent.futures.Future()
