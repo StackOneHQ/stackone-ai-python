@@ -11,12 +11,13 @@ import concurrent.futures
 import json
 import logging
 import threading
+from functools import partial
 from typing import Any
 
 import httpx
 import pytest
 
-from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
+from stackone_ai.tools import McpToolDefinition, RateLimitRetryingClient, StackOneMcpTool
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import StackOneAPIError, ToolParameters, ToolsetConfigError
 
@@ -725,6 +726,7 @@ class TestAPassedIdLooksItsEndUserUp:
 
     def test_requests_refused_together_share_one_accounts_listing(self, monkeypatch):
         joined = threading.Event()
+        base_url = "https://same-listing.invalid"
 
         class Listing(concurrent.futures.Future):  # type: ignore[type-arg]
             def result(self, timeout: float | None = None) -> Any:
@@ -734,10 +736,10 @@ class TestAPassedIdLooksItsEndUserUp:
                 return super().result(timeout)
 
         monkeypatch.setattr(concurrent.futures, "Future", Listing)
-        calls: list[int] = []
+        calls: list[tuple[str, str]] = []
 
-        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
-            calls.append(1)
+        def handle(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, str(request.url)))
             assert joined.wait(timeout=5)
             body = [
                 _account("a", shared=False, origin_username="user-a"),
@@ -745,18 +747,43 @@ class TestAPassedIdLooksItsEndUserUp:
             ]
             return httpx.Response(200, json=body, request=request)
 
-        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+        monkeypatch.setattr(
+            "stackone_ai.toolset.RateLimitRetryingClient",
+            partial(RateLimitRetryingClient, mounts={base_url: httpx.MockTransport(handle)}),
+        )
         mcp = _GuardedMcp(monkeypatch, {"a": "user-a", "b": "user-b"})
-        toolset = StackOneToolSet(api_key="k")
+        toolset = StackOneToolSet(api_key="k", base_url=base_url)
         tools = toolset.fetch_tools(account_ids=["a", "b"])
         assert sorted(t.name for t in tools) == ["tool_a", "tool_b"]
-        assert len(calls) == 1
+        assert calls == [("GET", f"{base_url}/accounts")]
         assert sorted((h["x-account-id"], h.get("x-end-user-id", "")) for h in mcp.listed) == [
             ("a", ""),
             ("a", "user-a"),
             ("b", ""),
             ("b", "user-b"),
         ]
+
+    def test_a_delayed_refusal_reuses_the_end_user_a_sibling_just_found(self, monkeypatch):
+        body = [_account(account, shared=False, origin_username=f"user-{account}") for account in ("a", "b")]
+        calls = _accounts_response(monkeypatch, body, body)
+        mcp = _GuardedMcp(monkeypatch, {"a": "user-a", "b": "user-b"})
+        toolset = StackOneToolSet(api_key="k")
+        guard = mcp._guard
+
+        def delay_b_until_a_retries(headers: dict[str, str]) -> None:
+            if headers["x-account-id"] == "b" and "x-end-user-id" not in headers:
+                toolset.fetch_tools(account_ids=["a"])
+            guard(headers)
+
+        monkeypatch.setattr(mcp, "_guard", delay_b_until_a_retries)
+        assert [t.name for t in toolset.fetch_tools(account_ids=["b"])] == ["tool_b"]
+        assert [(h["x-account-id"], h.get("x-end-user-id")) for h in mcp.listed] == [
+            ("b", None),
+            ("a", None),
+            ("a", "user-a"),
+            ("b", "user-b"),
+        ]
+        assert len(calls) == 1
 
     def test_a_lookup_joins_the_latest_accounts_listing_still_in_flight(self, monkeypatch):
         """An older listing finishing must not stop a lookup joining a newer one in flight."""
