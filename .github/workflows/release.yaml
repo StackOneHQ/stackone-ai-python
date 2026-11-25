@@ -54,7 +54,7 @@ jobs:
 
       - name: Setup uv (for PR update)
         if: ${{ steps.release.outputs.pr }}
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
 
       - name: Update uv.lock
         if: ${{ steps.release.outputs.pr }}
@@ -95,8 +95,8 @@ jobs:
           test "$(git rev-parse --verify 'HEAD^{commit}')" = "$RELEASE_SHA"
           git merge-base --is-ancestor HEAD "$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           python-version: "3.13"
           enable-cache: false
@@ -128,7 +128,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: package.json
 
       - name: Install dependencies
         run: |

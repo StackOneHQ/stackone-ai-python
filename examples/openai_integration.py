@@ -14,8 +14,8 @@ Expected output: the number of tools loaded, the tool call the model chose, the
 result of running it, and the model's final answer. It exits non-zero if your
 key reaches no tools, rather than pretending to succeed with an empty toolbox.
 
-You can find out more about the OpenAI Function Calling API format
-[here](https://platform.openai.com/docs/guides/function-calling).
+It uses the Responses API, which GPT-6 models need for function tools. More on
+the format [here](https://platform.openai.com/docs/guides/function-calling).
 """
 
 from __future__ import annotations
@@ -35,6 +35,9 @@ from openai import OpenAI
 from stackone_ai import StackOneToolSet
 from stackone_ai.types import StackOneError, ToolsetError
 
+MODEL = "gpt-6.2-sol"
+MAX_TURNS = 5
+
 
 def openai_integration() -> None:
     client = OpenAI()
@@ -50,43 +53,58 @@ def openai_integration() -> None:
             "an empty catalog here means the example would prove nothing."
         )
 
-    openai_tools: list[Any] = tools.to_openai()[:20]
-    names = {t["function"]["name"] for t in openai_tools}
+    # to_openai() returns Chat Completions tools. The Responses API takes the same
+    # function definition one level up, so unwrap it. GPT-6 models need the Responses
+    # API for function tools; Chat Completions refuses them unless reasoning is off.
+    openai_tools: list[Any] = [{"type": "function", **t["function"]} for t in tools.to_openai()[:20]]
+    names = {t["name"] for t in openai_tools}
     print(f"Loaded {len(openai_tools)} tools, e.g. {sorted(names)[:3]}")
 
-    messages: list[Any] = [
-        {"role": "system", "content": "You answer questions by calling the tools you are given."},
-        {
-            "role": "user",
-            "content": "Use one of your tools to list a few records, then summarise them.",
-        },
-    ]
-
-    response = client.chat.completions.create(
-        model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
+    instructions = "You answer questions by calling the tools you are given."
+    response = client.responses.create(
+        model=MODEL,
+        instructions=instructions,
+        input="Use one of your tools to list a few records, then summarise them.",
+        tools=openai_tools,
     )
 
-    tool_calls = response.choices[0].message.tool_calls
-    if not tool_calls:
-        print("No tool calls were made by the model.")
-        return
+    # The model may call tools more than once (paging, say), so loop until it answers.
+    # Bounded, so a model that keeps calling tools cannot run up a bill.
+    calls_made = 0
+    for turn in range(MAX_TURNS + 1):
+        function_calls = [item for item in response.output if item.type == "function_call"]
+        if not function_calls:
+            break
+        if turn == MAX_TURNS:
+            raise SystemExit(f"The model was still calling tools after {MAX_TURNS} turns.")
+        outputs: list[Any] = []
+        for call in function_calls:
+            calls_made += 1
+            print(f"Tool call: {call.name}({call.arguments})")
+            # execute_openai_tool_calls() reads the Chat Completions shape; give it that
+            # shape and send its content back as the Responses API's function_call_output.
+            [message] = tools.execute_openai_tool_calls(
+                [{"id": call.call_id, "function": {"name": call.name, "arguments": call.arguments}}]
+            )
+            print(f"  Result: {message['content'][:200]}...")
+            outputs.append(
+                {"type": "function_call_output", "call_id": call.call_id, "output": message["content"]}
+            )
 
-    print(f"LLM made {len(tool_calls)} tool call(s):")
-    for tc in tool_calls:
-        if tc.type == "function":
-            print(f"  - {tc.function.name}({tc.function.arguments})")
+        # previous_response_id carries the model's turn, reasoning included, so only the
+        # tool results need sending.
+        response = client.responses.create(
+            model=MODEL,
+            instructions=instructions,
+            previous_response_id=response.id,
+            input=outputs,
+            tools=openai_tools,
+        )
 
-    # The assistant turn must come before its tool results, or OpenAI returns a 400.
-    messages.append(response.choices[0].message.model_dump(exclude_none=True))
-    tool_messages = tools.execute_openai_tool_calls(tool_calls)
-    for message in tool_messages:
-        print(f"  Result: {message['content'][:200]}...")
-    messages.extend(tool_messages)
-
-    final_response = client.chat.completions.create(
-        model="gpt-5.4", messages=messages, tools=openai_tools, tool_choice="auto"
-    )
-    print(f"Final response:\n{final_response.choices[0].message.content}")
+    if calls_made == 0:
+        raise SystemExit("The model answered without calling a tool, so the example proved nothing.")
+    print(f"LLM made {calls_made} tool call(s).")
+    print(f"Final response:\n{response.output_text}")
 
 
 if __name__ == "__main__":

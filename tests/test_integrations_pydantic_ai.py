@@ -8,23 +8,20 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-pytest.importorskip("pydantic_ai", reason="pydantic-ai not installed")
-
-from pydantic_ai import Agent  # noqa: E402
-from pydantic_ai.messages import (  # noqa: E402
+from pydantic_ai import Agent
+from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
 )
-from pydantic_ai.models.function import AgentInfo, FunctionModel  # noqa: E402
-from pydantic_ai.tools import Tool  # noqa: E402
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.tools import Tool
 
-from stackone_ai import StackOneToolSet  # noqa: E402
-from stackone_ai.tools import StackOneTool, Tools  # noqa: E402
-from stackone_ai.types import ExecuteConfig, ToolParameters  # noqa: E402
+from stackone_ai import StackOneToolSet
+from stackone_ai.tools import StackOneTool, Tools
+from stackone_ai.types import ExecuteConfig, ToolParameters
 
 
 @pytest.fixture
@@ -122,7 +119,6 @@ def test_tools_to_pydantic_ai_with_agent(sample_tool: StackOneTool, monkeypatch:
 def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._execute_config = None  # type: ignore[attr-defined]
 
     tools = toolset.pydantic_ai()
 
@@ -131,10 +127,9 @@ def test_toolset_pydantic_ai_default_uses_fetch_tools(sample_tool: StackOneTool)
     assert tools[0].name == "bamboohr_list_employees"
 
 
-def test_toolset_pydantic_ai_account_ids_override(sample_tool: StackOneTool):
+def test_toolset_pydantic_ai_passes_account_ids_through(sample_tool: StackOneTool):
     toolset = StackOneToolSet.__new__(StackOneToolSet)
     toolset.fetch_tools = MagicMock(return_value=Tools([sample_tool]))  # type: ignore[method-assign]
-    toolset._execute_config = {"account_ids": ["from-config"]}  # type: ignore[attr-defined]
 
     toolset.pydantic_ai(account_ids=["override"])
 
