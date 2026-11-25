@@ -11,12 +11,13 @@ import concurrent.futures
 import json
 import logging
 import threading
+from functools import partial
 from typing import Any
 
 import httpx
 import pytest
 
-from stackone_ai.tools import McpToolDefinition, StackOneMcpTool
+from stackone_ai.tools import McpToolDefinition, RateLimitRetryingClient, StackOneMcpTool
 from stackone_ai.toolset import StackOneToolSet
 from stackone_ai.types import StackOneAPIError, ToolParameters, ToolsetConfigError
 
@@ -734,10 +735,10 @@ class TestAPassedIdLooksItsEndUserUp:
                 return super().result(timeout)
 
         monkeypatch.setattr(concurrent.futures, "Future", Listing)
-        calls: list[int] = []
+        calls: list[tuple[str, str]] = []
 
-        def handle(_self: Any, request: httpx.Request) -> httpx.Response:
-            calls.append(1)
+        def handle(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, str(request.url)))
             assert joined.wait(timeout=5)
             body = [
                 _account("a", shared=False, origin_username="user-a"),
@@ -745,12 +746,15 @@ class TestAPassedIdLooksItsEndUserUp:
             ]
             return httpx.Response(200, json=body, request=request)
 
-        monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle)
+        monkeypatch.setattr(
+            "stackone_ai.toolset.RateLimitRetryingClient",
+            partial(RateLimitRetryingClient, transport=httpx.MockTransport(handle)),
+        )
         mcp = _GuardedMcp(monkeypatch, {"a": "user-a", "b": "user-b"})
         toolset = StackOneToolSet(api_key="k")
         tools = toolset.fetch_tools(account_ids=["a", "b"])
         assert sorted(t.name for t in tools) == ["tool_a", "tool_b"]
-        assert len(calls) == 1
+        assert calls == [("GET", f"{toolset.base_url.rstrip('/')}/accounts")]
         assert sorted((h["x-account-id"], h.get("x-end-user-id", "")) for h in mcp.listed) == [
             ("a", ""),
             ("a", "user-a"),
